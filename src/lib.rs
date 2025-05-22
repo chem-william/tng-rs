@@ -8,6 +8,7 @@ mod particle_mapping;
 mod residue;
 mod trajectory;
 mod trajectory_frame_set;
+mod utils;
 
 // The maximum allowed length of a string
 const MAX_STR_LEN: usize = 1024;

@@ -1,13 +1,17 @@
 use log::warn;
 
-use crate::MAX_STR_LEN;
+use crate::atom::Atom;
+use crate::bond::Bond;
+use crate::chain::Chain;
 use crate::data::Data;
 use crate::gen_block::{BlockID, GenBlock};
 use crate::molecule::Molecule;
+use crate::residue::Residue;
 use crate::trajectory_frame_set::TrajectoryFrameSet;
+use crate::{MAX_STR_LEN, utils};
 use core::panic;
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -65,7 +69,7 @@ pub struct Trajectory {
     /// Vector of molecule definitions.
     pub molecules: Vec<Molecule>,
     /// Count of each molecule type (length = `n_molecules`).
-    pub molecule_counts: Vec<i64>,
+    pub molecule_cnt_list: Vec<i64>,
     /// Total number of particles (or atoms). If variable, updated per frame set.
     pub n_particles: i64,
 
@@ -138,7 +142,7 @@ impl Trajectory {
 
             n_molecules: 0,
             molecules: Vec::new(),
-            molecule_counts: Vec::new(),
+            molecule_cnt_list: Vec::new(),
             n_particles: 0,
 
             first_trajectory_frame_set_input_pos: 0,
@@ -226,36 +230,6 @@ impl Trajectory {
         }
     }
 
-    fn read_i64_le_bytes(&mut self) -> i64 {
-        let mut buf = [0u8; 8];
-        self.input_file
-            .as_mut()
-            .expect("input_file should be init")
-            .read_exact(&mut buf)
-            .expect("we dont handle errors yet");
-        i64::from_le_bytes(buf)
-    }
-
-    fn read_u64_le_bytes(&mut self) -> u64 {
-        let mut buf = [0u8; 8];
-        self.input_file
-            .as_mut()
-            .expect("input_file should be init")
-            .read_exact(&mut buf)
-            .expect("we dont handle errors yet");
-        u64::from_le_bytes(buf)
-    }
-
-    fn read_bool_le_bytes(&mut self) -> bool {
-        let mut buf = [0u8; 1];
-        self.input_file
-            .as_mut()
-            .expect("input_file should be init")
-            .read_exact(&mut buf)
-            .expect("we dont handle errors yet");
-        buf[0] != 0
-    }
-
     fn read_md5_hash(&mut self) -> i64 {
         let mut buf = [0u8; 8];
         self.input_file
@@ -277,7 +251,8 @@ impl Trajectory {
             .stream_position()
             .expect("no error handling");
 
-        block.header_contents_size = self.read_i64_le_bytes();
+        block.header_contents_size =
+            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&block.header_contents_size);
 
         if block.header_contents_size == 0 {
@@ -285,10 +260,13 @@ impl Trajectory {
             warn!("header_contents_size was 0 block.id is Undetermined");
         }
 
-        block.block_contents_size = self.read_i64_le_bytes();
+        block.block_contents_size =
+            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&block.block_contents_size);
 
-        block.id = BlockID::from_i64(self.read_i64_le_bytes());
+        block.id = BlockID::from_i64(utils::read_i64_le_bytes(
+            self.input_file.as_mut().expect("init input_file"),
+        ));
         dbg!(&block.id);
 
         self.input_file
@@ -298,10 +276,13 @@ impl Trajectory {
             .expect("no error handling");
         dbg!(block.md5_hash);
 
-        block.name = Some(self.fread_str());
+        block.name = Some(utils::fread_str(
+            self.input_file.as_mut().expect("init input_file"),
+        ));
         dbg!(&block.name);
 
-        block.version = self.read_u64_le_bytes();
+        block.version =
+            utils::read_u64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&block.version);
 
         let new_pos = (start_pos as i128 + block.header_contents_size as i128)
@@ -325,48 +306,57 @@ impl Trajectory {
             .expect("we just init input_file")
             .stream_position()
             .expect("no error handling");
+        let inp_file = self.input_file.as_mut().expect("init input_file");
 
-        self.first_program_name = self.fread_str();
+        self.first_program_name = utils::fread_str(inp_file);
         dbg!(&self.first_program_name);
-        self.last_program_name = self.fread_str();
+        self.last_program_name = utils::fread_str(inp_file);
         dbg!(&self.last_program_name);
-        self.first_user_name = self.fread_str();
+        self.first_user_name = utils::fread_str(inp_file);
         dbg!(&self.first_user_name);
-        self.last_user_name = self.fread_str();
+        self.last_user_name = utils::fread_str(inp_file);
         dbg!(&self.last_user_name);
-        self.first_computer_name = self.fread_str();
+        self.first_computer_name = utils::fread_str(inp_file);
         dbg!(&self.first_computer_name);
-        self.last_computer_name = self.fread_str();
+        self.last_computer_name = utils::fread_str(inp_file);
         dbg!(&self.last_computer_name);
-        self.first_pgp_signature = self.fread_str();
+        self.first_pgp_signature = utils::fread_str(inp_file);
         dbg!(&self.first_pgp_signature);
-        self.last_pgp_signature = self.fread_str();
+        self.last_pgp_signature = utils::fread_str(inp_file);
         dbg!(&self.last_pgp_signature);
-        self.forcefield_name = self.fread_str();
+        self.forcefield_name = utils::fread_str(inp_file);
         dbg!(&self.forcefield_name);
 
-        self.creation_time = self.read_i64_le_bytes();
+        self.creation_time =
+            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&self.creation_time);
-        self.var_num_atoms = self.read_bool_le_bytes();
+        self.var_num_atoms =
+            utils::read_bool_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&self.var_num_atoms);
-        self.frame_set_n_frames = self.read_i64_le_bytes();
+        self.frame_set_n_frames =
+            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&self.frame_set_n_frames);
-        self.first_trajectory_frame_set_input_pos = self.read_i64_le_bytes();
+        self.first_trajectory_frame_set_input_pos =
+            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&self.first_trajectory_frame_set_input_pos);
 
         self.current_trajectory_frame_set.next_frame_set_file_pos =
             self.first_trajectory_frame_set_input_pos;
-        self.last_trajectory_frame_set_input_pos = self.read_i64_le_bytes();
+        self.last_trajectory_frame_set_input_pos =
+            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&self.last_trajectory_frame_set_input_pos);
 
-        self.medium_stride_length = self.read_i64_le_bytes();
+        self.medium_stride_length =
+            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&self.medium_stride_length);
 
-        self.long_stride_length = self.read_i64_le_bytes();
+        self.long_stride_length =
+            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&self.long_stride_length);
 
         if block.version >= 3 {
-            self.distance_unit_exponential = self.read_i64_le_bytes();
+            self.distance_unit_exponential =
+                utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
             dbg!(&self.distance_unit_exponential);
         }
 
@@ -380,7 +370,187 @@ impl Trajectory {
             .seek(SeekFrom::Start(new_pos))
             .expect("no error handling");
     }
-    fn molecules_block_read(&mut self, block: &mut GenBlock) {}
+
+    fn molecules_block_read(&mut self, block: &mut GenBlock) {
+        self.input_file_init();
+        let start_pos = self
+            .input_file
+            .as_mut()
+            .expect("we just init input_file")
+            .stream_position()
+            .expect("no error handling");
+
+        self.molecules.clear();
+
+        self.n_molecules =
+            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
+        dbg!(&self.n_molecules);
+
+        self.n_particles = 0;
+        self.molecules = Vec::with_capacity(self.n_molecules as usize);
+
+        if !self.var_num_atoms {
+            self.molecule_cnt_list = Vec::with_capacity(self.n_molecules as usize);
+        }
+
+        // Read each molecule from file
+        for mol_idx in 0..self.n_molecules {
+            let inp_file = self.input_file.as_mut().expect("init input_file");
+            let mut molecule = Molecule::new();
+            molecule.id = utils::read_i64_le_bytes(inp_file);
+            dbg!(&molecule.id);
+            molecule.name = utils::fread_str(inp_file);
+            molecule.quaternary_str = utils::read_i64_le_bytes(inp_file);
+
+            if !self.var_num_atoms {
+                let count = utils::read_i64_le_bytes(inp_file);
+                self.molecule_cnt_list.push(count);
+            }
+
+            molecule.n_chains = utils::read_i64_le_bytes(inp_file);
+            molecule.n_residues = utils::read_i64_le_bytes(inp_file);
+            molecule.n_atoms = utils::read_i64_le_bytes(inp_file);
+
+            self.n_particles += molecule.n_atoms
+                * self.molecule_cnt_list
+                    [usize::try_from(mol_idx).expect("idx to molecule_cnt_list")];
+
+            println!("calling molecule prematurely");
+            dbg!(&molecule);
+
+            if molecule.n_chains > 0 {
+                molecule.chains = Vec::with_capacity(molecule.n_chains as usize);
+                // Some(&mut molecule.chains[0])
+            } //else {
+            //     None
+            // };
+
+            if molecule.n_residues > 0 {
+                molecule.residues = Vec::with_capacity(molecule.n_residues as usize);
+
+                // Some(&mut molecule.residues[0])
+            } // else {
+            // None
+            // };
+
+            if molecule.n_atoms > 0 {
+                molecule.atoms = Vec::with_capacity(molecule.n_atoms as usize);
+            }
+            // let atom = &mut molecule.atoms[0];
+
+            // index counters to track positions in the flat `residues` and `atoms` vectors
+            let mut residue_idx = 0;
+            let mut atom_idx = 0;
+
+            // Read the chains of the molecule
+            for chain_idx in 0..molecule.n_chains {
+                dbg!("starting chain loop");
+                let mut chain = Chain::new();
+
+                // Link back to parent molecule index
+                chain.parent_molecule_idx = chain_idx as usize;
+                chain.name = String::new();
+
+                chain.read_data(self);
+
+                // Determine this chain’s slice of `self.residues`:
+                let start = residue_idx;
+                let end = start + chain.n_residues;
+                chain.residues_indices = (start as usize, end as usize);
+                residue_idx = end; // next free residue slot
+
+                dbg!(&chain);
+                // Read the residues of the chain
+                for local_idx in start..end {
+                    dbg!("starting residue loop");
+                    // let residue = &mut molecule.residues[local_idx as usize];
+                    let mut residue = Residue::new();
+
+                    // Link back to parent chain index
+                    residue.chain_index = Some(chain_idx as usize);
+                    residue.name = String::new();
+
+                    residue.read_data(self);
+
+                    // Compute atoms_offset = `atom - molecule->atoms` in C
+                    residue.atoms_offset = atom_idx;
+
+                    dbg!(&residue);
+                    let atom_count = residue.n_atoms;
+
+                    // Read the atoms of the residue
+                    for _ in 0..atom_count {
+                        let mut atom = Atom::new();
+
+                        // Link back to parent residue index
+                        residue.chain_index = Some(chain_idx as usize);
+                        atom.residue_index = Some(local_idx);
+
+                        atom.read_data(self);
+
+                        atom_idx += 1;
+                        dbg!(&atom);
+                        molecule.atoms.push(atom);
+                    }
+                    molecule.residues.push(residue);
+                }
+                molecule.chains.push(chain);
+            }
+
+            // If no chains but there *are* residues (i.e., n_chains == 0 && n_residues > 0):
+            if molecule.n_chains == 0 && molecule.n_residues > 0 {
+                for r_index in 0..molecule.n_residues {
+                    let residue = &mut molecule.residues[r_index as usize];
+
+                    // Link to no chain: `residue->chain = 0;`
+                    residue.chain_index = None;
+                    residue.name = String::new();
+
+                    residue.read_data(self);
+
+                    residue.atoms_offset = atom_idx;
+                    let atom_count = residue.n_atoms;
+                    for _ in 0..atom_count {
+                        let mut atom = Atom::new();
+
+                        atom.residue_index = Some(r_index as u64);
+                        atom.read_data(self);
+                        atom_idx += 1;
+                    }
+                }
+            }
+
+            // If no chains and no residues, read atoms directly:
+            if molecule.n_chains == 0 && molecule.n_residues == 0 {
+                for _ in 0..molecule.n_atoms {
+                    let mut atom = Atom::new();
+                    atom.residue_index = None;
+                    atom.read_data(self);
+                }
+            }
+
+            let inp_file = self.input_file.as_mut().expect("init input_file");
+            molecule.n_bonds = utils::read_i64_le_bytes(inp_file);
+
+            for _ in 0..molecule.n_bonds {
+                let mut bond = Bond::new();
+                bond.from_atom_id = utils::read_i64_le_bytes(inp_file);
+                bond.from_atom_id = utils::read_i64_le_bytes(inp_file);
+                molecule.bonds.push(bond);
+            }
+
+            dbg!(&molecule);
+        }
+
+        let new_pos = (start_pos as i128 + block.block_contents_size as i128)
+            .try_into()
+            .expect("set new position when reading block header");
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(new_pos))
+            .expect("no error handling");
+    }
 
     fn block_read_next(&mut self, block: &mut GenBlock) {
         match block.id {
@@ -389,72 +559,6 @@ impl Trajectory {
             BlockID::GeneralInfo => self.general_info_block_read(block),
             BlockID::Molecules => self.molecules_block_read(block),
             BlockID::Undetermined => todo!("undetermined arm of block_read_next"),
-        }
-    }
-
-    pub fn fread_str(&mut self) -> String {
-        // Accumulate bytes here, including the trailing 0:
-        let mut buf: Vec<u8> = Vec::new();
-
-        // Temporary single-byte buffer for reading:
-        let mut byte = [0u8; 1];
-
-        loop {
-            // Try to read exactly one byte
-            match self
-                .input_file
-                .as_mut()
-                .expect("init input_file")
-                .read_exact(&mut byte)
-            {
-                Ok(()) => {
-                    let b = byte[0];
-                    buf.push(b);
-
-                    // // If hash_mode, feed it into the MD5 state right away
-                    // if hash_mode {
-                    //     md5_state.update(&[b]);
-                    // }
-
-                    // Stop on NUL or if we exceed max length
-                    if b == 0 {
-                        break;
-                    }
-                    if buf.len() >= MAX_STR_LEN {
-                        // We hit the same “limit” as the C version (avoid overflow).
-                        // In C, it would stop copying; here we break and use what we have.
-                        break;
-                    }
-                }
-                Err(_) => {
-                    panic!("something went wrong when reading string");
-                    // // EOF or other I/O error. Distinguish EOF (Minor) vs. other errors (Critical).
-                    // if e.kind() == io::ErrorKind::UnexpectedEof {
-                    //     // Clear the EOF flag (if needed) and return “minor” failure.
-                    //     return Err(ReadStrError::Minor);
-                    // } else {
-                    //     return Err(ReadStrError::Critical(e));
-                    // }
-                }
-            }
-        }
-
-        // If we read exactly one byte and it was NUL, that's effectively an empty string.
-        // The C version would then allocate a length-1 buffer and store "\0".
-        // We’ll treat that as an empty Rust String here (dropping the trailing zero):
-        if buf.len() == 1 && buf[0] == 0 {
-            return String::new();
-        }
-
-        // Otherwise, we have some bytes like [b'a', b'b', b'c', 0]. Drop the final 0:
-        if let Some(&0) = buf.last() {
-            buf.pop();
-        }
-
-        // Convert to UTF-8, with a lossy fallback if it wasn’t valid UTF-8:
-        match String::from_utf8(buf) {
-            Ok(valid) => valid,
-            Err(e) => String::from_utf8_lossy(&e.into_bytes()).into_owned(),
         }
     }
 
@@ -480,6 +584,7 @@ impl Trajectory {
                     _ => {}
                 }
 
+                println!("calling block_read_next");
                 self.block_read_next(&mut block);
             }
         }

@@ -1,22 +1,46 @@
-use crate::MAX_STR_LEN;
-use crate::molecule::Molecule;
-use crate::residue::Residue;
+use crate::trajectory::Trajectory;
+use crate::{MAX_STR_LEN, utils};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Chain {
-    /// The molecule containing this chain
-    molecule: Molecule,
+    // /// The molecule containing this chain
+    // pub molecule: Molecule,
+    // Instead of the full molecule, we store the molecule id
+    // otherwise, we'd have a circular reference
+    pub parent_molecule_idx: usize,
     /// A unique (per molecule) ID number of the chain
-    id: usize,
+    pub id: u64,
     /// The name of the chain
-    name: String,
+    pub name: String,
     /// The number of residues in the chain
-    n_residues: usize,
+    pub n_residues: u64,
     /// A list of residues in the chain
-    residues: Vec<Residue>,
+    // pub residues: Vec<Residue>,
+    pub residues_indices: (usize, usize),
 }
 
 impl Chain {
+    pub fn new() -> Self {
+        Self {
+            parent_molecule_idx: 0,
+            id: 0,
+            name: String::new(),
+            n_residues: 0,
+            residues_indices: (0, 0),
+        }
+    }
+
+    // c function: tng_chain_data_read
+    pub fn read_data(&mut self, trajectory_data: &mut Trajectory) {
+        let inp_file = trajectory_data
+            .input_file
+            .as_mut()
+            .expect("init input_file");
+        self.id = utils::read_u64_le_bytes(inp_file);
+        self.name = utils::fread_str(inp_file);
+        self.n_residues = utils::read_u64_le_bytes(inp_file);
+    }
+
     pub fn set_name(&mut self, new_name: String) {
         assert!(!new_name.is_empty(), "new_name must not be empty.");
 

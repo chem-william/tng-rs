@@ -1,7 +1,16 @@
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Bond {
     /// One of the atoms of the bond
-    from_atom_id: i64,
+    pub from_atom_id: i64,
     /// The other atom of the bond
-    to_atom_id: i64,
+    pub to_atom_id: i64,
+}
+
+impl Bond {
+    pub fn new() -> Self {
+        Self {
+            from_atom_id: 0,
+            to_atom_id: 0,
+        }
+    }
 }
