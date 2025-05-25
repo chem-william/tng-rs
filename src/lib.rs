@@ -10,23 +10,23 @@ mod trajectory;
 mod trajectory_frame_set;
 mod utils;
 
-// The maximum allowed length of a string
+/// The maximum length of a date string
+const MAX_DATE_STR_LEN: u64 = 24;
+/// The length of an MD5 hash
+const MD5_HASH_LEN: usize = 16;
+/// The maximum allowed length of a string
 const MAX_STR_LEN: usize = 1024;
 
-// The length of an MD5 has
-const MD5_HASH_LEN: usize = 16;
-
 const API_VERSION: u64 = 8;
+/// Flag to indicate frame dependent data
+const FRAME_DEPENDENT: u8 = 1;
+/// Flag to indicate particle dependent data
+const PARTICLE_DEPENDENT: u8 = 2;
 
 #[cfg(test)]
 mod integration {
     use crate::trajectory::Trajectory;
-
-    use super::*;
-
-    use std::env;
     use std::path::Path;
-    use std::process::exit;
 
     #[test]
     fn it_works() {
@@ -38,6 +38,21 @@ mod integration {
 
         // Read file headers
         traj.file_headers_read();
+
+        assert_eq!(traj.first_user_name, "USER 1");
+        assert_eq!(traj.first_program_name, "tng_testing");
+        assert_eq!(traj.first_computer_name, "Unknown computer");
+        assert_eq!(traj.forcefield_name, "No forcefield");
+        assert_eq!(traj.medium_stride_length, 5);
+        assert_eq!(traj.long_stride_length, 25);
+        assert_eq!(traj.compression_precision, 1000.0);
+        assert_eq!(traj.distance_unit_exponential, -9);
+
+        // Test molecule properties
+        assert_eq!(traj.n_molecules, 1);
+        assert_eq!(traj.molecule_cnt_list[0], 200);
+        assert!(!traj.var_num_atoms);
+        let _ = traj.molecules[0];
 
         // if tng_file_headers_read(&mut traj, TNG_USE_HASH) != TNG_SUCCESS {
         //     eprintln!("tng_file_headers_read failed");

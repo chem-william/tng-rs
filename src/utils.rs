@@ -5,10 +5,14 @@ use crate::MAX_STR_LEN;
 
 /// Read exactly N bytes from `reader` into a `[u8; N]`.  
 /// Panics (or unwraps) on any I/O error.
-fn read_exact_array<const N: usize, R: Read>(reader: &mut R) -> [u8; N] {
+pub(crate) fn read_exact_array<const N: usize, R: Read>(reader: &mut R) -> [u8; N] {
     let mut buf = [0u8; N];
     reader.read_exact(&mut buf).unwrap();
     buf
+}
+
+pub fn read_u8(input_file: &mut File) -> u8 {
+    read_exact_array::<1, _>(input_file)[0]
 }
 
 pub fn read_i64_le_bytes(input_file: &mut File) -> i64 {
@@ -17,6 +21,10 @@ pub fn read_i64_le_bytes(input_file: &mut File) -> i64 {
 
 pub fn read_u64_le_bytes(input_file: &mut File) -> u64 {
     u64::from_le_bytes(read_exact_array::<8, _>(input_file))
+}
+
+pub fn read_f64_bytes(input_file: &mut File) -> f64 {
+    f64::from_le_bytes(read_exact_array::<8, _>(input_file))
 }
 
 pub fn read_bool_le_bytes(input_file: &mut File) -> bool {

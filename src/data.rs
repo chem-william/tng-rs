@@ -1,31 +1,38 @@
-/// Possible formats of data block contents
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DataType {
-    Char,
-    Int,
-    Float,
-    Double,
-}
+use crate::{gen_block::BlockID, trajectory::DataType};
+use std::cmp::max;
 
-#[derive(Debug)]
-enum DataValue {
+#[derive(Debug, Clone)]
+pub enum DataValue {
     Int(Vec<i64>),
     Float(Vec<f32>),
     Double(Vec<f64>),
 }
 
 /// Compression mode is specified in each data block
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Compression {
-    Uncompressed,
-    XTCCompression,
-    TNGCompression,
-    GZipCompression,
+    #[default]
+    Uncompressed = 0,
+    XTC = 1,
+    TNG = 2,
+    GZip = 3,
+}
+
+impl Compression {
+    /// Try to interpret a raw i64 as one of our variants. Unknown values become `Uncompressed`
+    pub fn from_i64(raw: i64) -> Self {
+        match raw {
+            0 => Compression::Uncompressed,
+            1 => Compression::XTC,
+            2 => Compression::TNG,
+            3 => Compression::GZip,
+            _ => Compression::Uncompressed, // fallback
+        }
+    }
 }
 
 /// Indicates what kind of dependency a data block has.
 /// In C, `dependency` was a `char` flag—here we model the common cases.
-/// Adjust variants as needed to match your library’s semantics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dependency {
     /// Data varies per frame.
@@ -38,16 +45,10 @@ pub enum Dependency {
     Independent,
 }
 
-impl Default for Dependency {
-    fn default() -> Self {
-        Dependency::Independent
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct Data {
     /// The block ID of this data block (identifies the type of data).
-    pub block_id: i64,
+    pub block_id: BlockID,
 
     /// The name of the data block. This is used to determine the kind of data is stored.
     pub block_name: String,
@@ -56,7 +57,7 @@ pub struct Data {
     pub data_type: DataType,
 
     /// Frame/particle dependency flag.
-    pub dependency: Dependency,
+    pub dependency: u8,
 
     /// The frame number at which data begins.
     pub first_frame_with_data: i64,
@@ -80,7 +81,8 @@ pub struct Data {
     /// where “n_particles” comes from the enclosing frame set.
     /// A 1-dimensional array of values of length
     ///  n_frames * n_particles * n_values_per_frame
-    pub values: Option<DataValue>,
+    // pub values: Option<DataValue>,
+    pub values: Option<Vec<u8>>,
 
     /// Character‐based data (e.g. labels). Modeled as a 3D array of `String`:
     pub strings: Option<Vec<Vec<Vec<String>>>>,
@@ -89,10 +91,10 @@ pub struct Data {
 impl Data {
     pub fn new(block_id: i64, block_name: impl Into<String>, data_type: DataType) -> Self {
         Data {
-            block_id,
+            block_id: BlockID::Unknown(0),
             block_name: block_name.into(),
             data_type,
-            dependency: Dependency::default(),
+            dependency: 0,
             first_frame_with_data: 0,
             n_frames: 0,
             n_values_per_frame: 0,
@@ -105,67 +107,115 @@ impl Data {
         }
     }
 
-    pub fn allocate_values(
+    /// Allocate memory for storing particle data. The allocated block will be referred to by data->values.
+    ///
+    /// # Panic
+    /// Panics if we run out of memory when trying to allocate `size * frame_alloc * n_particles * n_values_per_frame`.
+    pub fn allocate_particle_data_mem(
         &mut self,
-        frame_alloc: usize,
-        n_particles: usize,
-        n_values_per_frame: usize,
+        n_frames: i64,
+        stride_length: i64,
+        n_particles: i64,
+        n_values_per_frame: i64,
     ) {
-        // Compute total = frame_alloc * n_particles * n_values_per_frame,
-        // checking for overflow just like C would (undefined on overflow).
-        let total = frame_alloc
-            .checked_mul(n_particles)
-            .and_then(|t| t.checked_mul(n_values_per_frame))
-            .expect("no overflow");
+        if n_particles == 0 || n_values_per_frame == 0 {
+            panic!("n_particles == 0 || n_values_per_frame == 0")
+        }
 
-        match self.data_type {
-            DataType::Int => {
-                // Create a fresh Vec<i64>
-                let mut vec: Vec<i64> = Vec::new();
-                // Try to reserve `total` elements; if this fails, bail out:
-                vec.try_reserve(total).expect("able to reserve for int");
-                // Now actually set length (equivalent to zero‐inited or uninitialized C memory,
-                // but here we fill with zeroes for safety; adjust as needed):
-                vec.resize(total, 0_i64);
-                self.values = Some(DataValue::Int(vec));
-            }
+        if self.strings.is_some() && self.data_type == DataType::Char {
+            self.strings = None;
+        }
 
-            DataType::Float => {
-                let mut vec: Vec<f32> = Vec::new();
-                vec.try_reserve(total).expect("able to reserve for Float");
-                vec.resize(total, 0.0_f32);
-                self.values = Some(DataValue::Float(vec));
-            }
+        self.n_frames = n_frames;
+        dbg!(&n_frames);
+        let eff_n_frames = max(1, n_frames);
+        self.stride_length = max(1, stride_length);
+        self.n_values_per_frame = n_values_per_frame;
+        let frame_alloc = ((eff_n_frames - 1) / stride_length + 1) as usize;
 
-            DataType::Double => {
-                let mut vec: Vec<f64> = Vec::new();
-                vec.try_reserve(total).expect("able to reserve for Double");
-                vec.resize(total, 0.0_f64);
-                self.values = Some(DataValue::Double(vec));
-            }
-            DataType::Char => todo!("haven't implemented Char type"),
+        if self.data_type == DataType::Char {
+            // This will panic on OOM.
+            let frames: Vec<Vec<Vec<String>>> =
+                vec![
+                    vec![vec![String::new(); n_values_per_frame as usize]; n_particles as usize];
+                    frame_alloc
+                ];
+            self.strings = Some(frames);
+        } else {
+            let size = match self.data_type {
+                DataType::Int => size_of::<i64>(),
+                DataType::Float => size_of::<f32>(),
+                DataType::Double => size_of::<f64>(),
+                DataType::Char => unreachable!(),
+            };
+
+            // Compute total length: `size * frame_alloc * n_particles * n_values_per_frame`.
+            dbg!(&frame_alloc);
+            dbg!(&n_particles);
+            dbg!(&n_values_per_frame);
+            dbg!(&size);
+            let total_len = frame_alloc
+                .checked_mul(usize::try_from(n_particles).expect("i64 to usize"))
+                .and_then(|x| {
+                    x.checked_mul(usize::try_from(n_values_per_frame).expect("i64 to usize"))
+                })
+                .and_then(|x| x.checked_mul(size))
+                .unwrap_or(0);
+            dbg!(&total_len);
+
+            // One‐shot allocate zeroed Vec<u8>. Panics on OOM.
+            let buf: Vec<u8> = vec![0u8; total_len];
+            self.values = Some(buf);
         }
     }
 
-    /// Initialize the 3D `strings` array with the given dimensions.
-    /// Example usage:
-    // / ```
-    /// // frames x particles x values_per_frame
-    /// data.strings = Some(vec![
-    ///     vec![vec![String::new(); values_per_frame]; n_particles];
-    ///     n_frames
-    /// ]);
-    // / ```
-    pub fn init_strings(&mut self, n_frames: usize, n_particles: usize, values_per_frame: usize) {
-        let mut outer = Vec::with_capacity(n_frames);
-        for _ in 0..n_frames {
-            let mut per_frame = Vec::with_capacity(n_particles);
-            for _ in 0..n_particles {
-                // Initialize a Vec<String> of length `values_per_frame`
-                per_frame.push(vec![String::new(); values_per_frame]);
-            }
-            outer.push(per_frame);
+    /// Allocate memory for storing non-particle data. The allocated block will be referred to by data->values.
+    ///
+    /// # Panic
+    /// Panics if we run out of memory when trying to allocate `strings` of size `size * frame_alloc * n_values_per_frame`.
+    pub fn allocate_data_mem(
+        &mut self,
+        n_frames: i64,
+        stride_length: i64,
+        n_values_per_frame: i64,
+    ) {
+        if n_values_per_frame == 0 {
+            panic!("n_particles == 0 || n_values_per_frame == 0")
         }
-        self.strings = Some(outer);
+
+        if self.strings.is_some() && self.data_type == DataType::Char {
+            self.strings = None;
+        }
+
+        self.n_frames = n_frames;
+        let eff_n_frames = max(1, n_frames);
+        self.stride_length = max(1, stride_length);
+        self.n_values_per_frame = n_values_per_frame;
+        let frame_alloc = ((eff_n_frames - 1) / (stride_length + 1)) as usize;
+
+        if self.data_type == DataType::Char {
+            // This will panic on OOM.
+            let frames_for_group: Vec<Vec<String>> =
+                vec![vec![String::new(); n_values_per_frame as usize]; frame_alloc];
+            let all_groups: Vec<Vec<Vec<String>>> = vec![frames_for_group];
+            self.strings = Some(all_groups);
+        } else {
+            let size = match self.data_type {
+                DataType::Int => size_of::<i64>(),
+                DataType::Float => size_of::<f32>(),
+                DataType::Double => size_of::<f64>(),
+                DataType::Char => size_of::<u8>(), // not used here
+            };
+
+            // Compute total length: `elem_size * frame_alloc * n_values_per_frame`.
+            let total_len = frame_alloc
+                .checked_mul(usize::try_from(n_values_per_frame).expect("i64 to usize"))
+                .and_then(|x| x.checked_mul(size))
+                .unwrap_or(0);
+
+            // One‐shot allocate a zeroed Vec<u8>. Panics on OOM.
+            let buf: Vec<u8> = vec![0u8; total_len];
+            self.values = Some(buf);
+        }
     }
 }

@@ -1,18 +1,79 @@
+use flate2::Decompress;
 use log::warn;
 
 use crate::atom::Atom;
 use crate::bond::Bond;
 use crate::chain::Chain;
-use crate::data::Data;
+use crate::data::{Compression, Data};
 use crate::gen_block::{BlockID, GenBlock};
 use crate::molecule::Molecule;
 use crate::residue::Residue;
 use crate::trajectory_frame_set::TrajectoryFrameSet;
-use crate::{MAX_STR_LEN, utils};
+use crate::{FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT, utils};
 use core::panic;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+
+use flate2::read::{GzDecoder, ZlibDecoder};
+
+/// Non trajectory blocks come before the first frame set block
+#[derive(Debug)]
+pub enum BlockTypeFlag {
+    TrajectoryBlock,
+    NonTrajectoryBlock,
+}
+
+/// Possible formats of data block contents
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DataType {
+    #[default]
+    Char = 0,
+    Int = 1,
+    Float = 2,
+    Double = 3,
+}
+
+impl DataType {
+    /// Try to interpret a raw i64 as a [`DataType`]
+    ///
+    /// # Panic
+    /// Panics on unknown data types
+    pub fn from_u8(raw: u8) -> Self {
+        match raw {
+            0 => DataType::Char,
+            1 => DataType::Int,
+            2 => DataType::Float,
+            3 => DataType::Double,
+            _ => panic!("unknown data type"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BlockMetaInfo {
+    /// The datatype of the data block.
+    pub datatype: DataType,
+    /// The dependency (particle and/or frame dependent)
+    pub dependency: u8,
+    /// set to TRUE if data is not written every frame.
+    pub sparse_data: u8,
+    /// set to the number of values per frame of the data.
+    pub n_values: i64,
+    /// set to the ID of the codec used to compress the data.
+    pub codec_id: Compression,
+    /// set to the first frame with data (only relevant if sparse_data == TRUE)
+    pub first_frame_with_data: i64,
+    /// set to the writing interval of the data (1 if sparse_data == FALSE)
+    pub stride_length: i64,
+    pub n_frames: i64,
+    /// set to the number of the first particle with data written in this block
+    pub num_first_particle: i64,
+    /// set to the number of particles in this data block.
+    pub block_n_particles: i64,
+    /// set to the compression multiplier.
+    pub multiplier: f64,
+}
 
 #[derive(Debug)]
 pub struct Trajectory {
@@ -179,7 +240,7 @@ impl Trajectory {
         }
 
         let truncated = if path.to_str().expect("valid unicode path").len() + 1 > MAX_STR_LEN {
-            &path.to_str().unwrap()[..(MAX_STR_LEN - 1)]
+            &path.to_str().unwrap()[..MAX_STR_LEN - 1]
         } else {
             path.to_str().unwrap()
         };
@@ -230,16 +291,6 @@ impl Trajectory {
         }
     }
 
-    fn read_md5_hash(&mut self) -> i64 {
-        let mut buf = [0u8; 8];
-        self.input_file
-            .as_mut()
-            .expect("input_file should be init")
-            .read_exact(&mut buf)
-            .expect("we dont handle errors yet");
-        i64::from_le_bytes(buf)
-    }
-
     // TODO: maybe these two go on GenBlock
     fn block_header_read(&mut self, block: &mut GenBlock) {
         self.input_file_init();
@@ -256,15 +307,16 @@ impl Trajectory {
         dbg!(&block.header_contents_size);
 
         if block.header_contents_size == 0 {
-            block.id = BlockID::Undetermined;
-            warn!("header_contents_size was 0 block.id is Undetermined");
+            block.id = BlockID::Unknown(0);
+            warn!("header_contents_size was 0 block.id is Unknown(0)");
+            return;
         }
 
         block.block_contents_size =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
         dbg!(&block.block_contents_size);
 
-        block.id = BlockID::from_i64(utils::read_i64_le_bytes(
+        block.id = BlockID::from_u64(utils::read_u64_le_bytes(
             self.input_file.as_mut().expect("init input_file"),
         ));
         dbg!(&block.id);
@@ -295,8 +347,14 @@ impl Trajectory {
             .expect("no error handling");
     }
 
-    fn frame_set_block_read(&mut self, block: &mut GenBlock) {}
-    fn trajectory_mapping_block_read(&mut self, block: &mut GenBlock) {}
+    fn frame_set_block_read(&mut self, block: &mut GenBlock) {
+        dbg!("frame_set_block_read");
+        unreachable!();
+    }
+    fn trajectory_mapping_block_read(&mut self, block: &mut GenBlock) {
+        dbg!("trajectory_mapping_block");
+        unreachable!();
+    }
     fn general_info_block_read(&mut self, block: &mut GenBlock) {
         self.input_file_init();
 
@@ -415,28 +473,17 @@ impl Trajectory {
                 * self.molecule_cnt_list
                     [usize::try_from(mol_idx).expect("idx to molecule_cnt_list")];
 
-            println!("calling molecule prematurely");
-            dbg!(&molecule);
-
             if molecule.n_chains > 0 {
                 molecule.chains = Vec::with_capacity(molecule.n_chains as usize);
-                // Some(&mut molecule.chains[0])
-            } //else {
-            //     None
-            // };
+            }
 
             if molecule.n_residues > 0 {
                 molecule.residues = Vec::with_capacity(molecule.n_residues as usize);
-
-                // Some(&mut molecule.residues[0])
-            } // else {
-            // None
-            // };
+            }
 
             if molecule.n_atoms > 0 {
                 molecule.atoms = Vec::with_capacity(molecule.n_atoms as usize);
             }
-            // let atom = &mut molecule.atoms[0];
 
             // index counters to track positions in the flat `residues` and `atoms` vectors
             let mut residue_idx = 0;
@@ -539,12 +586,507 @@ impl Trajectory {
                 molecule.bonds.push(bond);
             }
 
-            dbg!(&molecule);
+            self.molecules.push(molecule);
         }
 
         let new_pos = (start_pos as i128 + block.block_contents_size as i128)
             .try_into()
             .expect("set new position when reading block header");
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(new_pos))
+            .expect("no error handling");
+    }
+
+    /// Read the meta information of a data block (particle or non-particle data).
+    fn data_block_meta_information_read(&mut self, block: &mut GenBlock) -> BlockMetaInfo {
+        let mut block_meta_info = BlockMetaInfo::default();
+        let inp_file = self.input_file.as_mut().expect("init input_file");
+
+        block_meta_info.datatype = DataType::from_u8(utils::read_u8(inp_file));
+        block_meta_info.dependency = utils::read_u8(inp_file);
+
+        if block_meta_info.dependency & FRAME_DEPENDENT != 0 {
+            block_meta_info.sparse_data = utils::read_u8(inp_file);
+        }
+        block_meta_info.n_values = utils::read_i64_le_bytes(inp_file);
+        block_meta_info.codec_id = Compression::from_i64(utils::read_i64_le_bytes(inp_file));
+
+        block_meta_info.multiplier = if block_meta_info.codec_id != Compression::Uncompressed {
+            dbg!("uncompressed");
+            utils::read_f64_bytes(inp_file)
+        } else {
+            1.0
+        };
+
+        if block_meta_info.dependency & FRAME_DEPENDENT != 0 {
+            if block_meta_info.sparse_data != 0 {
+                block_meta_info.first_frame_with_data = utils::read_i64_le_bytes(inp_file);
+                block_meta_info.stride_length = utils::read_i64_le_bytes(inp_file);
+                block_meta_info.n_frames = self.current_trajectory_frame_set.n_frames
+                    - (block_meta_info.first_frame_with_data
+                        - self.current_trajectory_frame_set.first_frame);
+            } else {
+                block_meta_info.first_frame_with_data =
+                    self.current_trajectory_frame_set.first_frame;
+                block_meta_info.stride_length = 1;
+                block_meta_info.n_frames = self.current_trajectory_frame_set.n_frames;
+            }
+        } else {
+            block_meta_info.first_frame_with_data = 0;
+            block_meta_info.stride_length = 1;
+            block_meta_info.n_frames = 1;
+        }
+
+        if block_meta_info.dependency & PARTICLE_DEPENDENT != 0 {
+            block_meta_info.num_first_particle = utils::read_i64_le_bytes(inp_file);
+            block_meta_info.block_n_particles = utils::read_i64_le_bytes(inp_file);
+        } else {
+            block_meta_info.num_first_particle = -1;
+            block_meta_info.block_n_particles = 0;
+        }
+
+        dbg!(&block_meta_info);
+        block_meta_info
+    }
+
+    fn particle_data_find(&mut self, id: BlockID) -> Option<Data> {
+        let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0
+            || self.current_trajectory_frame_set_output_file_pos > 0;
+
+        let mut block_index = -1;
+        if is_traj_block {
+            // Search in frame_set.tr_particle_data
+            let frame_set = &self.current_trajectory_frame_set;
+            assert_eq!(
+                frame_set.n_particle_data_blocks,
+                frame_set.tr_particle_data.len()
+            );
+            for block in &frame_set.tr_particle_data {
+                if block.block_id == id {
+                    return Some(block.clone());
+                }
+            }
+        } else {
+            // Search in self.non_tr_particle_data
+            assert_eq!(self.n_particle_data_blocks, self.non_tr_particle_data.len());
+            for block in &self.non_tr_particle_data {
+                if block.block_id == id {
+                    return Some(block.clone());
+                }
+            }
+        }
+        None
+    }
+
+    fn data_find(&mut self, id: BlockID) -> Option<Data> {
+        // Determine whether we should search trajectory‐block data
+        let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0
+            || self.current_trajectory_frame_set_output_file_pos > 0;
+
+        let frame_set = &self.current_trajectory_frame_set;
+
+        if is_traj_block {
+            // Search in frame_set.tr_data
+            assert_eq!(frame_set.n_data_blocks, frame_set.tr_data.len());
+            for block in &frame_set.tr_data {
+                if block.block_id == id {
+                    return Some(block.clone());
+                }
+            }
+            // If not found there, fall back to non_tr_data
+            assert_eq!(self.n_data_blocks, self.non_tr_data.len());
+            for block in &self.non_tr_data {
+                if block.block_id == id {
+                    return Some(block.clone());
+                }
+            }
+        } else {
+            // Only search non_tr_data
+            assert_eq!(self.n_data_blocks, self.non_tr_data.len());
+            for block in &self.non_tr_data {
+                if block.block_id == id {
+                    return Some(block.clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    fn particle_data_block_create(&mut self, is_traj_block: bool) {
+        let frame_set = &mut self.current_trajectory_frame_set;
+        if is_traj_block {
+            frame_set.n_particle_data_blocks += 1;
+            frame_set.tr_particle_data.push(Data::default());
+        } else {
+            self.n_particle_data_blocks += 1;
+            self.non_tr_particle_data.push(Data::default());
+        }
+    }
+
+    fn data_block_create(&mut self, is_traj_block: bool) {
+        let frame_set = &mut self.current_trajectory_frame_set;
+        if is_traj_block {
+            frame_set.n_data_blocks += 1;
+            frame_set.tr_data.push(Data::default());
+        } else {
+            self.n_data_blocks += 1;
+            self.non_tr_data.push(Data::default());
+        }
+    }
+
+    fn gzip_uncompress(data: &[u8], compressed_len: u64, uncompressed_len: usize) -> Vec<u8> {
+        let mut output = vec![0u8; uncompressed_len];
+
+        let cursor = &data[..compressed_len as usize];
+        let mut decoder = ZlibDecoder::new(cursor);
+        let mut reader = decoder.take(uncompressed_len as u64);
+        match reader.read(&mut output) {
+            Ok(bytes_read) => {
+                if bytes_read != uncompressed_len {
+                    // C’s `uncompress` updates new_len to the actual decompressed size.
+                    // If it doesn’t match the expected `uncompressed_len`, that’s an error.
+                    eprintln!(
+                        "TNG library: Expected {} bytes, but uncompressed {} bytes.\n",
+                        uncompressed_len, bytes_read
+                    );
+                    panic!();
+                }
+                // Drop the old buffer and replace it with `dest`.
+                output
+            }
+            Err(e) => {
+                // Map common I/O errors to C’s zlib error messages:
+                // - UnexpectedEof  → buffer too small (Z_BUF_ERROR)
+                // - InvalidData    → data corrupt (Z_DATA_ERROR)
+                // - Other I/O errs → generic uncompress error
+                panic!();
+                // match e.kind() {
+                //     io::ErrorKind::UnexpectedEof => {
+                //         eprintln!("TNG library: Destination buffer too small. ");
+                //     }
+                //     io::ErrorKind::InvalidData => {
+                //         eprintln!("TNG library: Data corrupt. ");
+                //     }
+                //     _ => {
+                //         eprintln!("TNG library: Error uncompressing gzipped data. ");
+                //     }
+                // }
+                // TngStatus::Failure
+            }
+        }
+    }
+
+    /// Read the values of a data block
+    /// c function name: tng_data_read
+    fn data_read(&mut self, block: &mut GenBlock, meta_info: BlockMetaInfo, block_data_len: u64) {
+        // we pull what we need early from the current_trajectory_frame_set to avoid the borrow checker
+        let frame_set_n_particles = self.current_trajectory_frame_set.n_particles;
+
+        let size = match meta_info.datatype {
+            DataType::Char => 1,
+            DataType::Int => size_of::<i64>(),
+            DataType::Float => size_of::<f32>(),
+            DataType::Double => size_of::<f64>(),
+        };
+
+        let is_particle_data = if meta_info.block_n_particles > 0 {
+            true
+        } else {
+            if meta_info.codec_id == Compression::XTC || meta_info.codec_id == Compression::TNG {
+                eprintln!("No file specified for reading. {}:{}", file!(), line!());
+                panic!();
+            }
+            false
+        };
+
+        let maybe_data = if is_particle_data {
+            &mut self.particle_data_find(block.id)
+        } else {
+            &mut self.data_find(block.id)
+        };
+
+        let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0;
+
+        // If the block does not exist, create it
+        let data = if let Some(existing) = maybe_data {
+            existing
+        } else {
+            dbg!("data block did not exist");
+            if is_particle_data {
+                self.particle_data_block_create(is_traj_block);
+            } else {
+                self.data_block_create(is_traj_block);
+            }
+
+            let frame_set = &mut self.current_trajectory_frame_set;
+            dbg!(&frame_set);
+            let data = if is_particle_data {
+                if is_traj_block {
+                    frame_set
+                        .tr_particle_data
+                        .last_mut()
+                        .expect("available tr_particle_data")
+                } else {
+                    self.non_tr_particle_data
+                        .last_mut()
+                        .expect("available element on non_tr_particle_data")
+                }
+            } else if is_traj_block {
+                frame_set
+                    .tr_data
+                    .last_mut()
+                    .expect("available element on tr_data")
+            } else {
+                self.non_tr_data
+                    .last_mut()
+                    .expect("available element on non_tr_data")
+            };
+            data.block_id = block.id;
+            data.block_name = block.name.as_ref().expect("block to have a name").clone();
+            data.data_type = meta_info.datatype;
+            data.values = None;
+
+            // from c - FIXME: Memory leak from strings
+            data.strings = None;
+            data.n_frames = 0;
+            data.dependency = 0;
+            if is_particle_data {
+                data.dependency |= PARTICLE_DEPENDENT;
+            }
+
+            if is_traj_block
+                && (meta_info.n_frames > 1
+                    || frame_set.n_frames == meta_info.n_frames
+                    || meta_info.stride_length > 1)
+            {
+                data.dependency |= FRAME_DEPENDENT;
+            }
+            data.codec_id = meta_info.codec_id;
+            data.compression_multiplier = meta_info.multiplier;
+            data.last_retrieved_frame = -1;
+
+            data
+        };
+
+        let tot_n_particles = if is_particle_data {
+            if is_traj_block && self.var_num_atoms {
+                frame_set_n_particles
+            } else {
+                self.n_particles
+            }
+        } else {
+            1
+        };
+
+        let n_frames_div = (meta_info.n_frames - 1) / meta_info.stride_length + 1;
+        let mut contents = vec![0; usize::try_from(block_data_len).expect("u64 to usize")];
+        if self
+            .input_file
+            .as_mut()
+            .expect("init input_file")
+            .read_exact(&mut contents)
+            .is_err()
+        {
+            eprintln!("Cannot read block. {}:{}", file!(), line!());
+            panic!();
+        }
+
+        // TODO: hash mode
+        if data.codec_id != Compression::Uncompressed {
+            let mut full_data_len = (n_frames_div as usize)
+                .checked_mul(size)
+                .and_then(|x| x.checked_mul(meta_info.n_values as usize))
+                .unwrap_or(0);
+            if is_particle_data {
+                full_data_len = full_data_len
+                    .checked_mul(meta_info.block_n_particles as usize)
+                    .expect("mul of meta_info.block_n_particles");
+            }
+
+            let mut actual_contents = Vec::new();
+            match data.codec_id {
+                Compression::Uncompressed => {
+                    full_data_len = usize::try_from(block_data_len).expect("usize from u64")
+                }
+                Compression::XTC => todo!("XTC compression not implemented yet"),
+                Compression::TNG => todo!("TNG is todo"),
+                Compression::GZip => {
+                    dbg!("from gzip: ", full_data_len);
+                    println!("before compression {}", block.block_contents_size);
+                    actual_contents =
+                        Trajectory::gzip_uncompress(&contents, block_data_len, full_data_len);
+                    println!("after compression {}", block.block_contents_size);
+                }
+            }
+
+            // Allocate memory
+            // we assume that data.values is always allocated, but may be None. C code did something like
+            // !data->values
+            if data.values.is_none()
+                || data.n_frames != meta_info.n_frames
+                || data.n_values_per_frame != meta_info.n_values
+            {
+                println!("data.values was None so we allocate");
+                if is_particle_data {
+                    data.allocate_particle_data_mem(
+                        meta_info.n_frames,
+                        meta_info.stride_length,
+                        tot_n_particles,
+                        meta_info.n_values,
+                    )
+                } else {
+                    data.allocate_data_mem(
+                        meta_info.n_frames,
+                        meta_info.stride_length,
+                        meta_info.n_values,
+                    )
+                };
+            }
+            data.first_frame_with_data = meta_info.first_frame_with_data;
+
+            if meta_info.datatype == DataType::Char {
+                // We expect `strings` to be Some(…) and shape at least [n_frames_div][…][…].
+                let strings_3d = match &mut data.strings {
+                    Some(s) => s,
+                    None => unreachable!("data.strings was None"),
+                };
+                let mut offset = 0;
+                // Strings are stored slightly differently if the data block contains
+                // particle data (frames * particles * n_values) or not (frames * n_values)
+                if is_particle_data {
+                    for i in 0..n_frames_div {
+                        // Get the Vec<Vec<String>> for this frame
+                        let first_dim_values = &mut strings_3d[i as usize];
+
+                        for j in meta_info.num_first_particle
+                            ..meta_info.num_first_particle + self.n_particles
+                        {
+                            let second_dim_values = &mut first_dim_values[j as usize];
+                            for k in 0..meta_info.n_values {
+                                // Find the length of the C‐string at `contents[offset..]`, capped by TNG_MAX_STR_LEN
+                                let remaining = &actual_contents[offset..];
+                                let nul_position = remaining
+                                    .iter()
+                                    .position(|&b| b == 0)
+                                    .unwrap_or(MAX_STR_LEN - 1);
+                                // length of this C‐string including NUL
+                                let raw_len = (nul_position + 1).min(MAX_STR_LEN);
+
+                                // Extract the bytes before the NUL (i.e. [offset .. offset + raw_len - 1])
+                                if offset + raw_len > actual_contents.len() {
+                                    panic!("ran out of bounds")
+                                }
+                                let str_bytes = &actual_contents[offset..offset + raw_len - 1];
+
+                                let s = String::from_utf8_lossy(str_bytes).into_owned();
+
+                                // Store/overwrite into `strings[frame_idx][particle_idx][val_idx]`
+                                second_dim_values[k as usize] = s;
+
+                                // Advance offset by raw_len (skip the NUL too)
+                                offset += raw_len;
+                            }
+                        }
+                    }
+                } else {
+                    for i in 0..n_frames_div {
+                        for j in 0..meta_info.n_values {
+                            // Find the length of the C‐string at `contents[offset..]`, capped by TNG_MAX_STR_LEN
+                            let remaining = &actual_contents[offset..];
+                            let nul_position = remaining
+                                .iter()
+                                .position(|&b| b == 0)
+                                .unwrap_or(MAX_STR_LEN - 1);
+                            // length of this C‐string including NUL
+                            let raw_len = (nul_position + 1).min(MAX_STR_LEN);
+
+                            // Extract the bytes before the NUL (i.e. [offset .. offset + raw_len - 1])
+                            if offset + raw_len > actual_contents.len() {
+                                panic!("ran out of bounds")
+                            }
+                            let str_bytes = &actual_contents[offset..offset + raw_len - 1];
+
+                            let s = String::from_utf8_lossy(str_bytes).into_owned();
+
+                            // Store/overwrite into `strings[0][particle_idx][val_idx]`
+                            strings_3d[0][i as usize][j as usize] = s;
+
+                            // Advance offset by raw_len (skip the NUL too)
+                            offset += raw_len;
+                        }
+                    }
+                }
+            } else {
+                if is_particle_data {
+                    // Compute the byte‐offset: n_frames_div * size * n_values * num_first_particle
+                    let offset = usize::try_from(
+                        n_frames_div
+                            .checked_mul(size as i64)
+                            .and_then(|v| v.checked_mul(meta_info.n_values))
+                            .and_then(|v| v.checked_mul(meta_info.num_first_particle))
+                            .expect("offset overflow"),
+                    )
+                    .expect("i64 to usize");
+                    dbg!(&offset);
+
+                    dbg!(&full_data_len);
+                    dbg!(&n_frames_div);
+                    dbg!(&size);
+                    dbg!(&meta_info.n_values);
+                    dbg!(&meta_info.num_first_particle);
+                    data.values.as_mut().expect("data.values to be Some")
+                        [offset..offset + full_data_len]
+                        .copy_from_slice(&actual_contents[..full_data_len]);
+                } else {
+                    data.values.as_mut().expect("data.values to be Some")[..full_data_len]
+                        .copy_from_slice(&actual_contents[..full_data_len]);
+                }
+
+                // TODO: handle endianness here
+                if data.codec_id != Compression::TNG {
+                    match data.data_type {
+                        DataType::Float => {}
+                        DataType::Int => {}
+                        DataType::Double => {}
+                        DataType::Char => {}
+                    }
+                }
+            }
+            dbg!(&data.values.as_ref().expect("something")[..10]);
+        }
+    }
+
+    /// Read the contents of a data block (particle or non-particle data)
+    fn data_block_contents_read(&mut self, block: &mut GenBlock) {
+        self.input_file_init();
+        let start_pos = self
+            .input_file
+            .as_mut()
+            .expect("we just init input_file")
+            .stream_position()
+            .expect("no error handling");
+        dbg!(start_pos);
+
+        let meta_info = self.data_block_meta_information_read(block);
+
+        let current_pos = self
+            .input_file
+            .as_mut()
+            .expect("we just init input_file")
+            .stream_position()
+            .expect("no error handling");
+        let remaining_len = block.block_contents_size as u64 - (current_pos - start_pos);
+
+        self.data_read(block, meta_info, remaining_len);
+
+        // TODO: handle md5 hash
+
+        // if hash_mode == TNG_USE_HASH {}
+
+        let new_pos = start_pos + block.block_contents_size as u64;
         self.input_file
             .as_mut()
             .expect("init input_file")
@@ -558,7 +1100,28 @@ impl Trajectory {
             BlockID::ParticleMapping => self.trajectory_mapping_block_read(block),
             BlockID::GeneralInfo => self.general_info_block_read(block),
             BlockID::Molecules => self.molecules_block_read(block),
-            BlockID::Undetermined => todo!("undetermined arm of block_read_next"),
+            // id if id >= BlockID::TrajBoxShape => self.data_block_contents_read(block),
+            id => {
+                if id >= BlockID::TrajBoxShape {
+                    self.data_block_contents_read(block);
+                } else {
+                    // We skip to the next block
+                    let current_pos = self
+                        .input_file
+                        .as_mut()
+                        .expect("we just init input_file")
+                        .stream_position()
+                        .expect("no error handling");
+                    let new_pos = (current_pos as i128 + block.block_contents_size as i128)
+                        .try_into()
+                        .expect("set new position when reading block header");
+                    self.input_file
+                        .as_mut()
+                        .expect("init input_file")
+                        .seek(SeekFrom::Start(new_pos))
+                        .expect("no error handling");
+                }
+            }
         }
     }
 
@@ -578,14 +1141,28 @@ impl Trajectory {
                 }
                 self.block_header_read(&mut block);
 
-                // 3) If `block.id == -1` or `block.id == TNG_TRAJECTORY_FRAME_SET`, exit loop
+                // If `block.id == -1` or `block.id == TNG_TRAJECTORY_FRAME_SET`, exit loop
                 match block.id {
-                    BlockID::Undetermined | BlockID::TrajectoryFrameSet => break,
+                    BlockID::Unknown(0) | BlockID::TrajectoryFrameSet => break,
                     _ => {}
                 }
 
                 println!("calling block_read_next");
                 self.block_read_next(&mut block);
+                prev_pos = self
+                    .input_file
+                    .as_mut()
+                    .expect("we just init input_file")
+                    .stream_position()
+                    .expect("no error handling");
+            }
+
+            if block.id == BlockID::TrajectoryFrameSet {
+                self.input_file
+                    .as_mut()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(prev_pos))
+                    .expect("no error handling");
             }
         }
     }
