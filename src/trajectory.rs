@@ -1166,4 +1166,47 @@ impl Trajectory {
             }
         }
     }
+
+    /// Find a molecule by name and/or ID.
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: The name of the molecule to search for. If this is an empty string,
+    ///   only `id` is used.
+    /// - `id`: The numeric ID of the molecule to search for. If this is `-1`, only `name`
+    ///   is used.
+    pub fn find_molecule(&self, name: &str, id: i64) -> Option<&Molecule> {
+        if name.is_empty() && id == -1 {
+            // Return first if available
+            // return self.molecules.first().ok_or(MoleculeFindError::NotFound);
+            return self.molecules.first();
+        }
+
+        if !name.is_empty() && id != -1 {
+            // Both name and id must match
+            for mol in &self.molecules {
+                if mol.name == name && mol.id == id {
+                    return Some(mol);
+                }
+            }
+        } else if !name.is_empty() {
+            // Only name match
+            for mol in &self.molecules {
+                if mol.name == name {
+                    return Some(mol);
+                }
+            }
+        } else {
+            // Only id match
+            for mol in &self.molecules {
+                if mol.id == id {
+                    return Some(mol);
+                }
+            }
+        }
+
+        None
+
+        // Err(MoleculeFindError::NotFound)
+    }
 }

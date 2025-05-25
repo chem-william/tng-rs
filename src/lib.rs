@@ -54,6 +54,8 @@ mod integration {
         assert!(!traj.var_num_atoms);
         let _ = traj.molecules[0];
 
+        assert!(traj.find_molecule("water", -1).is_some());
+
         // if tng_file_headers_read(&mut traj, TNG_USE_HASH) != TNG_SUCCESS {
         //     eprintln!("tng_file_headers_read failed");
         //     tng_trajectory_destroy(traj);
