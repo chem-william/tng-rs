@@ -130,7 +130,7 @@ pub struct Trajectory {
     /// Vector of molecule definitions.
     pub molecules: Vec<Molecule>,
     /// Count of each molecule type (length = `n_molecules`).
-    pub molecule_cnt_list: Vec<i64>,
+    pub(crate) molecule_cnt_list: Vec<i64>,
     /// Total number of particles (or atoms). If variable, updated per frame set.
     pub n_particles: i64,
 
@@ -1199,5 +1199,28 @@ impl Trajectory {
         None
 
         // Err(MoleculeFindError::NotFound)
+    }
+
+    /// Get the list of the count of each molecule
+    pub fn molecule_cnt_list_get(&self) -> Vec<i64> {
+        if self.var_num_atoms {
+            self.current_trajectory_frame_set.molecule_cnt_list.clone()
+        } else {
+            self.molecule_cnt_list.clone()
+        }
+    }
+
+    pub fn molecule_id_of_particle_nr_get(&self, nr: i64) -> Option<i64> {
+        let mut count = 0;
+        let molecule_count_list = self.molecule_cnt_list_get();
+
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            if count + mol.n_atoms * mol_count - 1 < nr {
+                count += mol.n_atoms * mol_count;
+                continue;
+            }
+            return Some(mol.id);
+        }
+        None
     }
 }

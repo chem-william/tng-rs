@@ -52,9 +52,67 @@ mod integration {
         assert_eq!(traj.n_molecules, 1);
         assert_eq!(traj.molecule_cnt_list[0], 200);
         assert!(!traj.var_num_atoms);
-        let _ = traj.molecules[0];
+        let molecule = &traj.molecules[0];
 
         assert!(traj.find_molecule("water", -1).is_some());
+
+        assert_eq!(molecule.name, "water");
+
+        // num_chains_get
+        assert_eq!(molecule.n_chains, 1);
+
+        // chain_of_index_get
+        let chain = &molecule.chains[0];
+
+        // chain_find
+        let chain = molecule
+            .chain_find("W", -1)
+            .expect("'W' chain to be present");
+
+        // num_residues_get
+        assert_eq!(molecule.n_residues, 1);
+
+        // residue_of_index_get
+        let residue = &molecule.residues[0];
+
+        // num_atoms_get
+        assert_eq!(molecule.n_atoms, 3);
+
+        // atom_of_index_get
+        let atom = &molecule.atoms[0];
+        molecule.atom_find("O", -1).expect("'O' to be present");
+
+        // chain_name_get
+        assert_eq!(&chain.name, "W");
+
+        // chain_num_residues_get
+        assert_eq!(chain.n_residues, 1);
+
+        // chain_residue_of_index_get
+        let chain_residue = &molecule.residues[chain.residues_indices.0];
+
+        // chain_residue_find
+        let residue = &molecule
+            .residue_find("WAT", -1)
+            .expect("residue on molecule");
+
+        // residue_name_get
+        assert_eq!(residue.name, "WAT");
+
+        // residue_num_atoms_get
+        assert_eq!(residue.n_atoms, 3);
+
+        // residue_atom_of_index_get
+        let atom_of_residue = molecule.residue_atom_of_index(0, residue);
+
+        // atom_name_get
+        assert_eq!(atom_of_residue.name, "O");
+
+        // atom_type_get
+        assert_eq!(atom_of_residue.atom_type, "O");
+
+        // molecule_id_of_particle_nr_get
+        assert_eq!(traj.molecule_id_of_particle_nr_get(0), Some(1));
 
         // if tng_file_headers_read(&mut traj, TNG_USE_HASH) != TNG_SUCCESS {
         //     eprintln!("tng_file_headers_read failed");

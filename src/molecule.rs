@@ -44,4 +44,45 @@ impl Molecule {
             bonds: Vec::new(),
         }
     }
+
+    // TODO: maybe split these into two functions that each take just a name or id?
+    pub fn chain_find(&self, name: &str, id: i64) -> Option<Chain> {
+        let chain_out = self.chains.iter().rev().find(|chain| {
+            let name_match = name.is_empty() || chain.name == name;
+            let id_match = id == -1 || chain.id as i64 == id;
+            name_match && id_match
+        });
+
+        chain_out.cloned()
+    }
+
+    // TODO: maybe split these into two functions that each take just a name or id?
+    pub fn atom_find(&self, name: &str, id: i64) -> Option<Atom> {
+        let atom_out = self.atoms.iter().rev().find(|atom| {
+            let name_match = name.is_empty() || atom.name == name;
+            let id_match = id == -1 || atom.id == id;
+            name_match && id_match
+        });
+
+        atom_out.cloned()
+    }
+
+    // TODO: maybe split these into two functions that each take just a name or id?
+    pub fn residue_find(&self, name: &str, id: i64) -> Option<Residue> {
+        let residue_out = self.residues.iter().rev().find(|residue| {
+            let name_match = name.is_empty() || residue.name == name;
+            let id_match = id == -1 || residue.id as i64 == id;
+            name_match && id_match
+        });
+
+        residue_out.cloned()
+    }
+
+    /// Retrieve the atom of a residue with specified index in the list of atoms
+    ///
+    /// # Panic
+    /// Panics if `index` + `residue.atoms_offset` is out of bounds for `self.atoms`
+    pub fn residue_atom_of_index(&self, index: usize, residue: &Residue) -> Atom {
+        self.atoms[residue.atoms_offset + index].clone()
+    }
 }
