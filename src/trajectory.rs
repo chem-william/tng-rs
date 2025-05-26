@@ -367,23 +367,14 @@ impl Trajectory {
         let inp_file = self.input_file.as_mut().expect("init input_file");
 
         self.first_program_name = utils::fread_str(inp_file);
-        dbg!(&self.first_program_name);
         self.last_program_name = utils::fread_str(inp_file);
-        dbg!(&self.last_program_name);
         self.first_user_name = utils::fread_str(inp_file);
-        dbg!(&self.first_user_name);
         self.last_user_name = utils::fread_str(inp_file);
-        dbg!(&self.last_user_name);
         self.first_computer_name = utils::fread_str(inp_file);
-        dbg!(&self.first_computer_name);
         self.last_computer_name = utils::fread_str(inp_file);
-        dbg!(&self.last_computer_name);
         self.first_pgp_signature = utils::fread_str(inp_file);
-        dbg!(&self.first_pgp_signature);
         self.last_pgp_signature = utils::fread_str(inp_file);
-        dbg!(&self.last_pgp_signature);
         self.forcefield_name = utils::fread_str(inp_file);
-        dbg!(&self.forcefield_name);
 
         self.creation_time =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
