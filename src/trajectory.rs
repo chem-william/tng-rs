@@ -1,5 +1,5 @@
-use flate2::Decompress;
 use log::warn;
+use std::cmp::max;
 
 use crate::atom::Atom;
 use crate::bond::Bond;
@@ -39,6 +39,15 @@ impl DataType {
             2 => DataType::Float,
             3 => DataType::Double,
             _ => panic!("unknown data type"),
+        }
+    }
+
+    fn get_size(&self) -> usize {
+        match self {
+            DataType::Char => 1,
+            DataType::Int => size_of::<i64>(),
+            DataType::Float => size_of::<f32>(),
+            DataType::Double => size_of::<f64>(),
         }
     }
 }
@@ -290,7 +299,7 @@ impl Trajectory {
 
         let start_pos = self
             .input_file
-            .as_mut()
+            .as_ref()
             .expect("we just init input_file")
             .stream_position()
             .expect("no error handling");
@@ -315,7 +324,7 @@ impl Trajectory {
         dbg!(&block.id);
 
         self.input_file
-            .as_mut()
+            .as_ref()
             .expect("we just init file")
             .read_exact(&mut block.md5_hash)
             .expect("no error handling");
@@ -334,7 +343,7 @@ impl Trajectory {
             .try_into()
             .expect("set new position when reading block header");
         self.input_file
-            .as_mut()
+            .as_ref()
             .expect("init input_file")
             .seek(SeekFrom::Start(new_pos))
             .expect("no error handling");
@@ -637,11 +646,11 @@ impl Trajectory {
         block_meta_info
     }
 
-    fn particle_data_find(&mut self, id: BlockID) -> Option<Data> {
+    fn particle_data_find(&self, id: BlockID) -> Option<Data> {
         let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0
             || self.current_trajectory_frame_set_output_file_pos > 0;
 
-        let mut block_index = -1;
+        // let block_index = -1;
         if is_traj_block {
             // Search in frame_set.tr_particle_data
             let frame_set = &self.current_trajectory_frame_set;
@@ -666,7 +675,7 @@ impl Trajectory {
         None
     }
 
-    fn data_find(&mut self, id: BlockID) -> Option<Data> {
+    fn data_find(&self, id: BlockID) -> Option<Data> {
         // Determine whether we should search trajectory‐block data
         let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0
             || self.current_trajectory_frame_set_output_file_pos > 0;
@@ -771,12 +780,7 @@ impl Trajectory {
         // we pull what we need early from the current_trajectory_frame_set to avoid the borrow checker
         let frame_set_n_particles = self.current_trajectory_frame_set.n_particles;
 
-        let size = match meta_info.datatype {
-            DataType::Char => 1,
-            DataType::Int => size_of::<i64>(),
-            DataType::Float => size_of::<f32>(),
-            DataType::Double => size_of::<f64>(),
-        };
+        let size = meta_info.datatype.get_size();
 
         let is_particle_data = if meta_info.block_n_particles > 0 {
             true
@@ -900,11 +904,8 @@ impl Trajectory {
                 Compression::XTC => todo!("XTC compression not implemented yet"),
                 Compression::TNG => todo!("TNG is todo"),
                 Compression::GZip => {
-                    dbg!("from gzip: ", full_data_len);
-                    println!("before compression {}", block.block_contents_size);
                     actual_contents =
                         Trajectory::gzip_uncompress(&contents, block_data_len, full_data_len);
-                    println!("after compression {}", block.block_contents_size);
                 }
             }
 
@@ -915,7 +916,6 @@ impl Trajectory {
                 || data.n_frames != meta_info.n_frames
                 || data.n_values_per_frame != meta_info.n_values
             {
-                println!("data.values was None so we allocate");
                 if is_particle_data {
                     data.allocate_particle_data_mem(
                         meta_info.n_frames,
@@ -1369,5 +1369,174 @@ impl Trajectory {
             }
         }
         Some((n_bonds, from_atoms.clone(), to_atoms.clone()))
+    }
+
+    /// Translate from the particle numbering used in a frame set to the real
+    /// particle numbering - used in the molecule description.
+    fn particle_mapping_get_real_particle(
+        &self,
+        frame_set: &TrajectoryFrameSet,
+        local: i64,
+    ) -> Option<i64> {
+        let n_blocks = frame_set.n_mapping_blocks;
+
+        if n_blocks <= 0 {
+            return Some(local);
+        }
+
+        for mapping in &frame_set.mappings {
+            let first = mapping.num_first_particle;
+            if local < first || local >= first + mapping.n_particles {
+                continue;
+            }
+            return Some(
+                mapping.real_particle_numbers
+                    [usize::try_from(local - first).expect("local - first to usize")],
+            );
+        }
+
+        None
+    }
+
+    /// Retrieve a vector (1D array) of particle data, from the last read frame set
+    pub fn particle_data_vector(
+        &mut self,
+        is_particle_data: bool,
+        block_id: BlockID,
+    ) -> Option<(i64, Vec<f64>)> {
+        let mut n_particles = 0;
+        let mut block_index = -1;
+
+        let data = if is_particle_data {
+            self.particle_data_find(block_id)
+        } else {
+            self.data_find(block_id)
+        };
+
+        if data.is_none() {
+            let mut block = GenBlock::new();
+            let mut file_pos = self
+                .input_file
+                .as_ref()
+                .expect("we just init input_file")
+                .stream_position()
+                .expect("no error handling");
+
+            // Read all blocks until next frame set block
+            self.block_header_read(&mut block);
+            loop {
+                if file_pos >= self.input_file_len {
+                    break;
+                }
+                match block.id {
+                    BlockID::Unknown(0) | BlockID::TrajectoryFrameSet => break,
+                    _ => {}
+                }
+
+                // Use hash by default (also TODO)
+                self.block_read_next(&mut block);
+                file_pos = self
+                    .input_file
+                    .as_ref()
+                    .expect("we just init input_file")
+                    .stream_position()
+                    .expect("no error handling");
+                if file_pos < self.input_file_len {
+                    self.block_header_read(&mut block);
+                }
+            }
+
+            let frame_set = &self.current_trajectory_frame_set;
+            for i in 0..frame_set.n_particle_data_blocks {
+                let data = &frame_set.tr_particle_data[i];
+                if data.block_id == block_id {
+                    block_index = i64::try_from(i).expect("index to i64");
+                }
+            }
+
+            if block_index < 0 {
+                return None;
+            }
+        }
+        let data_unwrapped = data.expect("we just init");
+
+        let frame_set = &self.current_trajectory_frame_set;
+        if is_particle_data {
+            let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0;
+
+            n_particles = if is_traj_block && self.var_num_atoms {
+                frame_set.n_particles
+            } else {
+                self.n_particles
+            };
+        }
+
+        let data_type = data_unwrapped.data_type;
+
+        let size = data_type.get_size();
+
+        let n_frames = max(1, data_unwrapped.n_frames);
+        let n_values_per_frame = data_unwrapped.n_values_per_frame;
+        let stride_length = data_unwrapped.stride_length;
+
+        let n_frames_div = (n_frames - 1) / stride_length + 1;
+        let mut full_data_len =
+            n_frames_div * i64::try_from(size).expect("size to i64") * n_values_per_frame;
+        if is_particle_data {
+            full_data_len *= n_particles;
+        }
+
+        let mut values = vec![0u8; full_data_len as usize];
+        let unwrapped_values = data_unwrapped.values.expect("values to be avail");
+
+        if !is_particle_data || frame_set.n_mapping_blocks <= 0 {
+            values[..full_data_len as usize]
+                .copy_from_slice(&unwrapped_values[..full_data_len as usize]);
+        } else {
+            let byte_per_particle = size * n_values_per_frame as usize;
+            for i in 0..n_frames {
+                for j in 0..n_particles {
+                    let mapping = self
+                        .particle_mapping_get_real_particle(frame_set, j)
+                        .expect("from particle frame to real numbering");
+
+                    let src_base = ((i * n_values_per_frame + j * n_values_per_frame)
+                        * i64::try_from(size).expect("size to i64"))
+                        as usize;
+                    let dst_base = ((i * n_values_per_frame + mapping * n_values_per_frame)
+                        * i64::try_from(size).expect("size to i64"))
+                        as usize;
+
+                    values[dst_base..dst_base + byte_per_particle]
+                        .copy_from_slice(&unwrapped_values[src_base..src_base + byte_per_particle]);
+                }
+            }
+        }
+
+        let float_values: Vec<f64> = match data_type {
+            DataType::Char => todo!("haven't implemented values to strings"),
+            DataType::Int => values
+                .chunks_exact(8)
+                .map(|chunk| {
+                    let arr = <[u8; 8]>::try_from(chunk).expect("Chunk should be 8 bytes");
+                    i64::from_le_bytes(arr) as f64
+                })
+                .collect(),
+            DataType::Float => values
+                .chunks_exact(4)
+                .map(|chunk| {
+                    let arr = <[u8; 4]>::try_from(chunk).expect("Chunk should be 4 bytes");
+                    f32::from_le_bytes(arr) as f64
+                })
+                .collect(),
+            DataType::Double => values
+                .chunks_exact(8)
+                .map(|chunk| {
+                    let arr = <[u8; 8]>::try_from(chunk).expect("Chunk should be 8 bytes");
+                    f64::from_le_bytes(arr)
+                })
+                .collect(),
+        };
+        Some((n_particles, float_values))
     }
 }

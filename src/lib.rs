@@ -25,7 +25,8 @@ const PARTICLE_DEPENDENT: u8 = 2;
 
 #[cfg(test)]
 mod integration {
-    use crate::{molecule::Molecule, trajectory::Trajectory};
+    use crate::{gen_block::BlockID, molecule::Molecule, trajectory::Trajectory, utils};
+    use assert_approx_eq::assert_approx_eq;
     use std::path::Path;
 
     #[test]
@@ -144,11 +145,19 @@ mod integration {
         assert_eq!(from_atoms.len(), 400);
         assert_eq!(to_atoms.len(), 400);
 
-        // if tng_file_headers_read(&mut traj, TNG_USE_HASH) != TNG_SUCCESS {
-        //     eprintln!("tng_file_headers_read failed");
-        //     tng_trajectory_destroy(traj);
-        //     exit(1);
-        // }
+        // particle_data_vector_get
+        let (read_n_particles, masses) = traj
+            .particle_data_vector(true, BlockID::TrajMasses)
+            .expect("particle data");
+        // TODO
+        // assert_eq!(read_n_particles, n_particles);
+
+        // Above we have written only water molecules (in the order oxygen, hydrogen, hydrogen ...).
+        // Test that the first and second as well as the very last atoms (oxygen, hydrogen and hydrogen)
+
+        assert_approx_eq!(masses[0], 16.0);
+        assert_approx_eq!(masses[1], 1.008);
+        assert_approx_eq!(masses.last().unwrap(), 1.008);
 
         // // How many frames in the file?
         // let mut tot_n_frames: i64 = 0;
