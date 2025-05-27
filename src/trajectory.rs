@@ -15,14 +15,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use flate2::read::{GzDecoder, ZlibDecoder};
-
-/// Non trajectory blocks come before the first frame set block
-#[derive(Debug)]
-pub enum BlockTypeFlag {
-    TrajectoryBlock,
-    NonTrajectoryBlock,
-}
+use flate2::read::ZlibDecoder;
 
 /// Possible formats of data block contents
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
