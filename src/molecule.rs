@@ -31,9 +31,9 @@ pub struct Molecule {
 impl Molecule {
     pub fn new() -> Self {
         Self {
-            id: 0,
             quaternary_str: 1,
             name: String::new(),
+            id: 0,
             n_chains: 0,
             chains: Vec::new(),
             n_residues: 0,

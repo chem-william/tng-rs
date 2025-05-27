@@ -25,7 +25,7 @@ const PARTICLE_DEPENDENT: u8 = 2;
 
 #[cfg(test)]
 mod integration {
-    use crate::trajectory::Trajectory;
+    use crate::{molecule::Molecule, trajectory::Trajectory};
     use std::path::Path;
 
     #[test]
@@ -113,6 +113,36 @@ mod integration {
 
         // molecule_id_of_particle_nr_get
         assert_eq!(traj.molecule_id_of_particle_nr_get(0), Some(1));
+
+        // residue_id_of_particle_nr_get
+        assert_eq!(traj.residue_id_of_particle_nr_get(0), Some(0));
+
+        // global_residue_id_of_particle_nr_get
+        assert_eq!(traj.global_residue_id_of_particle_nr_get(599), Some(199));
+
+        // molecule_name_of_particle_nr_get
+        assert_eq!(traj.molecule_name_of_particle_nr_get(0), "water");
+
+        // chain_name_of_particle_nr_get
+        assert_eq!(traj.chain_name_of_particle_nr_get(0), "W");
+
+        // residue_name_of_particle_nr_get
+        assert_eq!(traj.residue_name_of_particle_nr_get(0), "WAT");
+
+        // atom_name_of_particle_nr_get
+        assert_eq!(traj.atom_name_of_particle_nr_get(0), "O");
+
+        // molecule_alloc
+        let mut molecule = Molecule::new();
+        molecule.name = "TEST".to_string();
+        traj.molecule_existing_add(molecule);
+
+        // molsystem_bonds_get
+        let (bonds, from_atoms, to_atoms) =
+            traj.molsystem_bonds_get().expect("molsystem to have bonds");
+        assert_eq!(bonds, 400);
+        assert_eq!(from_atoms.len(), 400);
+        assert_eq!(to_atoms.len(), 400);
 
         // if tng_file_headers_read(&mut traj, TNG_USE_HASH) != TNG_SUCCESS {
         //     eprintln!("tng_file_headers_read failed");

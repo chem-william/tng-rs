@@ -4,7 +4,8 @@ use crate::{trajectory::Trajectory, utils};
 pub struct Atom {
     // /// The residue containing this atom
     // residue: Residue,
-    pub residue_index: Option<u64>,
+    /// The index of the residue containing this atom
+    pub residue_index: Option<usize>,
     /// A unique (per molecule) ID number of the atom
     pub id: i64,
     /// The atom_type (depending on the forcefield)

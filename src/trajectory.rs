@@ -522,7 +522,8 @@ impl Trajectory {
 
                         // Link back to parent residue index
                         residue.chain_index = Some(chain_idx as usize);
-                        atom.residue_index = Some(local_idx);
+                        atom.residue_index =
+                            Some(usize::try_from(local_idx).expect("local_idx to usize"));
 
                         atom.read_data(self);
 
@@ -551,7 +552,8 @@ impl Trajectory {
                     for _ in 0..atom_count {
                         let mut atom = Atom::new();
 
-                        atom.residue_index = Some(r_index as u64);
+                        atom.residue_index =
+                            Some(usize::try_from(r_index).expect("r_index to usize"));
                         atom.read_data(self);
                         atom_idx += 1;
                     }
@@ -1202,11 +1204,11 @@ impl Trajectory {
     }
 
     /// Get the list of the count of each molecule
-    pub fn molecule_cnt_list_get(&self) -> Vec<i64> {
+    pub fn molecule_cnt_list_get(&self) -> &Vec<i64> {
         if self.var_num_atoms {
-            self.current_trajectory_frame_set.molecule_cnt_list.clone()
+            &self.current_trajectory_frame_set.molecule_cnt_list
         } else {
-            self.molecule_cnt_list.clone()
+            &self.molecule_cnt_list
         }
     }
 
@@ -1222,5 +1224,157 @@ impl Trajectory {
             return Some(mol.id);
         }
         None
+    }
+
+    pub fn residue_id_of_particle_nr_get(&self, nr: i64) -> Option<i64> {
+        let mut count = 0;
+        let molecule_count_list = self.molecule_cnt_list_get();
+
+        let mut atom_id = None;
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            if count + mol.n_atoms * mol_count - 1 < nr {
+                count += mol.n_atoms * mol_count;
+                continue;
+            }
+            atom_id = Some(mol.atoms[(nr % mol.n_atoms) as usize].id)
+        }
+        atom_id
+    }
+
+    /// Get the residue id (based on other molecules and molecule counts) of real
+    /// particle number (number in the mol system)
+    pub fn global_residue_id_of_particle_nr_get(&self, nr: i64) -> Option<u64> {
+        let mut count = 0;
+        let mut offset = 0;
+        let molecule_count_list = self.molecule_cnt_list_get();
+
+        let mut atom_residue_index = None;
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            if count + mol.n_atoms * mol_count - 1 < nr {
+                count += mol.n_atoms * mol_count;
+                offset += mol.n_residues * mol_count;
+                continue;
+            }
+            let residue_idx = mol.atoms[(nr % mol.n_atoms) as usize]
+                .residue_index
+                .expect("residue index");
+            offset += mol.n_residues * ((nr - count) / mol.n_atoms);
+            atom_residue_index = Some(mol.residues[residue_idx as usize].id + offset as u64);
+        }
+        atom_residue_index
+    }
+
+    /// Get the molecule name of real particle number (number in mol system)
+    pub fn molecule_name_of_particle_nr_get(&self, nr: i64) -> String {
+        let mut count = 0;
+        let molecule_count_list = self.molecule_cnt_list_get();
+
+        let mut name = String::new();
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            if count + mol.n_atoms * mol_count - 1 < nr {
+                count += mol.n_atoms * mol_count;
+                continue;
+            }
+            name = mol.name.clone();
+        }
+        name
+    }
+
+    /// Get the chain name of real particle number (number in mol system)
+    pub fn chain_name_of_particle_nr_get(&self, nr: i64) -> String {
+        let mut count = 0;
+        let molecule_count_list = self.molecule_cnt_list_get();
+
+        let mut name = String::new();
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            if count + mol.n_atoms * mol_count - 1 < nr {
+                count += mol.n_atoms * mol_count;
+                continue;
+            }
+            let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
+            let residue_index = atom.residue_index.expect("atom in residue");
+            let chain_index = &mol.residues[residue_index]
+                .chain_index
+                .expect("residue in chain");
+            name = mol.chains[*chain_index].name.clone();
+        }
+        name
+    }
+
+    /// Get the residue name of real particle number (number in mol system).
+    pub fn residue_name_of_particle_nr_get(&self, nr: i64) -> String {
+        let mut count = 0;
+        let molecule_count_list = self.molecule_cnt_list_get();
+
+        let mut name = String::new();
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            if count + mol.n_atoms * mol_count - 1 < nr {
+                count += mol.n_atoms * mol_count;
+                continue;
+            }
+            let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
+            let residue_index = atom.residue_index.expect("atom in residue");
+            name = mol.residues[residue_index].name.clone();
+        }
+        name
+    }
+
+    /// Get the atom name of real particle number (number in mol system).
+    pub fn atom_name_of_particle_nr_get(&self, nr: i64) -> String {
+        let mut count = 0;
+        let molecule_count_list = self.molecule_cnt_list_get();
+
+        let mut name = String::new();
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            if count + mol.n_atoms * mol_count - 1 < nr {
+                count += mol.n_atoms * mol_count;
+                continue;
+            }
+            let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
+            name = atom.name.clone();
+        }
+        name
+    }
+
+    /// Add an existing [`Molecule`] to [`Self`]
+    pub fn molecule_existing_add(&mut self, molecule: Molecule) {
+        self.molecules.last().map(|mol| mol.id + 1).unwrap_or(1);
+        self.molecules.push(molecule);
+        self.molecule_cnt_list.push(0);
+        self.n_molecules += 1;
+    }
+
+    /// Get the bonds of the current molecular system
+    pub fn molsystem_bonds_get(&self) -> Option<(usize, Vec<i64>, Vec<i64>)> {
+        let molecule_count_list = self.molecule_cnt_list_get();
+
+        let mut n_bonds = 0;
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            n_bonds +=
+                usize::try_from(mol_count * mol.n_bonds).expect("amount of bonds to be positive");
+        }
+
+        if n_bonds == 0 {
+            return None;
+        }
+
+        let mut from_atoms = Vec::with_capacity(n_bonds as usize);
+        let mut to_atoms = Vec::with_capacity(n_bonds as usize);
+
+        let atom_count = 0;
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            for _ in 0..*mol_count {
+                for k in 0..mol.n_bonds {
+                    let bond = mol.bonds[k as usize];
+
+                    let from_atom = atom_count + bond.from_atom_id;
+                    from_atoms.push(from_atom);
+
+                    let to_atom = atom_count + bond.to_atom_id;
+                    to_atoms.push(to_atom);
+                }
+            }
+        }
+        Some((n_bonds, from_atoms.clone(), to_atoms.clone()))
     }
 }
