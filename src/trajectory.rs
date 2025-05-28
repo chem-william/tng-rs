@@ -7,12 +7,14 @@ use crate::chain::Chain;
 use crate::data::{Compression, Data};
 use crate::gen_block::{BlockID, GenBlock};
 use crate::molecule::Molecule;
+use crate::particle_mapping::ParticleMapping;
 use crate::residue::Residue;
 use crate::trajectory_frame_set::TrajectoryFrameSet;
 use crate::{FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT, utils};
 use core::panic;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use flate2::read::ZlibDecoder;
@@ -50,6 +52,13 @@ impl DataType {
             DataType::Double => size_of::<f64>(),
         }
     }
+}
+
+fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
+    let meta1 = file1.metadata()?;
+    let meta2 = file2.metadata()?;
+
+    Ok(meta1.ino() == meta2.ino() && meta1.dev() == meta2.dev())
 }
 
 #[derive(Debug, Clone, Default)]
@@ -306,7 +315,6 @@ impl Trajectory {
 
         block.header_contents_size =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&block.header_contents_size);
 
         if block.header_contents_size == 0 {
             block.id = BlockID::Unknown(0);
@@ -316,28 +324,23 @@ impl Trajectory {
 
         block.block_contents_size =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&block.block_contents_size);
 
         block.id = BlockID::from_u64(utils::read_u64_le_bytes(
             self.input_file.as_mut().expect("init input_file"),
         ));
-        dbg!(&block.id);
 
         self.input_file
             .as_ref()
             .expect("we just init file")
             .read_exact(&mut block.md5_hash)
             .expect("no error handling");
-        dbg!(block.md5_hash);
 
         block.name = Some(utils::fread_str(
             self.input_file.as_mut().expect("init input_file"),
         ));
-        dbg!(&block.name);
 
         block.version =
             utils::read_u64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&block.version);
 
         let new_pos = (start_pos as i128 + block.header_contents_size as i128)
             .try_into()
@@ -351,12 +354,140 @@ impl Trajectory {
 
     fn frame_set_block_read(&mut self, block: &mut GenBlock) {
         dbg!("frame_set_block_read");
-        unreachable!();
+        self.input_file_init();
+        let start_pos = self
+            .input_file
+            .as_ref()
+            .expect("we just init input_file")
+            .stream_position()
+            .expect("no error handling");
+
+        // FIXME (from c): Does not check if the size of the contents matches the
+        // expected size of if the contents can be read
+        let file_pos = start_pos - u64::try_from(block.header_contents_size).expect("i64 to u64");
+        self.current_trajectory_frame_set_input_file_pos =
+            i64::try_from(file_pos).expect("u64 to i64");
+        // set_particle_mapping_free
+        let mut frame_set = &mut self.current_trajectory_frame_set;
+        let inp_file = self.input_file.as_mut().expect("init input_file");
+        frame_set.first_frame = utils::read_i64_le_bytes(inp_file);
+        frame_set.n_frames = utils::read_i64_le_bytes(inp_file);
+
+        if self.var_num_atoms {
+            let prev_n_particles = frame_set.n_particles;
+            frame_set.n_particles = 0;
+
+            for (mol, mol_count) in self
+                .molecules
+                .iter()
+                .zip(frame_set.molecule_cnt_list.iter_mut())
+            {
+                *mol_count = utils::read_i64_le_bytes(inp_file);
+                frame_set.n_particles += mol.n_atoms * *mol_count;
+            }
+
+            // from the c code
+            // if prev_n_particles && frame_set.n_particles != prev_n_particles {
+            //     /* FIXME: Particle dependent data memory management */
+            // }
+        }
+
+        frame_set.next_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
+        frame_set.prev_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
+        frame_set.medium_stride_next_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
+        frame_set.medium_stride_prev_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
+        frame_set.long_stride_next_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
+        frame_set.long_stride_prev_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
+
+        if block.version >= 3 {
+            frame_set.first_frame_time = utils::read_f64_bytes(inp_file);
+            self.time_per_frame = utils::read_f64_bytes(inp_file);
+        } else {
+            frame_set.first_frame_time = -1.0;
+            self.time_per_frame = -1.0;
+        }
+
+        // TODO: Hash mode
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(
+                start_pos + u64::try_from(block.block_contents_size).expect("u64 from i64"),
+            ))
+            .expect("no error handling");
+
+        // If the output file and the input files are the same the number of
+        // frames in the file are the same number as has just been read.
+        // This is updated here to later on see if there have been new frames
+        // added and thereby the frame set needs to be rewritten.
+        if self.output_file.is_some()
+            && self.input_file.is_some()
+            && is_same_file(
+                self.output_file.as_ref().expect("output file set"),
+                self.input_file.as_ref().expect("input file set"),
+            )
+            .is_ok_and(|x| x)
+        {
+            frame_set.n_written_frames = frame_set.n_frames;
+        }
     }
+
     fn trajectory_mapping_block_read(&mut self, block: &mut GenBlock) {
         dbg!("trajectory_mapping_block");
-        unreachable!();
+        self.input_file_init();
+
+        let start_pos = self
+            .input_file
+            .as_ref()
+            .expect("we just init input_file")
+            .stream_position()
+            .expect("no error handling");
+        let inp_file = self.input_file.as_mut().expect("init input_file");
+
+        // FIXME (from c): Does not check if the size of the contents matches the
+        // expected size of if the contents can be read
+        let frame_set = &mut self.current_trajectory_frame_set;
+        frame_set.n_mapping_blocks += 1;
+        let mut mapping = ParticleMapping::new();
+
+        // TODO: hash mode
+
+        mapping.num_first_particle = utils::read_i64_le_bytes(inp_file);
+        mapping.n_particles = utils::read_i64_le_bytes(inp_file);
+        mapping.real_particle_numbers.resize(
+            usize::try_from(mapping.n_particles).expect("i64 to usize"),
+            0,
+        );
+
+        // TODO: handle endianness
+        let bytes_to_read = usize::try_from(mapping.n_particles).expect("i64 to usize")
+            * std::mem::size_of::<i64>();
+        let mut buffer = vec![0u8; bytes_to_read];
+
+        match inp_file.read_exact(&mut buffer) {
+            Ok(()) => {
+                // Convert bytes to i64 values safely
+                for (i, chunk) in buffer.chunks_exact(8).enumerate() {
+                    let bytes: [u8; 8] = chunk.try_into().expect("chunk is exactly 8 bytes");
+                    mapping.real_particle_numbers[i] = i64::from_le_bytes(bytes);
+                }
+
+                // TODO: Handle hashing
+            }
+            Err(_) => {
+                eprintln!("Cannot read block. {}:{}", file!(), line!());
+                panic!()
+            }
+        }
+        self.input_file
+            .as_ref()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(
+                start_pos + u64::try_from(block.block_contents_size).expect("u64 from i64"),
+            ))
+            .expect("no error handling");
     }
+
     fn general_info_block_read(&mut self, block: &mut GenBlock) {
         self.input_file_init();
 
@@ -380,35 +511,27 @@ impl Trajectory {
 
         self.creation_time =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&self.creation_time);
         self.var_num_atoms =
             utils::read_bool_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&self.var_num_atoms);
         self.frame_set_n_frames =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&self.frame_set_n_frames);
         self.first_trajectory_frame_set_input_pos =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&self.first_trajectory_frame_set_input_pos);
 
         self.current_trajectory_frame_set.next_frame_set_file_pos =
             self.first_trajectory_frame_set_input_pos;
         self.last_trajectory_frame_set_input_pos =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&self.last_trajectory_frame_set_input_pos);
 
         self.medium_stride_length =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&self.medium_stride_length);
 
         self.long_stride_length =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&self.long_stride_length);
 
         if block.version >= 3 {
             self.distance_unit_exponential =
                 utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-            dbg!(&self.distance_unit_exponential);
         }
 
         // TODO: Handle MD5 hashing here
@@ -416,7 +539,7 @@ impl Trajectory {
             .try_into()
             .expect("set new position when reading block header");
         self.input_file
-            .as_mut()
+            .as_ref()
             .expect("init input_file")
             .seek(SeekFrom::Start(new_pos))
             .expect("no error handling");
@@ -435,7 +558,6 @@ impl Trajectory {
 
         self.n_molecules =
             utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
-        dbg!(&self.n_molecules);
 
         self.n_particles = 0;
         self.molecules = Vec::with_capacity(self.n_molecules as usize);
@@ -609,7 +731,6 @@ impl Trajectory {
         block_meta_info.codec_id = Compression::from_i64(utils::read_i64_le_bytes(inp_file));
 
         block_meta_info.multiplier = if block_meta_info.codec_id != Compression::Uncompressed {
-            dbg!("uncompressed");
             utils::read_f64_bytes(inp_file)
         } else {
             1.0
@@ -732,32 +853,38 @@ impl Trajectory {
         }
     }
 
-    fn gzip_uncompress(data: &[u8], compressed_len: u64, uncompressed_len: usize) -> Vec<u8> {
+    fn gzip_uncompress(
+        data: &[u8],
+        compressed_len: u64,
+        uncompressed_len: usize,
+    ) -> Result<Vec<u8>, ()> {
         let mut output = vec![0u8; uncompressed_len];
 
         let cursor = &data[..compressed_len as usize];
         let mut decoder = ZlibDecoder::new(cursor);
-        let mut reader = decoder.take(uncompressed_len as u64);
-        match reader.read(&mut output) {
-            Ok(bytes_read) => {
-                if bytes_read != uncompressed_len {
-                    // C’s `uncompress` updates new_len to the actual decompressed size.
-                    // If it doesn’t match the expected `uncompressed_len`, that’s an error.
-                    eprintln!(
-                        "TNG library: Expected {} bytes, but uncompressed {} bytes.\n",
-                        uncompressed_len, bytes_read
-                    );
-                    panic!();
-                }
+        // let mut reader = decoder.take(uncompressed_len as u64);
+        // match reader.read(&mut output) {
+        match decoder.read_exact(&mut output) {
+            Ok(()) => {
+                // if bytes_read != uncompressed_len {
+                //     // C’s `uncompress` updates new_len to the actual decompressed size.
+                //     // If it doesn’t match the expected `uncompressed_len`, that’s an error.
+                //     eprintln!(
+                //         "Expected {} bytes, but uncompressed {} bytes.\n",
+                //         uncompressed_len, bytes_read
+                //     );
+                //     panic!();
+                // }
                 // Drop the old buffer and replace it with `dest`.
-                output
+                Ok(output)
             }
             Err(e) => {
                 // Map common I/O errors to C’s zlib error messages:
                 // - UnexpectedEof  → buffer too small (Z_BUF_ERROR)
                 // - InvalidData    → data corrupt (Z_DATA_ERROR)
                 // - Other I/O errs → generic uncompress error
-                panic!();
+                eprintln!("{}", e);
+                return Err(());
                 // match e.kind() {
                 //     io::ErrorKind::UnexpectedEof => {
                 //         eprintln!("TNG library: Destination buffer too small. ");
@@ -776,7 +903,12 @@ impl Trajectory {
 
     /// Read the values of a data block
     /// c function name: tng_data_read
-    fn data_read(&mut self, block: &mut GenBlock, meta_info: BlockMetaInfo, block_data_len: u64) {
+    fn data_read(
+        &mut self,
+        block: &mut GenBlock,
+        meta_info: BlockMetaInfo,
+        block_data_len: u64,
+    ) -> Result<(), ()> {
         // we pull what we need early from the current_trajectory_frame_set to avoid the borrow checker
         let frame_set_n_particles = self.current_trajectory_frame_set.n_particles;
 
@@ -898,14 +1030,17 @@ impl Trajectory {
 
             let mut actual_contents = Vec::new();
             match data.codec_id {
-                Compression::Uncompressed => {
-                    full_data_len = usize::try_from(block_data_len).expect("usize from u64")
-                }
+                Compression::Uncompressed => {}
                 Compression::XTC => todo!("XTC compression not implemented yet"),
                 Compression::TNG => todo!("TNG is todo"),
                 Compression::GZip => {
-                    actual_contents =
+                    let uncompressed_result =
                         Trajectory::gzip_uncompress(&contents, block_data_len, full_data_len);
+                    if uncompressed_result.is_ok() {
+                        actual_contents = uncompressed_result.unwrap();
+                    } else {
+                        return Err(());
+                    }
                 }
             }
 
@@ -1016,13 +1151,6 @@ impl Trajectory {
                             .expect("offset overflow"),
                     )
                     .expect("i64 to usize");
-                    dbg!(&offset);
-
-                    dbg!(&full_data_len);
-                    dbg!(&n_frames_div);
-                    dbg!(&size);
-                    dbg!(&meta_info.n_values);
-                    dbg!(&meta_info.num_first_particle);
                     data.values.as_mut().expect("data.values to be Some")
                         [offset..offset + full_data_len]
                         .copy_from_slice(&actual_contents[..full_data_len]);
@@ -1043,6 +1171,7 @@ impl Trajectory {
             }
             dbg!(&data.values.as_ref().expect("something")[..10]);
         }
+        Ok(())
     }
 
     /// Read the contents of a data block (particle or non-particle data)
@@ -1054,7 +1183,6 @@ impl Trajectory {
             .expect("we just init input_file")
             .stream_position()
             .expect("no error handling");
-        dbg!(start_pos);
 
         let meta_info = self.data_block_meta_information_read(block);
 
@@ -1538,5 +1666,96 @@ impl Trajectory {
                 .collect(),
         };
         Some((n_particles, float_values))
+    }
+
+    /// Read one (the next) frame set, including particle mapping and related data blocks
+    /// from the input_file of [`Self`]
+    pub fn frame_set_read_next(&mut self) -> Result<(), ()> {
+        self.input_file_init();
+
+        let mut file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
+        if file_pos < 0 && self.current_trajectory_frame_set_input_file_pos <= 0 {
+            file_pos = self.first_trajectory_frame_set_input_pos;
+        }
+
+        if file_pos > 0 {
+            self.input_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(
+                    u64::try_from(file_pos).expect("i64 to u64"),
+                ))
+                .expect("no error handling");
+        } else {
+            return Err(());
+        }
+        self.frame_set_read()
+        // Ok(())
+    }
+
+    /// Read one frame set, including all particle mapping blocks and data blocks, starting from
+    /// the current file position
+    fn frame_set_read(&mut self) -> Result<(), ()> {
+        self.input_file_init();
+        let mut file_pos = self
+            .input_file
+            .as_mut()
+            .expect("we just init input_file")
+            .stream_position()
+            .expect("no error handling");
+        let mut block = GenBlock::new();
+
+        // Read block headers first to see what block is found
+        self.block_header_read(&mut block);
+
+        if block.id != BlockID::TrajectoryFrameSet || block.id == BlockID::Unknown(0) {
+            return Err(());
+        }
+
+        self.current_trajectory_frame_set_input_file_pos =
+            i64::try_from(file_pos).expect("u64 to i64");
+
+        // TODO: make this fallible?
+        self.block_read_next(&mut block);
+        if block.id != BlockID::Unknown(0) {
+            self.n_trajectory_frame_sets += 1;
+            file_pos = self
+                .input_file
+                .as_mut()
+                .expect("we just init input_file")
+                .stream_position()
+                .expect("no error handling");
+
+            // Read all blocks until next frame set block
+            self.block_header_read(&mut block);
+            loop {
+                if file_pos >= self.input_file_len {
+                    break;
+                }
+                match block.id {
+                    BlockID::Unknown(0) | BlockID::TrajectoryFrameSet => break,
+                    _ => {}
+                }
+                self.block_read_next(&mut block);
+                file_pos = self
+                    .input_file
+                    .as_ref()
+                    .expect("we just init input_file")
+                    .stream_position()
+                    .expect("no error handling");
+                if file_pos < self.input_file_len {
+                    self.block_header_read(&mut block);
+                }
+            }
+
+            if block.id == BlockID::TrajectoryFrameSet {
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(file_pos))
+                    .expect("no error handling");
+            }
+        }
+        Ok(())
     }
 }

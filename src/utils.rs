@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek};
 
 use crate::MAX_STR_LEN;
 

@@ -29,6 +29,8 @@ mod integration {
     use assert_approx_eq::assert_approx_eq;
     use std::path::Path;
 
+    const N_FRAME_SETS: i64 = 100;
+
     #[test]
     fn it_works() {
         let filename = Path::new("/home/william/workspace/rust/tng-rs/tng_test.tng");
@@ -154,10 +156,39 @@ mod integration {
 
         // Above we have written only water molecules (in the order oxygen, hydrogen, hydrogen ...).
         // Test that the first and second as well as the very last atoms (oxygen, hydrogen and hydrogen)
-
         assert_approx_eq!(masses[0], 16.0);
         assert_approx_eq!(masses[1], 1.008);
         assert_approx_eq!(masses.last().unwrap(), 1.008);
+
+        let mut i = 0;
+        loop {
+            let result = traj.frame_set_read_next();
+            if result.is_err() {
+                break;
+            }
+            let frame_set = &traj.current_trajectory_frame_set;
+            // temp_int
+            let prev_frame_set_file_pos = frame_set.prev_frame_set_file_pos;
+            // temp_int2
+            let next_frame_set_file_pos = frame_set.next_frame_set_file_pos;
+
+            if i > 0 {
+                if prev_frame_set_file_pos == -1 {
+                    panic!("file position of previous frame set not correct");
+                }
+            } else if prev_frame_set_file_pos != -1 {
+                panic!("file position of previous frame set not correct");
+            }
+
+            if i < N_FRAME_SETS - 1 {
+                if next_frame_set_file_pos == -1 {
+                    panic!("file position of next frame set not correct");
+                }
+            } else if next_frame_set_file_pos != -1 {
+                panic!("file position of previouss next set not correct");
+            }
+            i += 1;
+        }
 
         // // How many frames in the file?
         // let mut tot_n_frames: i64 = 0;

@@ -13,3 +13,13 @@ pub struct ParticleMapping {
     /// in the data blocks covered by this particle mapping block
     pub real_particle_numbers: Vec<i64>,
 }
+
+impl ParticleMapping {
+    pub fn new() -> Self {
+        Self {
+            num_first_particle: 0,
+            n_particles: 0,
+            real_particle_numbers: Vec::new(),
+        }
+    }
+}
