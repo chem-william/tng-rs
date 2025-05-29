@@ -353,7 +353,6 @@ impl Trajectory {
     }
 
     fn frame_set_block_read(&mut self, block: &mut GenBlock) {
-        dbg!("frame_set_block_read");
         self.input_file_init();
         let start_pos = self
             .input_file
@@ -368,13 +367,13 @@ impl Trajectory {
         self.current_trajectory_frame_set_input_file_pos =
             i64::try_from(file_pos).expect("u64 to i64");
         // set_particle_mapping_free
-        let mut frame_set = &mut self.current_trajectory_frame_set;
+        let frame_set = &mut self.current_trajectory_frame_set;
         let inp_file = self.input_file.as_mut().expect("init input_file");
         frame_set.first_frame = utils::read_i64_le_bytes(inp_file);
         frame_set.n_frames = utils::read_i64_le_bytes(inp_file);
 
         if self.var_num_atoms {
-            let prev_n_particles = frame_set.n_particles;
+            // let prev_n_particles = frame_set.n_particles;
             frame_set.n_particles = 0;
 
             for (mol, mol_count) in self
@@ -1208,6 +1207,7 @@ impl Trajectory {
             .expect("no error handling");
     }
 
+    /// Read one (the next) block (of any kind) from the input_file of [`Self`]
     fn block_read_next(&mut self, block: &mut GenBlock) {
         match block.id {
             BlockID::TrajectoryFrameSet => self.frame_set_block_read(block),
@@ -1757,5 +1757,384 @@ impl Trajectory {
             }
         }
         Ok(())
+    }
+
+    /// Get the number of frame sets
+    fn num_frame_sets_get(&mut self) -> i64 {
+        let mut count = 0;
+        let orig_frame_set = self.current_trajectory_frame_set.clone();
+        let orig_frame_set_file_pos = self.current_trajectory_frame_set_input_file_pos;
+        let mut file_pos = self.first_trajectory_frame_set_input_pos;
+
+        if file_pos < 0 {
+            self.n_trajectory_frame_sets = count;
+            return count;
+        }
+
+        let mut block = GenBlock::new();
+        self.input_file
+            .as_ref()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(
+                u64::try_from(file_pos).expect("i64 to u64"),
+            ))
+            .expect("no error handling");
+        self.current_trajectory_frame_set_input_file_pos = file_pos;
+
+        // Read block headers first to see what block is found
+        self.block_header_read(&mut block);
+
+        if block.id != BlockID::TrajectoryFrameSet {
+            panic!("cannot read block header at pos {file_pos}");
+        }
+
+        self.block_read_next(&mut block);
+        count += 1;
+
+        let long_stride_length = self.long_stride_length;
+        let medium_stride_length = self.medium_stride_length;
+
+        // Take long steps forward until a long step forward would be too long
+        // or the last frame set is found
+        file_pos = self
+            .current_trajectory_frame_set
+            .long_stride_next_frame_set_file_pos;
+
+        while file_pos > 0 {
+            if file_pos > 0 {
+                count += long_stride_length;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+            }
+            file_pos = self
+                .current_trajectory_frame_set
+                .long_stride_next_frame_set_file_pos;
+        }
+
+        // Take medium steps forward until a medium step forward would be too long or the
+        // last frame set is found
+        file_pos = self
+            .current_trajectory_frame_set
+            .medium_stride_next_frame_set_file_pos;
+        while file_pos > 0 {
+            if file_pos > 0 {
+                count += medium_stride_length;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+            }
+            file_pos = self
+                .current_trajectory_frame_set
+                .medium_stride_next_frame_set_file_pos;
+        }
+
+        // Take on step forward until the last frame set is found
+        file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
+        while file_pos > 0 {
+            if file_pos > 0 {
+                count += 1;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+            }
+
+            file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
+        }
+
+        self.n_trajectory_frame_sets = count;
+        self.current_trajectory_frame_set = orig_frame_set;
+
+        // from c code: The mapping block in the original frame set has been freed when reading
+        // other frame sets
+        self.current_trajectory_frame_set.mappings = Vec::new();
+        self.current_trajectory_frame_set.n_mapping_blocks = 0;
+
+        self.input_file
+            .as_ref()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(
+                u64::try_from(self.first_trajectory_frame_set_input_pos).expect("i64 to u64"),
+            ))
+            .expect("no error handling");
+        self.current_trajectory_frame_set_input_file_pos = orig_frame_set_file_pos;
+
+        count
+    }
+
+    /// Find the requested frame set number
+    pub fn frame_set_nr_find(&mut self, nr: i64) -> Result<(), ()> {
+        let n_frame_sets = self.num_frame_sets_get();
+
+        if nr >= n_frame_sets {
+            return Err(());
+        }
+
+        let long_stride_length = self.long_stride_length;
+        let medium_stride_length = self.medium_stride_length;
+        let mut curr_nr = 0;
+
+        // FIXME (from c): The frame set number of the current frame set is not stored
+
+        let mut file_pos = if nr < n_frame_sets - 1 - nr {
+            // Start from the beginning
+            self.first_trajectory_frame_set_input_pos
+        } else {
+            // Start from the end
+            curr_nr = n_frame_sets - 1;
+            self.last_trajectory_frame_set_input_pos
+        };
+
+        if file_pos <= 0 {
+            return Err(());
+        }
+
+        let mut block = GenBlock::new();
+        self.input_file
+            .as_ref()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(
+                u64::try_from(file_pos).expect("i64 to u64"),
+            ))
+            .expect("no error handling");
+        self.block_header_read(&mut block);
+        if block.id != BlockID::TrajectoryFrameSet {
+            panic!("cannot read block header at pos {file_pos}");
+        }
+
+        self.block_read_next(&mut block);
+
+        if curr_nr == nr {
+            return Ok(());
+        }
+
+        file_pos = self.current_trajectory_frame_set_input_file_pos;
+
+        // Take long steps forward until a long step forward would be too long or
+        // the right frame set is found
+        while file_pos > 0 && curr_nr + long_stride_length <= nr {
+            file_pos = self
+                .current_trajectory_frame_set
+                .long_stride_next_frame_set_file_pos;
+            if file_pos > 0 {
+                curr_nr += long_stride_length;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+
+                // Read block headers first to see what block is found
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+                if curr_nr == nr {
+                    return Ok(());
+                }
+            }
+        }
+
+        // Take medium steps forward until a medium step forward would be too long or
+        // the right frame set is found
+        while file_pos > 0 && curr_nr + medium_stride_length <= nr {
+            file_pos = self
+                .current_trajectory_frame_set
+                .medium_stride_next_frame_set_file_pos;
+            if file_pos > 0 {
+                curr_nr += medium_stride_length;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+
+                // Read block headers first to see what block is found
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+                if curr_nr == nr {
+                    return Ok(());
+                }
+            }
+        }
+
+        // Take one step forward until the right frame set is found
+        while file_pos > 0 && curr_nr < nr {
+            file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
+            if file_pos > 0 {
+                curr_nr += 1;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+
+                // Read block headers first to see what block is found
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+                if curr_nr == nr {
+                    return Ok(());
+                }
+            }
+        }
+
+        // Take long steps backward until a long step backward would be too long or
+        // the right frame set is found
+        while file_pos > 0 && curr_nr - long_stride_length >= nr {
+            file_pos = self
+                .current_trajectory_frame_set
+                .long_stride_prev_frame_set_file_pos;
+            if file_pos > 0 {
+                curr_nr -= long_stride_length;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+
+                // Read block headers first to see what block is found
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+                if curr_nr == nr {
+                    return Ok(());
+                }
+            }
+        }
+
+        // Take medium steps backward until a medium step backward would be too long or
+        // the right frame set is found
+        while file_pos > 0 && curr_nr - medium_stride_length >= nr {
+            file_pos = self
+                .current_trajectory_frame_set
+                .medium_stride_prev_frame_set_file_pos;
+            if file_pos > 0 {
+                curr_nr -= medium_stride_length;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+
+                // Read block headers first to see what block is found
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+                if curr_nr == nr {
+                    return Ok(());
+                }
+            }
+        }
+
+        // Take one step backward until the right frame set is found
+        while file_pos > 0 && curr_nr > nr {
+            file_pos = self.current_trajectory_frame_set.prev_frame_set_file_pos;
+            if file_pos > 0 {
+                curr_nr -= 1;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+
+                // Read block headers first to see what block is found
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+                if curr_nr == nr {
+                    return Ok(());
+                }
+            }
+        }
+
+        // If for some reason the current frame set is not yet found
+        // take one step forward until the right frame set is found
+        while file_pos > 0 && curr_nr < nr {
+            file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
+            if file_pos > 0 {
+                curr_nr += 1;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(file_pos).expect("i64 to u64"),
+                    ))
+                    .expect("no error handling");
+
+                // Read block headers first to see what block is found
+                self.block_header_read(&mut block);
+                if block.id != BlockID::TrajectoryFrameSet {
+                    panic!("Cannot read block header at pos {file_pos}");
+                }
+
+                self.block_read_next(&mut block);
+                if curr_nr == nr {
+                    return Ok(());
+                }
+            }
+        }
+
+        Err(())
     }
 }

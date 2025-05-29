@@ -30,6 +30,7 @@ mod integration {
     use std::path::Path;
 
     const N_FRAME_SETS: i64 = 100;
+    const TIME_PER_FRAME: f64 = 2e-15;
 
     #[test]
     fn it_works() {
@@ -189,6 +190,15 @@ mod integration {
             }
             i += 1;
         }
+
+        assert_approx_eq!(traj.time_per_frame, TIME_PER_FRAME);
+
+        assert!(traj.frame_set_nr_find(N_FRAME_SETS * 3 / 10).is_ok());
+        assert!(traj.frame_set_nr_find(N_FRAME_SETS * 3 / 4).is_ok());
+
+        let current_frame_set = traj.current_trajectory_frame_set;
+        let first_frame = current_frame_set.first_frame;
+        assert_eq!(first_frame, 75 * traj.frame_set_n_frames);
 
         // // How many frames in the file?
         // let mut tot_n_frames: i64 = 0;

@@ -1,5 +1,5 @@
 /// Describes a block of particle indexes and their “real” particle IDs.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParticleMapping {
     /// The index number of the first particle in this mapping block
     pub num_first_particle: i64,

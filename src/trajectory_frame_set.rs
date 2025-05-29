@@ -1,7 +1,7 @@
 use crate::data::Data;
 use crate::particle_mapping::ParticleMapping;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TrajectoryFrameSet {
     /// The number of different particle mapping blocks present.
     pub n_mapping_blocks: i64,
