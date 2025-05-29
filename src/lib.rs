@@ -25,7 +25,10 @@ const PARTICLE_DEPENDENT: u8 = 2;
 
 #[cfg(test)]
 mod integration {
-    use crate::{gen_block::BlockID, molecule::Molecule, trajectory::Trajectory, utils};
+    use crate::{
+        FRAME_DEPENDENT, PARTICLE_DEPENDENT, gen_block::BlockID, molecule::Molecule,
+        trajectory::Trajectory, utils,
+    };
     use assert_approx_eq::assert_approx_eq;
     use std::path::Path;
 
@@ -213,6 +216,12 @@ mod integration {
 
         let data_block_name = traj.data_block_name_get(BlockID::TrajPositions);
         assert_eq!(data_block_name, Ok("POSITIONS".to_string()));
+
+        let data_block_name = traj.data_block_name_get(BlockID::TrajForces);
+        assert_eq!(data_block_name, Err(()));
+
+        let dependency = traj.data_block_dependency_get(BlockID::TrajPositions);
+        assert_eq!(dependency, Ok(FRAME_DEPENDENT + PARTICLE_DEPENDENT));
 
         // // How many frames in the file?
         // let mut tot_n_frames: i64 = 0;

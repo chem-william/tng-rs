@@ -2260,4 +2260,47 @@ impl Trajectory {
 
         Err(())
     }
+
+    /// Get the dependency of a data block of a specific ID.
+    pub fn data_block_dependency_get(&mut self, match_block_id: BlockID) -> Result<u8, ()> {
+        for i in 0..self.n_particle_data_blocks {
+            let data = &self.non_tr_particle_data[i];
+            if data.block_id == match_block_id {
+                return Ok(PARTICLE_DEPENDENT);
+            }
+        }
+
+        for i in 0..self.n_data_blocks {
+            let data = &self.non_tr_data[i];
+            if data.block_id == match_block_id {
+                return Ok(0);
+            }
+        }
+
+        let particle_data_result = self.particle_data_find(match_block_id);
+        if particle_data_result.is_some() {
+            return Ok(PARTICLE_DEPENDENT + FRAME_DEPENDENT);
+        } else {
+            let data_result = self.data_find(match_block_id);
+            if data_result.is_some() {
+                return Ok(FRAME_DEPENDENT);
+            } else {
+                let result = self.frame_set_read_current_only_data_from_block_id(match_block_id);
+                if result.is_err() {
+                    return Err(());
+                }
+                let particle_data_result = self.particle_data_find(match_block_id);
+                if particle_data_result.is_some() {
+                    return Ok(PARTICLE_DEPENDENT + FRAME_DEPENDENT);
+                } else {
+                    let data_result = self.data_find(match_block_id);
+                    if data_result.is_some() {
+                        return Ok(FRAME_DEPENDENT);
+                    }
+                }
+            }
+        }
+
+        Err(())
+    }
 }
