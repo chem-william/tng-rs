@@ -196,9 +196,23 @@ mod integration {
         assert!(traj.frame_set_nr_find(N_FRAME_SETS * 3 / 10).is_ok());
         assert!(traj.frame_set_nr_find(N_FRAME_SETS * 3 / 4).is_ok());
 
-        let current_frame_set = traj.current_trajectory_frame_set;
+        // frame_set_get
+        // frame_set_frame_range_get
+        let current_frame_set = &traj.current_trajectory_frame_set;
         let first_frame = current_frame_set.first_frame;
         assert_eq!(first_frame, 75 * traj.frame_set_n_frames);
+
+        assert!(
+            traj.frame_set_read_current_only_data_from_block_id(BlockID::TrajPositions)
+                .is_ok()
+        );
+        assert!(
+            traj.frame_set_read_next_only_data_from_block_id(BlockID::TrajPositions)
+                .is_ok()
+        );
+
+        let data_block_name = traj.data_block_name_get(BlockID::TrajPositions);
+        assert_eq!(data_block_name, Ok("POSITIONS".to_string()));
 
         // // How many frames in the file?
         // let mut tot_n_frames: i64 = 0;
