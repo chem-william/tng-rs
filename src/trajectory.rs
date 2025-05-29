@@ -2303,4 +2303,49 @@ impl Trajectory {
 
         Err(())
     }
+
+    /// Get the number of values per frame of a data block of a specific ID.
+    pub fn data_block_num_values_per_frame_get(
+        &mut self,
+        match_block_id: BlockID,
+    ) -> Result<i64, ()> {
+        for i in 0..self.n_particle_data_blocks {
+            let data = &self.non_tr_particle_data[i];
+            if data.block_id == match_block_id {
+                return Ok(data.n_values_per_frame);
+            }
+        }
+
+        for i in 0..self.n_data_blocks {
+            let data = &self.non_tr_data[i];
+            if data.block_id == match_block_id {
+                return Ok(data.n_values_per_frame);
+            }
+        }
+
+        let stat = self.particle_data_find(match_block_id);
+        if let Some(data) = stat {
+            return Ok(data.n_values_per_frame);
+        } else {
+            let stat = self.data_find(match_block_id);
+            if let Some(data) = stat {
+                return Ok(data.n_values_per_frame);
+            } else {
+                let stat = self.frame_set_read_current_only_data_from_block_id(match_block_id);
+                if stat.is_err() {
+                    return Err(());
+                }
+                let stat = self.particle_data_find(match_block_id);
+                if let Some(data) = stat {
+                    return Ok(data.n_values_per_frame);
+                } else {
+                    let stat = self.data_find(match_block_id);
+                    if let Some(data) = stat {
+                        return Ok(data.n_values_per_frame);
+                    }
+                }
+            }
+        }
+        Err(())
+    }
 }

@@ -223,6 +223,9 @@ mod integration {
         let dependency = traj.data_block_dependency_get(BlockID::TrajPositions);
         assert_eq!(dependency, Ok(FRAME_DEPENDENT + PARTICLE_DEPENDENT));
 
+        let n_values_per_frame = traj.data_block_num_values_per_frame_get(BlockID::TrajPositions);
+        assert_eq!(n_values_per_frame, Ok(3));
+
         // // How many frames in the file?
         // let mut tot_n_frames: i64 = 0;
         // if tng_num_frames_get(&traj, &mut tot_n_frames) != TNG_SUCCESS {
