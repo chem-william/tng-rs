@@ -27,10 +27,9 @@ const PARTICLE_DEPENDENT: u8 = 2;
 mod integration {
     use crate::{
         FRAME_DEPENDENT, PARTICLE_DEPENDENT, gen_block::BlockID, molecule::Molecule,
-        trajectory::Trajectory, utils,
+        trajectory::Trajectory,
     };
     use assert_approx_eq::assert_approx_eq;
-    use std::path::Path;
 
     const N_FRAME_SETS: i64 = 100;
     const TIME_PER_FRAME: f64 = 2e-15;
