@@ -76,7 +76,7 @@ mod integration {
         assert_eq!(molecule.n_chains, 1);
 
         // chain_of_index_get
-        let chain = &molecule.chains[0];
+        let _chain = &molecule.chains[0];
 
         // chain_find
         let chain = molecule
@@ -87,13 +87,13 @@ mod integration {
         assert_eq!(molecule.n_residues, 1);
 
         // residue_of_index_get
-        let residue = &molecule.residues[0];
+        let _residue = &molecule.residues[0];
 
         // num_atoms_get
         assert_eq!(molecule.n_atoms, 3);
 
         // atom_of_index_get
-        let atom = &molecule.atoms[0];
+        let _atom = &molecule.atoms[0];
         molecule.atom_find("O", -1).expect("'O' to be present");
 
         // chain_name_get
@@ -103,7 +103,7 @@ mod integration {
         assert_eq!(chain.n_residues, 1);
 
         // chain_residue_of_index_get
-        let chain_residue = &molecule.residues[chain.residues_indices.0];
+        let _chain_residue = &molecule.residues[chain.residues_indices.0];
 
         // chain_residue_find
         let residue = &molecule
@@ -159,7 +159,7 @@ mod integration {
         assert_eq!(to_atoms.len(), 400);
 
         // particle_data_vector_get
-        let (read_n_particles, masses) = traj
+        let (_read_n_particles, masses) = traj
             .particle_data_vector(true, BlockID::TrajMasses)
             .expect("particle data");
         // TODO
