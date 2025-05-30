@@ -252,16 +252,65 @@ impl Trajectory {
             .expect("no error handling")
     }
 
+    // c function: tng_output_file_set
+    /// Set the name of the output file.
+    pub fn set_output_file(&mut self, path: &Path) {
+        if self.output_file_path == path {
+            return;
+        }
+
+        // If a file was already open, drop (close) it.
+        self.output_file.take();
+
+        let truncated = if path.to_str().expect("valid unicode path").len() + 1 > MAX_STR_LEN {
+            &path.to_str().unwrap()[..MAX_STR_LEN - 1]
+        } else {
+            path.to_str().unwrap()
+        };
+
+        self.output_file_path = PathBuf::from(truncated.to_string());
+
+        self.output_file_init();
+    }
+
+    /// Open the output file is it is not already opened. If the file does not
+    /// already exist, create it.
+    pub fn output_file_init(&mut self) {
+        if self.output_file.is_none() {
+            // If no path has ever been set, error out
+            if self.output_file_path.as_os_str().is_empty() {
+                eprintln!("No file specified for reading. {}:{}", file!(), line!());
+                panic!();
+            }
+
+            // Try to create the file
+            let path = self.output_file_path.clone();
+            match File::create(&path) {
+                Ok(f) => {
+                    self.output_file = Some(f);
+                }
+                Err(_) => {
+                    eprintln!(
+                        "TNG library: Cannot open file {}. {}:{}",
+                        path.display(),
+                        file!(),
+                        line!()
+                    );
+                    panic!();
+                }
+            }
+        }
+    }
+
     // c function: tng_input_file_set
+    /// Set the name of the input file.
     pub fn set_input_file(&mut self, path: &Path) {
         if self.input_file_path == path {
             return;
         }
 
         // If a file was already open, drop (close) it.
-        if self.input_file.is_some() {
-            self.input_file = None; // File is closed when dropped.
-        }
+        self.input_file.take();
 
         let truncated = if path.to_str().expect("valid unicode path").len() + 1 > MAX_STR_LEN {
             &path.to_str().unwrap()[..MAX_STR_LEN - 1]
@@ -278,10 +327,11 @@ impl Trajectory {
         self.input_file_init();
     }
 
+    /// Open the input file if it is not already opened.
     pub fn input_file_init(&mut self) {
         if self.input_file.is_none() {
-            // If no path has ever been set, error out
-            if !self.input_file_path.exists() {
+            // If no path has been set, error out
+            if self.input_file_path.as_os_str().is_empty() {
                 eprintln!("No file specified for reading. {}:{}", file!(), line!());
                 panic!();
             }
@@ -294,7 +344,7 @@ impl Trajectory {
                 }
                 Err(_) => {
                     eprintln!(
-                        "TNG library: Cannot open file {}. {}:{}",
+                        "Cannot open file {}. {}:{}",
                         path.display(),
                         file!(),
                         line!()
@@ -550,7 +600,6 @@ impl Trajectory {
             let inp_file = self.input_file.as_mut().expect("init input_file");
             let mut molecule = Molecule::new();
             molecule.id = utils::read_i64_le_bytes(inp_file);
-            dbg!(&molecule.id);
             molecule.name = utils::fread_str(inp_file);
             molecule.quaternary_str = utils::read_i64_le_bytes(inp_file);
 
@@ -600,7 +649,6 @@ impl Trajectory {
                 chain.residues_indices = (start as usize, end as usize);
                 residue_idx = end; // next free residue slot
 
-                dbg!(&chain);
                 // Read the residues of the chain
                 for local_idx in start..end {
                     dbg!("starting residue loop");
@@ -616,7 +664,6 @@ impl Trajectory {
                     // Compute atoms_offset = `atom - molecule->atoms` in C
                     residue.atoms_offset = atom_idx;
 
-                    dbg!(&residue);
                     let atom_count = residue.n_atoms;
 
                     // Read the atoms of the residue
@@ -631,7 +678,6 @@ impl Trajectory {
                         atom.read_data(self);
 
                         atom_idx += 1;
-                        dbg!(&atom);
                         molecule.atoms.push(atom);
                     }
                     molecule.residues.push(residue);
@@ -742,7 +788,6 @@ impl Trajectory {
             block_meta_info.block_n_particles = 0;
         }
 
-        dbg!(&block_meta_info);
         block_meta_info
     }
 
@@ -923,7 +968,6 @@ impl Trajectory {
             }
 
             let frame_set = &mut self.current_trajectory_frame_set;
-            dbg!(&frame_set);
             let data = if is_particle_data {
                 if is_traj_block {
                     frame_set
@@ -1148,7 +1192,6 @@ impl Trajectory {
                     }
                 }
             }
-            dbg!(&data.values.as_ref().expect("something")[..10]);
         }
         Ok(())
     }
@@ -2775,7 +2818,6 @@ impl Trajectory {
 
         let stat = self.frame_set_of_frame_find(new_frame);
         if stat.is_err() {
-            dbg!("1");
             return Err(());
         }
 

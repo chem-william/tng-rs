@@ -41,6 +41,25 @@ mod integration {
     }
 
     #[test]
+    fn test_read_write() {
+        let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+        let mut output_filename = input_filename.clone();
+        input_filename.push("tng_example.tng");
+        output_filename.push("tng_example_out.tng");
+
+        let mut traj = Trajectory::new();
+
+        // Tell the library which files to open
+        traj.set_input_file(input_filename.as_path());
+        traj.set_output_file(output_filename.as_path());
+
+        // test_read_and_write_file
+
+        assert_eq!(traj.input_file_path, input_filename);
+        assert_eq!(traj.output_file_path, output_filename);
+    }
+
+    #[test]
     fn it_works() {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
         input_filename.push("tng_test.tng");
