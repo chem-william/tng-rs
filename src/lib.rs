@@ -43,11 +43,12 @@ mod integration {
 
     #[test]
     fn it_works() {
-        let filename = Path::new("/home/william/workspace/rust/tng-rs/tng_test.tng");
+        let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+        input_filename.push("tng_test.tng");
         let mut traj = Trajectory::new();
 
         // Tell the library which file to open
-        traj.set_input_file(filename);
+        traj.set_input_file(input_filename.as_path());
 
         // Read file headers
         traj.file_headers_read();
