@@ -36,6 +36,14 @@ mod integration {
     const TIME_PER_FRAME: f64 = 2e-15;
 
     #[test]
+    fn can_we_init_traj_with_time() {
+        let mut cwd = std::env::current_dir().expect("able to get current working dir");
+        cwd.push("tng_test.png");
+        let traj = Trajectory::new();
+        assert!(traj.time > 100);
+    }
+
+    #[test]
     fn it_works() {
         let filename = Path::new("/home/william/workspace/rust/tng-rs/tng_test.tng");
         let mut traj = Trajectory::new();

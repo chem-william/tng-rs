@@ -1,5 +1,6 @@
 use log::warn;
 use std::cmp::max;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::atom::Atom;
 use crate::bond::Bond;
@@ -121,7 +122,7 @@ pub struct Trajectory {
     pub last_pgp_signature: String,
 
     /// Creation time of the file, in seconds since UNIX epoch.
-    pub creation_time: i64,
+    pub time: u64,
     /// Exponent for the distance unit (e.g., –9 for nm, –10 for Å).
     pub distance_unit_exponential: i64,
 
@@ -184,6 +185,10 @@ pub struct Trajectory {
 impl Trajectory {
     // TODO: do we need to check the endianness of the computer - perhaps?
     pub fn new() -> Self {
+        let time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("able to get time since UNIX_EPOCH")
+            .as_secs();
         Trajectory {
             input_file_path: PathBuf::new(),
             input_file: None,
@@ -203,7 +208,7 @@ impl Trajectory {
             last_computer_name: String::new(),
             last_pgp_signature: String::new(),
 
-            creation_time: 0,
+            time,
             distance_unit_exponential: -9, // defaulting to nm
 
             var_num_atoms: false,
@@ -496,7 +501,7 @@ impl Trajectory {
         self.last_pgp_signature = utils::fread_str(inp_file);
         self.forcefield_name = utils::fread_str(inp_file);
 
-        self.creation_time = utils::read_i64_le_bytes(inp_file);
+        self.time = utils::read_u64_le_bytes(inp_file);
         self.var_num_atoms = utils::read_bool_le_bytes(inp_file);
         self.frame_set_n_frames = utils::read_i64_le_bytes(inp_file);
         self.first_trajectory_frame_set_input_pos = utils::read_i64_le_bytes(inp_file);
