@@ -1,11 +1,39 @@
-use crate::{gen_block::BlockID, trajectory::DataType};
+use crate::gen_block::BlockID;
 use std::cmp::max;
 
-#[derive(Debug, Clone)]
-pub enum DataValue {
-    Int(Vec<i64>),
-    Float(Vec<f32>),
-    Double(Vec<f64>),
+/// Possible formats of data block contents
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DataType {
+    #[default]
+    Char = 0,
+    Int = 1,
+    Float = 2,
+    Double = 3,
+}
+
+impl DataType {
+    /// Try to interpret a raw i64 as a [`DataType`]
+    ///
+    /// # Panic
+    /// Panics on unknown data types
+    pub fn from_u8(raw: u8) -> Self {
+        match raw {
+            0 => DataType::Char,
+            1 => DataType::Int,
+            2 => DataType::Float,
+            3 => DataType::Double,
+            _ => panic!("unknown data type"),
+        }
+    }
+
+    pub fn get_size(&self) -> usize {
+        match self {
+            DataType::Char => 1,
+            DataType::Int => size_of::<i64>(),
+            DataType::Float => size_of::<f32>(),
+            DataType::Double => size_of::<f64>(),
+        }
+    }
 }
 
 /// Compression mode is specified in each data block
