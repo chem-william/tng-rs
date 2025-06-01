@@ -1,4 +1,4 @@
-use crate::{API_VERSION, MD5_HASH_LEN};
+use crate::{API_VERSION, MAX_STR_LEN, MD5_HASH_LEN};
 
 /// Standard non-trajectory blocks
 /// Block IDs of standard non-trajectory blocks
@@ -229,10 +229,10 @@ impl BlockID {
 #[derive(Debug, Default)]
 pub struct GenBlock {
     /// The size of the block header in bytes
-    pub header_contents_size: i64,
+    pub header_contents_size: u64,
 
     /// The size of the block contents in bytes
-    pub block_contents_size: i64,
+    pub block_contents_size: u64,
 
     /// The ID of the block to determine its type
     pub(crate) id: BlockID,
@@ -273,5 +273,25 @@ impl GenBlock {
             version: API_VERSION,
             ..Default::default()
         }
+    }
+
+    // c function: block_header_len_calculate
+    /// Calculates the size (in bytes) of the block header, including
+    /// fixed fields and the bounded name string length.
+    ///
+    /// If the block name is `None`, it will be treated as an empty string.
+    ///
+    /// Returns the total header size in bytes.
+    pub(crate) fn calculate_header_len(&self) -> usize {
+        // Ensure we have at least an empty string
+        let name = self.name.as_deref().unwrap_or("");
+        let name_len = std::cmp::min(name.len() + 1, MAX_STR_LEN); // +1 for null-terminator
+
+        std::mem::size_of::<u64>()  // header_contents_size
+        + std::mem::size_of::<u64>()  // block_contents_size
+        + std::mem::size_of::<BlockID>() // id
+        + std::mem::size_of::<u64>()   // block_version
+        + MD5_HASH_LEN             // checksum
+        + name_len // name (null-terminated and bounded)
     }
 }

@@ -1,5 +1,5 @@
 use log::warn;
-use std::cmp::max;
+use std::cmp::{max, min};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::atom::Atom;
@@ -11,6 +11,7 @@ use crate::molecule::Molecule;
 use crate::particle_mapping::ParticleMapping;
 use crate::residue::Residue;
 use crate::trajectory_frame_set::TrajectoryFrameSet;
+use crate::utils::{Endianness32, Endianness64, SwapFn32, SwapFn64};
 use crate::{FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT, utils};
 use core::panic;
 use std::fs::File;
@@ -101,6 +102,19 @@ pub struct Trajectory {
     /// Open handle to the output file (None until opened).
     pub output_file: Option<File>,
 
+    /// The endianness of 32 bit values of the current computer
+    pub endianness32: Endianness32,
+    /// The endianness of 64 bit values of the current computer
+    pub endianness64: Endianness64,
+    /// Closure to swap 32 bit values to and from the endianness of the input file
+    pub input_swap32: Option<SwapFn32>,
+    /// Closure to swap 64 bit values to and from the endianness of the input file
+    pub input_swap64: Option<SwapFn64>,
+    /// Closure to swap 32 bit values to and from the endianness of the input file
+    pub output_swap32: Option<SwapFn32>,
+    /// Closure to swap 64 bit values to and from the endianness of the output file
+    pub output_swap64: Option<SwapFn64>,
+
     /// Name of the program that produced this trajectory.
     pub first_program_name: String,
     /// Force field used in the simulation.
@@ -183,12 +197,42 @@ pub struct Trajectory {
 }
 
 impl Trajectory {
-    // TODO: do we need to check the endianness of the computer - perhaps?
+    /// Detect the host’s native 32‐ and 64‐bit endianness and store the corresponding enum values.
+    ///
+    /// # Panic
+    /// Panics if unable to detect either the 32- or 64-bit endianness
+    pub fn detect_host_endianness() -> (Endianness32, Endianness64) {
+        let probe32: i32 = 0x01234567;
+        let first_byte32 = probe32.to_ne_bytes()[0];
+        let endianness32 = match first_byte32 {
+            0x01 => Endianness32::Big,
+            0x67 => Endianness32::Little,
+            0x45 => Endianness32::BytePairSwap,
+            _ => panic!("unable to detect host system 32-bit endianness"),
+        };
+
+        let probe64: i64 = 0x0123_4567_89AB_CDEF;
+        let first_byte64 = probe64.to_ne_bytes()[0];
+        let endianness64 = match first_byte64 {
+            0x01 => Endianness64::Big,
+            0xEF => Endianness64::Little,
+            0x89 => Endianness64::QuadSwap,
+            0x45 => Endianness64::BytePairSwap,
+            0x23 => Endianness64::ByteSwap,
+            _ => panic!("unable to detect host system 64-bit endianness"),
+        };
+
+        (endianness32, endianness64)
+    }
+
     pub fn new() -> Self {
         let time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("able to get time since UNIX_EPOCH")
             .as_secs();
+
+        let (endianness32, endianness64) = Trajectory::detect_host_endianness();
+
         Trajectory {
             input_file_path: PathBuf::new(),
             input_file: None,
@@ -196,6 +240,12 @@ impl Trajectory {
 
             output_file_path: PathBuf::new(),
             output_file: None,
+            endianness32,
+            endianness64,
+            input_swap32: None,
+            input_swap64: None,
+            output_swap32: None,
+            output_swap64: None,
 
             first_program_name: String::new(),
             forcefield_name: String::new(),
@@ -371,8 +421,9 @@ impl Trajectory {
 
         let start_pos = self.get_file_position();
 
-        block.header_contents_size =
-            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
+        let header_contents_size_bytes =
+            utils::read_exact_array::<8, _>(self.input_file.as_mut().expect("init input_file"));
+        block.header_contents_size = u64::from_ne_bytes(header_contents_size_bytes);
 
         if block.header_contents_size == 0 {
             block.id = BlockID::Unknown(0);
@@ -380,29 +431,68 @@ impl Trajectory {
             return;
         }
 
-        block.block_contents_size =
-            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
+        // If this was the size of the general info block, check the endianness
+        if self.get_file_position() < 9 {
+            // File is little endian
+            if header_contents_size_bytes[0] != 0 && header_contents_size_bytes[7] == 0 {
+                // If the architecture endianess is little endian no byte swap will be needed.
+                // Otherwise use the functions to swap to little endian
+                if self.endianness32 == Endianness32::Little {
+                    self.input_swap32 = None;
+                } else {
+                    self.input_swap32 = Some(utils::swap_byte_order_little_endian_32);
+                }
 
-        block.id = BlockID::from_u64(utils::read_u64_le_bytes(
-            self.input_file.as_mut().expect("init input_file"),
+                if self.endianness64 == Endianness64::Little {
+                    self.input_swap64 = None;
+                } else {
+                    self.input_swap64 = Some(utils::swap_byte_order_little_endian_64);
+                }
+            }
+            // File is big endian
+            else {
+                // If the architecture endianness is big endian no byte swap
+                // will be needed. Otherwise use the functions to swap to big endian
+                if self.endianness32 == Endianness32::Big {
+                    self.input_swap32 = None;
+                } else {
+                    self.input_swap32 = Some(utils::swap_byte_order_little_endian_32);
+                }
+
+                if self.endianness64 == Endianness64::Big {
+                    self.input_swap64 = None;
+                } else {
+                    self.input_swap64 = Some(utils::swap_byte_order_big_endian_64);
+                }
+            }
+        }
+
+        if let Some(swap_fn) = self.input_swap64 {
+            swap_fn(self.endianness64, &mut block.header_contents_size);
+        }
+
+        let inp_file = self.input_file.as_mut().expect("init input_file");
+
+        block.block_contents_size = utils::read_u64(inp_file, self.endianness64, self.input_swap64);
+
+        block.id = BlockID::from_u64(utils::read_u64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
         ));
 
-        self.input_file
-            .as_ref()
-            .expect("we just init file")
+        inp_file
             .read_exact(&mut block.md5_hash)
             .expect("no error handling");
 
-        block.name = Some(utils::fread_str(
-            self.input_file.as_mut().expect("init input_file"),
-        ));
+        block.name = Some(utils::fread_str(inp_file));
 
-        block.version =
-            utils::read_u64_le_bytes(self.input_file.as_mut().expect("init input_file"));
+        block.version = utils::read_u64(inp_file, self.endianness64, self.input_swap64);
 
         let new_pos = (start_pos as i128 + block.header_contents_size as i128)
             .try_into()
             .expect("set new position when reading block header");
+
         self.input_file
             .as_ref()
             .expect("init input_file")
@@ -416,14 +506,14 @@ impl Trajectory {
 
         // FIXME (from c): Does not check if the size of the contents matches the
         // expected size of if the contents can be read
-        let file_pos = start_pos - u64::try_from(block.header_contents_size).expect("i64 to u64");
+        let file_pos = start_pos - block.header_contents_size;
         self.current_trajectory_frame_set_input_file_pos =
             i64::try_from(file_pos).expect("u64 to i64");
         // set_particle_mapping_free
         let frame_set = &mut self.current_trajectory_frame_set;
         let inp_file = self.input_file.as_mut().expect("init input_file");
-        frame_set.first_frame = utils::read_i64_le_bytes(inp_file);
-        frame_set.n_frames = utils::read_i64_le_bytes(inp_file);
+        frame_set.first_frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        frame_set.n_frames = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
         if self.var_num_atoms {
             // let prev_n_particles = frame_set.n_particles;
@@ -434,7 +524,7 @@ impl Trajectory {
                 .iter()
                 .zip(frame_set.molecule_cnt_list.iter_mut())
             {
-                *mol_count = utils::read_i64_le_bytes(inp_file);
+                *mol_count = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
                 frame_set.n_particles += mol.n_atoms * *mol_count;
             }
 
@@ -444,16 +534,23 @@ impl Trajectory {
             // }
         }
 
-        frame_set.next_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
-        frame_set.prev_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
-        frame_set.medium_stride_next_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
-        frame_set.medium_stride_prev_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
-        frame_set.long_stride_next_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
-        frame_set.long_stride_prev_frame_set_file_pos = utils::read_i64_le_bytes(inp_file);
+        frame_set.next_frame_set_file_pos =
+            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        frame_set.prev_frame_set_file_pos =
+            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        frame_set.medium_stride_next_frame_set_file_pos =
+            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        frame_set.medium_stride_prev_frame_set_file_pos =
+            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        frame_set.long_stride_next_frame_set_file_pos =
+            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        frame_set.long_stride_prev_frame_set_file_pos =
+            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
         if block.version >= 3 {
-            frame_set.first_frame_time = utils::read_f64_bytes(inp_file);
-            self.time_per_frame = utils::read_f64_bytes(inp_file);
+            frame_set.first_frame_time =
+                utils::read_f64(inp_file, self.endianness64, self.input_swap64);
+            self.time_per_frame = utils::read_f64(inp_file, self.endianness64, self.input_swap64);
         } else {
             frame_set.first_frame_time = -1.0;
             self.time_per_frame = -1.0;
@@ -485,7 +582,6 @@ impl Trajectory {
     }
 
     fn trajectory_mapping_block_read(&mut self, block: &mut GenBlock) {
-        dbg!("trajectory_mapping_block");
         self.input_file_init();
 
         let start_pos = self.get_file_position();
@@ -499,8 +595,9 @@ impl Trajectory {
 
         // TODO: hash mode
 
-        mapping.num_first_particle = utils::read_i64_le_bytes(inp_file);
-        mapping.n_particles = utils::read_i64_le_bytes(inp_file);
+        mapping.num_first_particle =
+            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        mapping.n_particles = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
         mapping.real_particle_numbers.resize(
             usize::try_from(mapping.n_particles).expect("i64 to usize"),
             0,
@@ -551,21 +648,24 @@ impl Trajectory {
         self.last_pgp_signature = utils::fread_str(inp_file);
         self.forcefield_name = utils::fread_str(inp_file);
 
-        self.time = utils::read_u64_le_bytes(inp_file);
+        self.time = utils::read_u64(inp_file, self.endianness64, self.input_swap64);
         self.var_num_atoms = utils::read_bool_le_bytes(inp_file);
-        self.frame_set_n_frames = utils::read_i64_le_bytes(inp_file);
-        self.first_trajectory_frame_set_input_pos = utils::read_i64_le_bytes(inp_file);
+        self.frame_set_n_frames = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        self.first_trajectory_frame_set_input_pos =
+            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
         self.current_trajectory_frame_set.next_frame_set_file_pos =
             self.first_trajectory_frame_set_input_pos;
-        self.last_trajectory_frame_set_input_pos = utils::read_i64_le_bytes(inp_file);
+        self.last_trajectory_frame_set_input_pos =
+            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
-        self.medium_stride_length = utils::read_i64_le_bytes(inp_file);
+        self.medium_stride_length = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
-        self.long_stride_length = utils::read_i64_le_bytes(inp_file);
+        self.long_stride_length = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
         if block.version >= 3 {
-            self.distance_unit_exponential = utils::read_i64_le_bytes(inp_file);
+            self.distance_unit_exponential =
+                utils::read_i64(inp_file, self.endianness64, self.input_swap64);
         }
 
         // TODO: Handle MD5 hashing here
@@ -585,8 +685,11 @@ impl Trajectory {
 
         self.molecules.clear();
 
-        self.n_molecules =
-            utils::read_i64_le_bytes(self.input_file.as_mut().expect("init input_file"));
+        self.n_molecules = utils::read_i64(
+            self.input_file.as_mut().expect("init input_file"),
+            self.endianness64,
+            self.input_swap64,
+        );
 
         self.n_particles = 0;
         self.molecules = Vec::with_capacity(self.n_molecules as usize);
@@ -599,18 +702,19 @@ impl Trajectory {
         for mol_idx in 0..self.n_molecules {
             let inp_file = self.input_file.as_mut().expect("init input_file");
             let mut molecule = Molecule::new();
-            molecule.id = utils::read_i64_le_bytes(inp_file);
+            molecule.id = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
             molecule.name = utils::fread_str(inp_file);
-            molecule.quaternary_str = utils::read_i64_le_bytes(inp_file);
+            molecule.quaternary_str =
+                utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
             if !self.var_num_atoms {
-                let count = utils::read_i64_le_bytes(inp_file);
+                let count = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
                 self.molecule_cnt_list.push(count);
             }
 
-            molecule.n_chains = utils::read_i64_le_bytes(inp_file);
-            molecule.n_residues = utils::read_i64_le_bytes(inp_file);
-            molecule.n_atoms = utils::read_i64_le_bytes(inp_file);
+            molecule.n_chains = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+            molecule.n_residues = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+            molecule.n_atoms = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
             self.n_particles += molecule.n_atoms
                 * self.molecule_cnt_list
@@ -634,7 +738,6 @@ impl Trajectory {
 
             // Read the chains of the molecule
             for chain_idx in 0..molecule.n_chains {
-                dbg!("starting chain loop");
                 let mut chain = Chain::new();
 
                 // Link back to parent molecule index
@@ -651,7 +754,6 @@ impl Trajectory {
 
                 // Read the residues of the chain
                 for local_idx in start..end {
-                    dbg!("starting residue loop");
                     // let residue = &mut molecule.residues[local_idx as usize];
                     let mut residue = Residue::new();
 
@@ -719,12 +821,12 @@ impl Trajectory {
             }
 
             let inp_file = self.input_file.as_mut().expect("init input_file");
-            molecule.n_bonds = utils::read_i64_le_bytes(inp_file);
+            molecule.n_bonds = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
             for _ in 0..molecule.n_bonds {
                 let mut bond = Bond::new();
-                bond.from_atom_id = utils::read_i64_le_bytes(inp_file);
-                bond.from_atom_id = utils::read_i64_le_bytes(inp_file);
+                bond.from_atom_id = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+                bond.from_atom_id = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
                 molecule.bonds.push(bond);
             }
 
@@ -752,19 +854,25 @@ impl Trajectory {
         if block_meta_info.dependency & FRAME_DEPENDENT != 0 {
             block_meta_info.sparse_data = utils::read_u8(inp_file);
         }
-        block_meta_info.n_values = utils::read_i64_le_bytes(inp_file);
-        block_meta_info.codec_id = Compression::from_i64(utils::read_i64_le_bytes(inp_file));
+        block_meta_info.n_values = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        block_meta_info.codec_id = Compression::from_i64(utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+        ));
 
         block_meta_info.multiplier = if block_meta_info.codec_id != Compression::Uncompressed {
-            utils::read_f64_bytes(inp_file)
+            utils::read_f64(inp_file, self.endianness64, self.input_swap64)
         } else {
             1.0
         };
 
         if block_meta_info.dependency & FRAME_DEPENDENT != 0 {
             if block_meta_info.sparse_data != 0 {
-                block_meta_info.first_frame_with_data = utils::read_i64_le_bytes(inp_file);
-                block_meta_info.stride_length = utils::read_i64_le_bytes(inp_file);
+                block_meta_info.first_frame_with_data =
+                    utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+                block_meta_info.stride_length =
+                    utils::read_i64(inp_file, self.endianness64, self.input_swap64);
                 block_meta_info.n_frames = self.current_trajectory_frame_set.n_frames
                     - (block_meta_info.first_frame_with_data
                         - self.current_trajectory_frame_set.first_frame);
@@ -781,8 +889,10 @@ impl Trajectory {
         }
 
         if block_meta_info.dependency & PARTICLE_DEPENDENT != 0 {
-            block_meta_info.num_first_particle = utils::read_i64_le_bytes(inp_file);
-            block_meta_info.block_n_particles = utils::read_i64_le_bytes(inp_file);
+            block_meta_info.num_first_particle =
+                utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+            block_meta_info.block_n_particles =
+                utils::read_i64(inp_file, self.endianness64, self.input_swap64);
         } else {
             block_meta_info.num_first_particle = -1;
             block_meta_info.block_n_particles = 0;
@@ -960,7 +1070,6 @@ impl Trajectory {
         let data = if let Some(existing) = maybe_data {
             existing
         } else {
-            dbg!("data block did not exist");
             if is_particle_data {
                 self.particle_data_block_create(is_traj_block);
             } else {
@@ -1257,21 +1366,15 @@ impl Trajectory {
 
             let mut prev_pos: u64 = 0;
             let mut block = GenBlock::new();
-            loop {
-                if prev_pos >= self.input_file_len {
-                    break;
-                }
-                self.block_header_read(&mut block);
-
-                // If `block.id == -1` or `block.id == TNG_TRAJECTORY_FRAME_SET`, exit loop
-                match block.id {
-                    BlockID::Unknown(0) | BlockID::TrajectoryFrameSet => break,
-                    _ => {}
-                }
-
+            self.block_header_read(&mut block);
+            while prev_pos < self.input_file_len
+                && block.id != BlockID::Unknown(0)
+                && block.id != BlockID::TrajectoryFrameSet
+            {
                 println!("calling block_read_next");
                 self.block_read_next(&mut block);
                 prev_pos = self.get_file_position();
+                self.block_header_read(&mut block);
             }
 
             if block.id == BlockID::TrajectoryFrameSet {
@@ -1282,6 +1385,121 @@ impl Trajectory {
                     .expect("no error handling");
             }
         }
+    }
+
+    /// Calculate the total byte length of the “general info” block header.
+    fn general_info_block_len_calculate(&self) -> usize {
+        // In C, each `char*` must be non-NULL. In Rust, `String` is never null,
+        // but we ensure it’s at least empty:
+        macro_rules! ensure_string {
+            ($field:ident) => {
+                if self.$field.is_empty() {
+                    // Already an empty String, which corresponds to C’s malloc(1) + '\0'.
+                    // No explicit allocation needed in Rust.
+                }
+            };
+        }
+
+        ensure_string!(first_program_name);
+        ensure_string!(last_program_name);
+        ensure_string!(first_user_name);
+        ensure_string!(last_user_name);
+        ensure_string!(first_computer_name);
+        ensure_string!(last_computer_name);
+        ensure_string!(first_pgp_signature);
+        ensure_string!(last_pgp_signature);
+        ensure_string!(forcefield_name);
+
+        fn bounded_len(s: &str) -> usize {
+            min(s.len().checked_add(1).unwrap_or(MAX_STR_LEN), MAX_STR_LEN)
+        }
+
+        let first_program_name_len = bounded_len(&self.first_program_name);
+        let last_program_name_len = bounded_len(&self.last_program_name);
+        let first_user_name_len = bounded_len(&self.first_user_name);
+        let last_user_name_len = bounded_len(&self.last_user_name);
+        let first_computer_name_len = bounded_len(&self.first_computer_name);
+        let last_computer_name_len = bounded_len(&self.last_computer_name);
+        let first_pgp_signature_len = bounded_len(&self.first_pgp_signature);
+        let last_pgp_signature_len = bounded_len(&self.last_pgp_signature);
+        let forcefield_name_len = bounded_len(&self.forcefield_name);
+
+        // Sum fixed‐size numeric fields:
+        let mut total: usize = 0;
+        total += size_of::<u64>(); // time
+        total += size_of::<u8>(); // var_num_atoms
+        total += size_of::<i64>(); // frame_set_n_frames
+        total += size_of::<i64>(); // first_trajectory_frame_set_input_file_pos
+        total += size_of::<i64>(); // last_trajectory_frame_set_input_file_pos
+        total += size_of::<i64>(); // medium_stride_length
+        total += size_of::<i64>(); // long_stride_length
+        total += size_of::<i64>(); // distance_unit_exponential (assume C’s int is 32 bits)
+
+        // Add all string lengths:
+        total += first_program_name_len;
+        total += last_program_name_len;
+        total += first_user_name_len;
+        total += last_user_name_len;
+        total += first_computer_name_len;
+        total += last_computer_name_len;
+        total += first_pgp_signature_len;
+        total += last_pgp_signature_len;
+        total += forcefield_name_len;
+
+        total
+    }
+
+    fn molecules_block_len_calculate(&self) -> usize {
+        0
+    }
+
+    pub fn file_headers_write(&mut self) {
+        let mut total_len = 0;
+        self.output_file_init();
+
+        if self.n_trajectory_frame_sets > 0 {
+            self.file_headers_len_get();
+
+            let mut block = GenBlock::new();
+            block.name = Some("GENERAL INFO".to_string());
+            total_len += block.calculate_header_len();
+            total_len += self.general_info_block_len_calculate();
+
+            block.name = Some("MOLECULES".to_string());
+            total_len += block.calculate_header_len();
+            total_len += self.molecules_block_len_calculate();
+        }
+    }
+
+    fn file_headers_len_get(&mut self) {
+        self.input_file_init();
+
+        let mut len = 0;
+        let orig_pos = self.get_file_position();
+        let mut block = GenBlock::new();
+
+        // Read through the headers of non-trajectory blocks (they come before the
+        // trajectory blocks in the file)
+        self.block_header_read(&mut block);
+        while len < self.input_file_len
+            && block.id != BlockID::Unknown(0)
+            && block.id != BlockID::TrajectoryFrameSet
+        {
+            len += u64::try_from(block.header_contents_size + block.block_contents_size)
+                .expect("u64 from i64");
+            self.input_file
+                .as_mut()
+                .expect("init input_file")
+                .seek(SeekFrom::Current(
+                    i64::try_from(block.block_contents_size).expect("i64 from u64"),
+                ))
+                .expect("no error handling");
+        }
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(orig_pos))
+            .expect("no error handling");
     }
 
     /// Find a molecule by name and/or ID.
@@ -2183,11 +2401,14 @@ impl Trajectory {
                     self.block_header_read(&mut block);
                 }
             } else {
-                file_pos += block.block_contents_size + block.header_contents_size;
+                file_pos += i64::try_from(block.block_contents_size + block.header_contents_size)
+                    .expect("i64 from u64");
                 self.input_file
                     .as_ref()
                     .expect("init input_file")
-                    .seek(SeekFrom::Current(block.block_contents_size))
+                    .seek(SeekFrom::Current(
+                        i64::try_from(block.block_contents_size).expect("i64 from u64"),
+                    ))
                     .expect("no error handling");
                 if file_pos < i64::try_from(self.input_file_len).expect("i64 from u64") {
                     self.block_header_read(&mut block);
@@ -2424,7 +2645,7 @@ impl Trajectory {
         }
 
         let inp_file = self.input_file.as_mut().expect("init input_file");
-        let frame = utils::read_i64_le_bytes(inp_file);
+        let frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
         inp_file
             .seek(SeekFrom::Start(file_pos))
@@ -2458,8 +2679,8 @@ impl Trajectory {
         }
 
         let inp_file = self.input_file.as_mut().expect("init input_file");
-        let first_frame = utils::read_i64_le_bytes(inp_file);
-        let n_frames = utils::read_i64_le_bytes(inp_file);
+        let first_frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        let n_frames = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
         inp_file
             .seek(SeekFrom::Start(
                 u64::try_from(file_pos).expect("u64 from i64"),

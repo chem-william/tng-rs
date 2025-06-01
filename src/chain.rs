@@ -36,9 +36,17 @@ impl Chain {
             .input_file
             .as_mut()
             .expect("init input_file");
-        self.id = utils::read_u64_le_bytes(inp_file);
+        self.id = utils::read_u64(
+            inp_file,
+            trajectory_data.endianness64,
+            trajectory_data.input_swap64,
+        );
         self.name = utils::fread_str(inp_file);
-        self.n_residues = utils::read_u64_le_bytes(inp_file);
+        self.n_residues = utils::read_u64(
+            inp_file,
+            trajectory_data.endianness64,
+            trajectory_data.input_swap64,
+        );
     }
 
     pub fn set_name(&mut self, new_name: String) {

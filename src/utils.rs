@@ -1,13 +1,123 @@
 use std::fs::File;
-use std::io::{Read, Seek};
+use std::io::Read;
 
 use crate::MAX_STR_LEN;
 
+/// Represents the endianness of 32 bit values
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Endianness32 {
+    Little,
+    Big,
+    BytePairSwap,
+}
+
+/// Represents the endianness of 32 bit values
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Endianness64 {
+    Little,
+    Big,
+    QuadSwap,
+    BytePairSwap,
+    ByteSwap,
+}
+
+pub(crate) type SwapFn32 = fn(Endianness32, &mut u32);
+pub(crate) type SwapFn64 = fn(Endianness64, &mut u64);
+
+/// Swaps the byte order of a 32-bit numerical variable to big endian
+pub fn swap_byte_order_big_endian_32(endianness: Endianness32, raw: &mut u32) {
+    match endianness {
+        // Byte order is reversed
+        Endianness32::Little => {
+            *raw = raw.swap_bytes();
+        }
+        // Already correct
+        Endianness32::Big => {}
+        // Byte pair swap
+        Endianness32::BytePairSwap => {
+            *raw = ((*raw & 0xFFFF_0000) >> 16) | ((*raw & 0x0000_FFFF) << 16);
+        }
+    }
+}
+
+/// Swaps the byte order of a 64-bit numerical variable to big endian
+pub fn swap_byte_order_big_endian_64(endianness: Endianness64, raw: &mut u64) {
+    match endianness {
+        // Byte order is reversed
+        Endianness64::Little => {
+            *raw = raw.swap_bytes();
+        }
+        // Already correct
+        Endianness64::Big => {}
+        Endianness64::QuadSwap => {
+            *raw = ((*raw & 0xFFFF_FFFF_0000_0000) >> 32) | ((*raw & 0x0000_0000_FFFF_FFFF) << 32);
+        }
+        Endianness64::BytePairSwap => {
+            *raw = ((*raw & 0xFFFF_0000_FFFF_0000) >> 16) | ((*raw & 0x0000_FFFF_0000_FFFF) << 16);
+        }
+        Endianness64::ByteSwap => {
+            *raw = ((*raw & 0xFF00_FF00_FF00_FF00) >> 8) | ((*raw & 0x00FF_00FF_00FF_00FF) << 8);
+        }
+    }
+}
+
+/// Swaps the byte order of a 32-bit numerical variable to little endian
+pub fn swap_byte_order_little_endian_32(endianness: Endianness32, raw: &mut u32) {
+    match endianness {
+        Endianness32::Little => {
+            // Already little‐endian; no action needed
+        }
+        Endianness32::BytePairSwap => {
+            // Swap each byte pair: 0xAABBCCDD → 0xBBAADDCC
+            *raw = ((*raw & 0xFF00_FF00) >> 8) | ((*raw & 0x00FF_00FF) << 8);
+        }
+        Endianness32::Big => {
+            // Reverse all bytes: 0xAABBCCDD → 0xDDCCBBAA
+            *raw = raw.swap_bytes();
+        }
+    }
+}
+
+/// Swaps the byte order of a 64-bit numerical variable to little endian
+pub fn swap_byte_order_little_endian_64(endianness: Endianness64, raw: &mut u64) {
+    match endianness {
+        // Already correct
+        Endianness64::Little => {}
+        // Byte order is reversed
+        Endianness64::Big => *raw = raw.swap_bytes(),
+        // Byte quad swapped big endian to little endian
+        Endianness64::QuadSwap => {
+            *raw = ((*raw & 0xFF00_0000_FF00_0000) >> 24)
+                | ((*raw & 0x00FF_0000_00FF_0000) >> 8)
+                | ((*raw & 0x0000_FF00_0000_FF00) << 8)
+                | ((*raw & 0x0000_00FF_0000_00FF) << 24);
+        }
+        // Byte pair swapped big endian to little endian
+        Endianness64::BytePairSwap => {
+            *raw = ((*raw & 0xFF00_FF00_0000_0000) >> 40)
+                | ((*raw & 0x00FF_00FF_0000_0000) >> 24)
+                | ((*raw & 0x0000_0000_FF00_FF00) << 24)
+                | ((*raw & 0x0000_0000_00FF_00FF) << 40);
+        }
+        // Byte pair swapped big endian to little endian
+        Endianness64::ByteSwap => {
+            *raw = ((*raw & 0xFFFF_0000_0000_0000) >> 48)
+                | ((*raw & 0x0000_FFFF_0000_0000) >> 16)
+                | ((*raw & 0x0000_0000_FFFF_0000) << 16)
+                | ((*raw & 0x0000_0000_0000_FFFF) << 48);
+        }
+    }
+}
+
 /// Read exactly N bytes from `reader` into a `[u8; N]`.  
+///
+/// # Panic
 /// Panics (or unwraps) on any I/O error.
 pub(crate) fn read_exact_array<const N: usize, R: Read>(reader: &mut R) -> [u8; N] {
     let mut buf = [0u8; N];
-    reader.read_exact(&mut buf).unwrap();
+    reader
+        .read_exact(&mut buf)
+        .expect("could not read bytes from file");
     buf
 }
 
@@ -15,16 +125,67 @@ pub fn read_u8(input_file: &mut File) -> u8 {
     read_exact_array::<1, _>(input_file)[0]
 }
 
-pub fn read_i64_le_bytes(input_file: &mut File) -> i64 {
-    i64::from_le_bytes(read_exact_array::<8, _>(input_file))
+pub fn read_u64(
+    input_file: &mut File,
+    endianness: Endianness64,
+    input_swap64: Option<SwapFn64>,
+) -> u64 {
+    let raw_bytes = read_exact_array(input_file);
+    let mut val: u64 = u64::from_ne_bytes(raw_bytes);
+    if let Some(swap_fn_64) = input_swap64 {
+        swap_fn_64(endianness, &mut val);
+    }
+    val
 }
 
-pub fn read_u64_le_bytes(input_file: &mut File) -> u64 {
-    u64::from_le_bytes(read_exact_array::<8, _>(input_file))
+pub fn read_i64(
+    input_file: &mut File,
+    endianness: Endianness64,
+    input_swap64: Option<SwapFn64>,
+) -> i64 {
+    let intermediate_val: u64 = read_u64(input_file, endianness, input_swap64);
+    // Reinterpret the bit‐pattern as an i64:
+    i64::from_ne_bytes(intermediate_val.to_ne_bytes())
 }
 
-pub fn read_f64_bytes(input_file: &mut File) -> f64 {
-    f64::from_le_bytes(read_exact_array::<8, _>(input_file))
+pub fn read_f64(
+    input_file: &mut File,
+    endianness: Endianness64,
+    input_swap64: Option<SwapFn64>,
+) -> f64 {
+    let u: u64 = read_u64(input_file, endianness, input_swap64);
+    f64::from_bits(u)
+}
+
+pub fn read_u32_and_swap(
+    input_file: &mut File,
+    endianness: Endianness32,
+    input_swap32: Option<SwapFn32>,
+) -> u32 {
+    let raw_bytes: [u8; 4] = read_exact_array(input_file);
+    let mut val: u32 = u32::from_ne_bytes(raw_bytes);
+    if let Some(swap_fn_32) = input_swap32 {
+        swap_fn_32(endianness, &mut val);
+    }
+    val
+}
+
+pub fn read_i32_and_swap(
+    input_file: &mut File,
+    endianness: Endianness32,
+    input_swap32: Option<SwapFn32>,
+) -> i32 {
+    let u: u32 = read_u32_and_swap(input_file, endianness, input_swap32);
+    i32::from_ne_bytes(u.to_ne_bytes())
+}
+
+pub fn read_f32_and_swap(
+    input_file: &mut File,
+    endianness: Endianness32,
+    input_swap32: Option<SwapFn32>,
+) -> f32 {
+    let u: u32 = read_u32_and_swap(input_file, endianness, input_swap32);
+    f32::from_bits(u)
 }
 
 pub fn read_bool_le_bytes(input_file: &mut File) -> bool {

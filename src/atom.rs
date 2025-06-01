@@ -31,7 +31,11 @@ impl Atom {
             .input_file
             .as_mut()
             .expect("init input_file");
-        self.id = utils::read_i64_le_bytes(inp_file);
+        self.id = utils::read_i64(
+            inp_file,
+            trajectory_data.endianness64,
+            trajectory_data.input_swap64,
+        );
         self.name = utils::fread_str(inp_file);
         self.atom_type = utils::fread_str(inp_file);
     }
