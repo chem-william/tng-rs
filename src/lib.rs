@@ -57,6 +57,9 @@ mod integration {
 
         assert_eq!(traj.input_file_path, input_filename);
         assert_eq!(traj.output_file_path, output_filename);
+
+        traj.file_headers_read();
+        // traj.file_headers_write();
     }
 
     #[test]
