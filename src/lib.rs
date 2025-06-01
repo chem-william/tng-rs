@@ -33,6 +33,7 @@ mod integration {
 
     const N_FRAME_SETS: i64 = 100;
     const TIME_PER_FRAME: f64 = 2e-15;
+    const TEST_FILES_DIR: &str = "test_files";
 
     #[test]
     fn can_we_init_traj_with_time() {
@@ -44,7 +45,9 @@ mod integration {
     fn test_read_write() {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
         let mut output_filename = input_filename.clone();
+        input_filename.push(TEST_FILES_DIR);
         input_filename.push("tng_example.tng");
+        output_filename.push(TEST_FILES_DIR);
         output_filename.push("tng_example_out.tng");
 
         let mut traj = Trajectory::new();
@@ -65,6 +68,7 @@ mod integration {
     #[test]
     fn it_works() {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+        input_filename.push(TEST_FILES_DIR);
         input_filename.push("tng_test.tng");
         let mut traj = Trajectory::new();
 
