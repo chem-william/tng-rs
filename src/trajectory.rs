@@ -294,10 +294,18 @@ impl Trajectory {
         }
     }
 
-    fn get_file_position(&mut self) -> u64 {
+    fn get_input_file_position(&mut self) -> u64 {
         self.input_file
             .as_ref()
             .expect("init input_file")
+            .stream_position()
+            .expect("no error handling")
+    }
+
+    fn get_output_file_position(&mut self) -> u64 {
+        self.output_file
+            .as_ref()
+            .expect("init output_file")
             .stream_position()
             .expect("no error handling")
     }
