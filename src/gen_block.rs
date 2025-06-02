@@ -108,12 +108,12 @@ pub(crate) enum BlockID {
     GmxAtomSelectionGroup = 0x1000_0000_1000_0080,
 
     // === Fallback ===
-    Unknown(u64),
+    Unknown,
 }
 
 impl Default for BlockID {
     fn default() -> Self {
-        BlockID::Unknown(0)
+        BlockID::Unknown
     }
 }
 

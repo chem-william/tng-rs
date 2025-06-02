@@ -399,8 +399,8 @@ impl Trajectory {
         block.header_contents_size = u64::from_ne_bytes(header_contents_size_bytes);
 
         if block.header_contents_size == 0 {
-            block.id = BlockID::Unknown(0);
-            warn!("header_contents_size was 0 block.id is Unknown(0)");
+            block.id = BlockID::Unknown;
+            warn!("header_contents_size was 0 block.id is Unknown");
             return;
         }
 
@@ -1341,7 +1341,7 @@ impl Trajectory {
             let mut block = GenBlock::new();
             self.block_header_read(&mut block);
             while prev_pos < self.input_file_len
-                && block.id != BlockID::Unknown(0)
+                && block.id != BlockID::Unknown
                 && block.id != BlockID::TrajectoryFrameSet
             {
                 println!("calling block_read_next");
@@ -1796,7 +1796,7 @@ impl Trajectory {
         // trajectory blocks in the file)
         self.block_header_read(&mut block);
         while len < self.input_file_len
-            && block.id != BlockID::Unknown(0)
+            && block.id != BlockID::Unknown
             && block.id != BlockID::TrajectoryFrameSet
         {
             len += block.header_contents_size + block.block_contents_size;
@@ -2088,7 +2088,7 @@ impl Trajectory {
                     break;
                 }
                 match block.id {
-                    BlockID::Unknown(0) | BlockID::TrajectoryFrameSet => break,
+                    BlockID::Unknown | BlockID::TrajectoryFrameSet => break,
                     _ => {}
                 }
 
@@ -2229,7 +2229,7 @@ impl Trajectory {
         // Read block headers first to see what block is found
         self.block_header_read(&mut block);
 
-        if block.id != BlockID::TrajectoryFrameSet || block.id == BlockID::Unknown(0) {
+        if block.id != BlockID::TrajectoryFrameSet || block.id == BlockID::Unknown {
             return Err(());
         }
 
@@ -2238,7 +2238,7 @@ impl Trajectory {
 
         // TODO: make this fallible?
         self.block_read_next(&mut block);
-        if block.id != BlockID::Unknown(0) {
+        if block.id != BlockID::Unknown {
             self.n_trajectory_frame_sets += 1;
             file_pos = self.get_input_file_position();
 
@@ -2249,7 +2249,7 @@ impl Trajectory {
                     break;
                 }
                 match block.id {
-                    BlockID::Unknown(0) | BlockID::TrajectoryFrameSet => break,
+                    BlockID::Unknown | BlockID::TrajectoryFrameSet => break,
                     _ => {}
                 }
                 self.block_read_next(&mut block);
@@ -2706,7 +2706,7 @@ impl Trajectory {
         self.block_header_read(&mut block);
         while file_pos < i64::try_from(self.input_file_len).expect("i64 from u64")
             && block.id != BlockID::TrajectoryFrameSet
-            && block.id != BlockID::Unknown(0)
+            && block.id != BlockID::Unknown
         {
             if block.id == match_block_id {
                 self.block_read_next(&mut block);
