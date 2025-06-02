@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::fs::File;
 use std::io::Read;
 
@@ -252,6 +253,10 @@ pub fn fread_str<R: Read>(input_file: &mut R) -> String {
         Ok(valid) => valid,
         Err(e) => String::from_utf8_lossy(&e.into_bytes()).into_owned(),
     }
+}
+
+pub(crate) fn bounded_len(s: &str) -> usize {
+    min(s.len().checked_add(1).unwrap_or(MAX_STR_LEN), MAX_STR_LEN)
 }
 
 #[cfg(test)]

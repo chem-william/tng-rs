@@ -1,60 +1,25 @@
 use log::warn;
-use std::cmp::{max, min};
+use std::cmp::max;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::atom::Atom;
 use crate::bond::Bond;
 use crate::chain::Chain;
-use crate::data::{Compression, Data};
+use crate::data::{Compression, Data, DataType};
 use crate::gen_block::{BlockID, GenBlock};
 use crate::molecule::Molecule;
 use crate::particle_mapping::ParticleMapping;
 use crate::residue::Residue;
 use crate::trajectory_frame_set::TrajectoryFrameSet;
-use crate::utils::{Endianness32, Endianness64, SwapFn32, SwapFn64};
+use crate::utils::{Endianness32, Endianness64, SwapFn32, SwapFn64, bounded_len};
 use crate::{FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT, utils};
 use core::panic;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use flate2::read::ZlibDecoder;
-
-/// Possible formats of data block contents
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum DataType {
-    #[default]
-    Char = 0,
-    Int = 1,
-    Float = 2,
-    Double = 3,
-}
-
-impl DataType {
-    /// Try to interpret a raw i64 as a [`DataType`]
-    ///
-    /// # Panic
-    /// Panics on unknown data types
-    pub fn from_u8(raw: u8) -> Self {
-        match raw {
-            0 => DataType::Char,
-            1 => DataType::Int,
-            2 => DataType::Float,
-            3 => DataType::Double,
-            _ => panic!("unknown data type"),
-        }
-    }
-
-    fn get_size(&self) -> usize {
-        match self {
-            DataType::Char => 1,
-            DataType::Int => size_of::<i64>(),
-            DataType::Float => size_of::<f32>(),
-            DataType::Double => size_of::<f64>(),
-        }
-    }
-}
 
 fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
     let meta1 = file1.metadata()?;
@@ -427,7 +392,7 @@ impl Trajectory {
     fn block_header_read(&mut self, block: &mut GenBlock) {
         self.input_file_init();
 
-        let start_pos = self.get_file_position();
+        let start_pos = self.get_input_file_position();
 
         let header_contents_size_bytes =
             utils::read_exact_array::<8, _>(self.input_file.as_mut().expect("init input_file"));
@@ -440,7 +405,7 @@ impl Trajectory {
         }
 
         // If this was the size of the general info block, check the endianness
-        if self.get_file_position() < 9 {
+        if self.get_input_file_position() < 9 {
             // File is little endian
             if header_contents_size_bytes[0] != 0 && header_contents_size_bytes[7] == 0 {
                 // If the architecture endianess is little endian no byte swap will be needed.
@@ -510,7 +475,7 @@ impl Trajectory {
 
     fn frame_set_block_read(&mut self, block: &mut GenBlock) {
         self.input_file_init();
-        let start_pos = self.get_file_position();
+        let start_pos = self.get_input_file_position();
 
         // FIXME (from c): Does not check if the size of the contents matches the
         // expected size of if the contents can be read
@@ -592,7 +557,7 @@ impl Trajectory {
     fn trajectory_mapping_block_read(&mut self, block: &mut GenBlock) {
         self.input_file_init();
 
-        let start_pos = self.get_file_position();
+        let start_pos = self.get_input_file_position();
         let inp_file = self.input_file.as_mut().expect("init input_file");
 
         // FIXME (from c): Does not check if the size of the contents matches the
@@ -643,7 +608,7 @@ impl Trajectory {
     fn general_info_block_read(&mut self, block: &mut GenBlock) {
         self.input_file_init();
 
-        let start_pos = self.get_file_position();
+        let start_pos = self.get_input_file_position();
         let inp_file = self.input_file.as_mut().expect("init input_file");
 
         self.first_program_name = utils::fread_str(inp_file);
@@ -689,7 +654,7 @@ impl Trajectory {
 
     fn molecules_block_read(&mut self, block: &mut GenBlock) {
         self.input_file_init();
-        let start_pos = self.get_file_position();
+        let start_pos = self.get_input_file_position();
 
         self.molecules.clear();
 
@@ -1316,11 +1281,11 @@ impl Trajectory {
     /// Read the contents of a data block (particle or non-particle data)
     fn data_block_contents_read(&mut self, block: &mut GenBlock) {
         self.input_file_init();
-        let start_pos = self.get_file_position();
+        let start_pos = self.get_input_file_position();
 
         let meta_info = self.data_block_meta_information_read(block);
 
-        let current_pos = self.get_file_position();
+        let current_pos = self.get_input_file_position();
         let remaining_len = block.block_contents_size as u64 - (current_pos - start_pos);
 
         self.data_read(block, meta_info, remaining_len);
@@ -1350,7 +1315,7 @@ impl Trajectory {
                     self.data_block_contents_read(block);
                 } else {
                     // We skip to the next block
-                    let current_pos = self.get_file_position();
+                    let current_pos = self.get_input_file_position();
                     let new_pos = (current_pos as i128 + block.block_contents_size as i128)
                         .try_into()
                         .expect("set new position when reading block header");
@@ -1381,7 +1346,7 @@ impl Trajectory {
             {
                 println!("calling block_read_next");
                 self.block_read_next(&mut block);
-                prev_pos = self.get_file_position();
+                prev_pos = self.get_input_file_position();
                 self.block_header_read(&mut block);
             }
 
@@ -1397,30 +1362,10 @@ impl Trajectory {
 
     /// Calculate the total byte length of the “general info” block header.
     fn general_info_block_len_calculate(&self) -> usize {
-        // In C, each `char*` must be non-NULL. In Rust, `String` is never null,
-        // but we ensure it’s at least empty:
-        macro_rules! ensure_string {
-            ($field:ident) => {
-                if self.$field.is_empty() {
-                    // Already an empty String, which corresponds to C’s malloc(1) + '\0'.
-                    // No explicit allocation needed in Rust.
-                }
-            };
-        }
-
-        ensure_string!(first_program_name);
-        ensure_string!(last_program_name);
-        ensure_string!(first_user_name);
-        ensure_string!(last_user_name);
-        ensure_string!(first_computer_name);
-        ensure_string!(last_computer_name);
-        ensure_string!(first_pgp_signature);
-        ensure_string!(last_pgp_signature);
-        ensure_string!(forcefield_name);
-
-        fn bounded_len(s: &str) -> usize {
-            min(s.len().checked_add(1).unwrap_or(MAX_STR_LEN), MAX_STR_LEN)
-        }
+        // In C, each `char*` must be non-NULL. In Rust, `String` is never null.
+        // It's also guaranteed to be at least empty if we have a Trajectory
+        // due to Trajectory::new()
+        // so we just don't do anything
 
         let first_program_name_len = bounded_len(&self.first_program_name);
         let last_program_name_len = bounded_len(&self.last_program_name);
@@ -1458,7 +1403,111 @@ impl Trajectory {
     }
 
     fn molecules_block_len_calculate(&self) -> usize {
-        0
+        let mut length = 0;
+        for molecule in &self.molecules {
+            length += bounded_len(&molecule.name);
+            for chain in &molecule.chains {
+                length += size_of::<u64>(); // chain.id
+                length += bounded_len(&chain.name);
+                length += size_of::<u64>(); // chain.n_residues
+            }
+
+            for residue in &molecule.residues {
+                length += size_of::<u64>(); // residue.id
+                length += bounded_len(&residue.name);
+                length += size_of::<u64>(); // residue.n_atoms
+            }
+
+            for atom in &molecule.atoms {
+                length += size_of::<i64>(); // atom.id
+                length += bounded_len(&atom.name);
+                length += bounded_len(&atom.atom_type);
+            }
+
+            for bond in &molecule.bonds {
+                length += size_of::<i64>() + size_of::<i64>(); // bond.from_atom_id + bond.to_atom_id
+            }
+        }
+
+        let proto_mol = &self.molecules[0];
+        length += size_of_val(&self.n_molecules);
+        length += size_of_val(&proto_mol.id);
+        length += size_of_val(&proto_mol.quaternary_str);
+        length += size_of_val(&proto_mol.n_chains);
+        length += size_of_val(&proto_mol.n_residues);
+        length += size_of_val(&proto_mol.n_atoms);
+        length += size_of_val(&proto_mol.n_bonds);
+        length += size_of_val(&self.n_molecules);
+
+        if !self.var_num_atoms {
+            length += usize::try_from(self.n_molecules).expect("usize from i64") * size_of::<u64>();
+        }
+        length
+    }
+
+    pub fn data_block_len_calculate(
+        &self,
+        data: &Data,
+        is_particle_data: bool,
+        n_frames: u64,
+        frame_step: u64,
+        stride_length: u64,
+        num_first_particle: u64,
+        n_particles: u64,
+    ) -> usize {
+        let mut length = 0;
+        let size = data.data_type.get_size();
+
+        // in C, `char` is 1 byte, so in Rust we use `u8`
+        length += size_of::<u8>() * 2;
+        length += size_of_val(&data.n_values_per_frame);
+        length += size_of_val(&data.codec_id);
+
+        if is_particle_data {
+            length += size_of_val(&num_first_particle)
+        }
+        if stride_length > 1 {
+            length += size_of_val(&data.first_frame_with_data) + size_of_val(&data.stride_length);
+        }
+
+        if data.codec_id != Compression::Uncompressed {
+            length += size_of_val(&data.compression_multiplier);
+        }
+
+        if data.dependency & FRAME_DEPENDENT != 0 {
+            length += size_of::<u8>();
+        }
+
+        if data.data_type == DataType::Char {
+            let strings_3d = match &data.strings {
+                Some(s) => s,
+                None => unreachable!("data.strings was None"),
+            };
+            if is_particle_data {
+                for i in 0..n_frames {
+                    let first_dim_values = &strings_3d[i as usize];
+                    for j in num_first_particle..n_particles {
+                        let second_dim_values = &first_dim_values[j as usize];
+                        for k in 0..data.n_values_per_frame {
+                            length += second_dim_values[k as usize].len();
+                        }
+                    }
+                }
+            } else {
+                for i in 0..n_frames {
+                    let second_dim_values = &strings_3d[0][i as usize];
+                    for j in 0..data.n_values_per_frame {
+                        length += second_dim_values[j as usize].len() + 1;
+                    }
+                }
+            }
+        } else {
+            length += size
+                * usize::try_from(frame_step * n_particles).expect("usize from u64")
+                * usize::try_from(data.n_values_per_frame).expect("usize from i64");
+        }
+
+        length
     }
 
     pub fn file_headers_write(&mut self) {
@@ -1466,7 +1515,7 @@ impl Trajectory {
         self.output_file_init();
 
         if self.n_trajectory_frame_sets > 0 {
-            self.file_headers_len_get();
+            let orig_len = self.file_headers_len_get();
 
             let mut block = GenBlock::new();
             block.name = Some("GENERAL INFO".to_string());
@@ -1476,14 +1525,271 @@ impl Trajectory {
             block.name = Some("MOLECULES".to_string());
             total_len += block.calculate_header_len();
             total_len += self.molecules_block_len_calculate();
+
+            for i in 0..self.n_data_blocks {
+                let data = &self.non_tr_data[i];
+                block.name = Some(data.block_name.clone());
+                total_len += block.calculate_header_len();
+                total_len += self.data_block_len_calculate(data, false, 1, 1, 1, 0, 1);
+            }
+
+            for i in 0..self.n_particle_data_blocks {
+                let data = &self.non_tr_particle_data[i];
+                block.name = Some(data.block_name.clone());
+                total_len += block.calculate_header_len();
+                total_len += self.data_block_len_calculate(data, true, 1, 1, 1, 0, 1);
+            }
+
+            if total_len > orig_len {
+                self.migrate_data_in_file()
+            }
         }
     }
 
-    fn file_headers_len_get(&mut self) {
+    fn file_pos_of_subsequent_trajectory_block_get(&mut self) -> i64 {
+        let orig_pos = self.get_input_file_position();
+        let curr_frame_set_pos =
+            u64::try_from(self.current_trajectory_frame_set_input_file_pos).expect("u64 from i64");
+
+        let mut pos = self.first_trajectory_frame_set_input_pos;
+
+        if pos <= 0 {
+            return pos;
+        }
+
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(u64::try_from(pos).expect("u64 from i64")))
+            .expect("no error handling");
+        let mut block = GenBlock::new();
+
+        // Read block headers first to see that a frame set block is found
+        self.block_header_read(&mut block);
+        if block.id != BlockID::TrajectoryFrameSet {
+            panic!("Cannot read block header at pos {pos}");
+        }
+
+        self.block_read_next(&mut block);
+
+        // Update `pos` if this is the earliest frame set so far (after `orig_pos`)
+        if self.current_trajectory_frame_set_input_file_pos < pos
+            && self.current_trajectory_frame_set_input_file_pos
+                > i64::try_from(orig_pos).expect("i64 from u64")
+        {
+            pos = self.current_trajectory_frame_set_input_file_pos;
+        }
+
+        // Re-read the frame set that used to be the current one
+        self.reread_frame_set_at_file_pos(curr_frame_set_pos);
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(u64::try_from(pos).expect("u64 from i64")))
+            .expect("no error handling");
+    }
+
+    fn length_of_current_frame_set_contents_get(&mut self) -> i64 {
+        let orig_pos = self.get_input_file_position();
+        let curr_frame_set_pos =
+            u64::try_from(self.current_trajectory_frame_set_input_file_pos).expect("u64 from i64");
+        let mut len = 0;
+
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(curr_frame_set_pos))
+            .expect("no error handling");
+        let mut block = GenBlock::new();
+
+        // Read block headers first to see that a frame set block is found
+        self.block_header_read(&mut block);
+        if block.id != BlockID::TrajectoryFrameSet {
+            panic!("Cannot read block header at pos {curr_frame_set_pos}");
+        }
+
+        // Read the headers of all blocks in the frame set (not the actual contents of them)
+        loop {
+            self.input_file
+                .as_mut()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(curr_frame_set_pos))
+                .expect("no error handling");
+
+            len += block.header_contents_size + block.block_contents_size;
+            if len >= self.input_file_len {
+                break;
+            }
+            self.block_header_read(&mut block);
+            if block.id == BlockID::TrajectoryFrameSet {
+                break;
+            }
+        }
+
+        self.reread_frame_set_at_file_pos(curr_frame_set_pos);
+
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(orig_pos))
+            .expect("no error handling");
+        i64::try_from(len).expect("i64 from u64")
+    }
+
+    /// Update the frame set pointers in the current frame set block, already
+    /// written to disk. It also updates the pointers of the blocks pointing to
+    /// the current frame set block
+    fn frame_set_pointers_update(&mut self) {
+        self.output_file_init();
+        let mut block = GenBlock::new();
+
+        let output_file_pos = self.get_output_file_position();
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        self.input_file = Some(out_file.try_clone().expect("able to clone output file"));
+        let mut pos = self.current_trajectory_frame_set_output_file_pos;
+
+        // Update next frame set
+        if self.current_trajectory_frame_set.next_frame_set_file_pos > 0 {
+            out_file
+                .seek(SeekFrom::Start(
+                    u64::try_from(self.current_trajectory_frame_set.next_frame_set_file_pos)
+                        .expect("u64 from i64"),
+                ))
+                .expect("no error handling");
+            self.block_header_read(&mut block);
+            let contents_start_pos = self.get_output_file_position();
+
+            let out_file = self.output_file.as_mut().expect("init output_file");
+            out_file
+                .seek(SeekFrom::Current(
+                    i64::try_from(
+                        block.block_contents_size
+                            - u64::try_from(5 * size_of::<i64>() + 2 * size_of::<f64>())
+                                .expect("u64 from usize"),
+                    )
+                    .expect("i64 from u64"),
+                ))
+                .expect("no error handling");
+
+            if let Some(swap_fn) = self.input_swap64 {
+                swap_fn(
+                    self.endianness64,
+                    &mut u64::try_from(pos).expect("u64 from i64"),
+                );
+            }
+            out_file.write(&pos.to_ne_bytes()).expect("write to out");
+        }
+
+        // Update previous frame set
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        if self.current_trajectory_frame_set.prev_frame_set_file_pos > 0 {
+            out_file
+                .seek(SeekFrom::Start(
+                    u64::try_from(self.current_trajectory_frame_set.prev_frame_set_file_pos)
+                        .expect("u64 from i64"),
+                ))
+                .expect("no error handling");
+            self.block_header_read(&mut block);
+
+            let contents_start_pos = self.get_output_file_position();
+
+            let out_file = self.output_file.as_mut().expect("init output_file");
+            out_file
+                .seek(SeekFrom::Current(
+                    i64::try_from(
+                        block.block_contents_size
+                            - u64::try_from(6 * size_of::<i64>() + 2 * size_of::<f64>())
+                                .expect("u64 from usize"),
+                    )
+                    .expect("i64 from u64"),
+                ))
+                .expect("no error handling");
+            if let Some(swap_fn) = self.input_swap64 {
+                swap_fn(
+                    self.endianness64,
+                    &mut u64::try_from(pos).expect("u64 from i64"),
+                )
+            }
+            out_file.write(&pos.to_ne_bytes()).expect("write to out");
+        }
+
+        // Update the frame set on medium stride step after
+        todo!()
+    }
+
+    /// Migrate a whole frame set from one position in the file to another.
+    fn frame_set_complete_migrate(&mut self, block_start_pos: i64, block_len: usize, new_pos: u64) {
+        self.input_file_init();
+        let inp_file = self.input_file.as_mut().expect("init input_file");
+        let out_file = self.output_file.as_mut().expect("init input_file");
+        inp_file
+            .seek(SeekFrom::Start(
+                u64::try_from(block_start_pos).expect("u64 from i64"),
+            ))
+            .expect("no error handling");
+        let mut contents: Vec<u8> = vec![0u8; block_len];
+        inp_file.read_exact(&mut contents);
+        out_file
+            .seek(SeekFrom::Start(new_pos))
+            .expect("no error handling");
+        out_file.write(&contents);
+
+        self.current_trajectory_frame_set_output_file_pos =
+            i64::try_from(new_pos).expect("i64 from u64");
+        if is_same_file(
+            self.output_file.as_ref().expect("output file set"),
+            self.input_file.as_ref().expect("input file set"),
+        )
+        .is_ok_and(|x| x)
+        {
+            self.current_trajectory_frame_set_input_file_pos =
+                i64::try_from(new_pos).expect("i64 from u64");
+        }
+
+        self.frame_set_pointers_update();
+    }
+
+    /// Migrate data blocks in the file to make room for new data in a block. This
+    /// is required e.g. when adding data to a block or extending strings in a
+    /// block.
+    fn migrate_data_in_file(&mut self, start_pos: i64, offset: i64) {
+        if offset <= 0 {
+            return;
+        }
+
+        let traj_start_pos = self.file_pos_of_subsequent_trajectory_block_get();
+
+        self.current_trajectory_frame_set_input_file_pos = traj_start_pos;
+
+        let mut empty_space = traj_start_pos - (start_pos - 1);
+
+        if empty_space >= offset {
+            return;
+        }
+
+        let orig_file_pos = self.get_input_file_position();
+        let mut block = GenBlock::new();
+
+        while empty_space < offset {
+            self.input_file
+                .as_mut()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(
+                    u64::try_from(traj_start_pos).expect("u64 from i64"),
+                ))
+                .expect("no error handling");
+            self.block_header_read(&mut block);
+
+            let frame_set_length = self.length_of_current_frame_set_contents_get();
+            self.frame_set_complete_migrate();
+        }
+    }
+
+    fn file_headers_len_get(&mut self) -> usize {
         self.input_file_init();
 
         let mut len = 0;
-        let orig_pos = self.get_file_position();
+        let orig_pos = self.get_input_file_position();
         let mut block = GenBlock::new();
 
         // Read through the headers of non-trajectory blocks (they come before the
@@ -1493,8 +1799,7 @@ impl Trajectory {
             && block.id != BlockID::Unknown(0)
             && block.id != BlockID::TrajectoryFrameSet
         {
-            len += u64::try_from(block.header_contents_size + block.block_contents_size)
-                .expect("u64 from i64");
+            len += block.header_contents_size + block.block_contents_size;
             self.input_file
                 .as_mut()
                 .expect("init input_file")
@@ -1508,6 +1813,8 @@ impl Trajectory {
             .expect("init input_file")
             .seek(SeekFrom::Start(orig_pos))
             .expect("no error handling");
+
+        usize::try_from(len).expect("usize from u64")
     }
 
     /// Find a molecule by name and/or ID.
@@ -1772,7 +2079,7 @@ impl Trajectory {
 
         if data.is_none() {
             let mut block = GenBlock::new();
-            let mut file_pos = self.get_file_position();
+            let mut file_pos = self.get_input_file_position();
 
             // Read all blocks until next frame set block
             self.block_header_read(&mut block);
@@ -1787,7 +2094,7 @@ impl Trajectory {
 
                 // Use hash by default (also TODO)
                 self.block_read_next(&mut block);
-                file_pos = self.get_file_position();
+                file_pos = self.get_input_file_position();
                 if file_pos < self.input_file_len {
                     self.block_header_read(&mut block);
                 }
@@ -1916,7 +2223,7 @@ impl Trajectory {
     /// the current file position
     fn frame_set_read(&mut self) -> Result<(), ()> {
         self.input_file_init();
-        let mut file_pos = self.get_file_position();
+        let mut file_pos = self.get_input_file_position();
         let mut block = GenBlock::new();
 
         // Read block headers first to see what block is found
@@ -1933,7 +2240,7 @@ impl Trajectory {
         self.block_read_next(&mut block);
         if block.id != BlockID::Unknown(0) {
             self.n_trajectory_frame_sets += 1;
-            file_pos = self.get_file_position();
+            file_pos = self.get_input_file_position();
 
             // Read all blocks until next frame set block
             self.block_header_read(&mut block);
@@ -1946,7 +2253,7 @@ impl Trajectory {
                     _ => {}
                 }
                 self.block_read_next(&mut block);
-                file_pos = self.get_file_position();
+                file_pos = self.get_input_file_position();
                 if file_pos < self.input_file_len {
                     self.block_header_read(&mut block);
                 }
@@ -2391,7 +2698,7 @@ impl Trajectory {
         } else {
             self.block_read_next(&mut block);
         }
-        file_pos = i64::try_from(self.get_file_position()).expect("i64 from u64");
+        file_pos = i64::try_from(self.get_input_file_position()).expect("i64 from u64");
 
         found_flag = true;
 
@@ -2403,7 +2710,7 @@ impl Trajectory {
         {
             if block.id == match_block_id {
                 self.block_read_next(&mut block);
-                file_pos = i64::try_from(self.get_file_position()).expect("i64 from u64");
+                file_pos = i64::try_from(self.get_input_file_position()).expect("i64 from u64");
                 found_flag = true;
                 if file_pos < i64::try_from(self.input_file_len).expect("i64 from u64") {
                     self.block_header_read(&mut block);
@@ -2628,7 +2935,7 @@ impl Trajectory {
 
     /// Read the number of the first frame of the next frame set.
     fn first_frame_nr_of_next_frame_set_get(&mut self) -> Option<i64> {
-        let file_pos = self.get_file_position();
+        let file_pos = self.get_input_file_position();
 
         let next_frame_set_file_pos = if self.current_trajectory_frame_set_input_file_pos <= 0 {
             self.first_trajectory_frame_set_input_pos
@@ -2662,7 +2969,7 @@ impl Trajectory {
     }
 
     pub fn num_frames_get(&mut self) -> Option<i64> {
-        let file_pos = self.get_file_position();
+        let file_pos = self.get_input_file_position();
         let last_file_pos = self.last_trajectory_frame_set_input_pos;
 
         if last_file_pos <= 0 {
@@ -3063,11 +3370,11 @@ impl Trajectory {
 
                 // If no specific frame was required read until this data block is found
                 if new_frame < 0 {
-                    let mut file_pos = self.get_file_position();
+                    let mut file_pos = self.get_input_file_position();
 
                     while stat.is_err() && file_pos < self.input_file_len {
                         stat = self.frame_set_read_next_only_data_from_block_id(match_block_id);
-                        file_pos = self.get_file_position();
+                        file_pos = self.get_input_file_position();
                     }
                 }
 
