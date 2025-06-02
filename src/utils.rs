@@ -1,6 +1,6 @@
 use std::cmp::min;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 
 use crate::MAX_STR_LEN;
 
@@ -194,6 +194,15 @@ pub fn read_bool_le_bytes(input_file: &mut File) -> bool {
     buf[0] != 0
 }
 
+pub(crate) fn fwrite_str<W: Write>(output_file: &mut W, str_data: &str) {
+    let mut bytes = str_data.as_bytes().to_vec();
+    bytes.push(0); // null-terminate
+    let len = bytes.len().min(MAX_STR_LEN);
+    output_file.write_all(&bytes[..len]);
+
+    // TODO: HASH
+}
+
 pub fn fread_str<R: Read>(input_file: &mut R) -> String {
     // Accumulate bytes here, including the trailing 0:
     let mut buf: Vec<u8> = Vec::new();
@@ -253,6 +262,130 @@ pub fn fread_str<R: Read>(input_file: &mut R) -> String {
         Ok(valid) => valid,
         Err(e) => String::from_utf8_lossy(&e.into_bytes()).into_owned(),
     }
+}
+
+pub fn write_u64(
+    output_file: &mut File,
+    src: u64,
+    endianness: Endianness64,
+    output_swap64: Option<SwapFn64>,
+) {
+    let mut temp_u64 = src;
+    if let Some(swap_fn_64) = output_swap64 {
+        swap_fn_64(endianness, &mut temp_u64);
+    }
+    let out_bytes = temp_u64.to_ne_bytes();
+    output_file
+        .write_all(&out_bytes)
+        .expect("to be able to write to output_file");
+}
+
+pub fn write_i64(
+    output_file: &mut File,
+    src: i64,
+    endianness: Endianness64,
+    output_swap64: Option<SwapFn64>,
+) {
+    // Convert i64 → [u8; 8] in *native* endianness:
+    let src_bytes: [u8; 8] = src.to_ne_bytes();
+
+    // Reinterpret those 8 bytes as a u64 (bitwise identical):
+    let mut bits: u64 = u64::from_ne_bytes(src_bytes);
+
+    if let Some(swap_fn_64) = output_swap64 {
+        swap_fn_64(endianness, &mut bits);
+    }
+    let out_bytes = bits.to_ne_bytes();
+    output_file
+        .write_all(&out_bytes)
+        .expect("to be able to write to output_file");
+}
+
+pub fn write_f64(
+    output_file: &mut File,
+    src: f64,
+    endianness: Endianness64,
+    output_swap64: Option<SwapFn64>,
+) {
+    // Convert f64 → [u8; 8] in *native* endianness:
+    let src_bytes: [u8; 8] = src.to_ne_bytes();
+
+    // Reinterpret those 8 bytes as a u64 (bitwise identical):
+    let mut bits: u64 = u64::from_ne_bytes(src_bytes);
+
+    if let Some(swap_fn_64) = output_swap64 {
+        swap_fn_64(endianness, &mut bits);
+    }
+    let out_bytes = bits.to_ne_bytes();
+    output_file
+        .write_all(&out_bytes)
+        .expect("to be able to write to output_file");
+}
+
+pub fn write_u32(
+    output_file: &mut File,
+    src: u32,
+    endianness: Endianness32,
+    output_swap32: Option<SwapFn32>,
+) {
+    let mut temp_u32 = src;
+    if let Some(swap_fn_32) = output_swap32 {
+        swap_fn_32(endianness, &mut temp_u32);
+    }
+    let out_bytes = temp_u32.to_ne_bytes();
+    output_file
+        .write_all(&out_bytes)
+        .expect("to be able to write to output_file");
+}
+
+pub fn write_i32(
+    output_file: &mut File,
+    src: i32,
+    endianness: Endianness32,
+    output_swap32: Option<SwapFn32>,
+) {
+    // Convert i32 → [u8; 4] in *native* endianness:
+    let src_bytes: [u8; 4] = src.to_ne_bytes();
+
+    // Reinterpret those 4 bytes as a u32 (bitwise identical):
+    let mut bits: u32 = u32::from_ne_bytes(src_bytes);
+
+    if let Some(swap_fn_32) = output_swap32 {
+        swap_fn_32(endianness, &mut bits);
+    }
+    let out_bytes = bits.to_ne_bytes();
+    output_file
+        .write_all(&out_bytes)
+        .expect("to be able to write to output_file");
+}
+
+pub fn write_f32(
+    output_file: &mut File,
+    src: f32,
+    endianness: Endianness32,
+    output_swap32: Option<SwapFn32>,
+) {
+    // Convert f32 → [u8; 4] in *native* endianness:
+    let src_bytes: [u8; 4] = src.to_ne_bytes();
+
+    // Reinterpret those 4 bytes as a u32 (bitwise identical):
+    let mut bits: u32 = u32::from_ne_bytes(src_bytes);
+
+    if let Some(swap_fn_32) = output_swap32 {
+        swap_fn_32(endianness, &mut bits);
+    }
+    let out_bytes = bits.to_ne_bytes();
+    output_file
+        .write_all(&out_bytes)
+        .expect("to be able to write to output_file");
+}
+
+pub fn write_bool(output_file: &mut File, value: bool) {
+    let byte = if value { 1u8 } else { 0u8 };
+    output_file
+        .write_all(&[byte])
+        .expect("to be able to write bool to output_file");
+    // TODO: HASH
 }
 
 pub(crate) fn bounded_len(s: &str) -> usize {

@@ -1361,7 +1361,7 @@ impl Trajectory {
     }
 
     /// Calculate the total byte length of the “general info” block header.
-    fn general_info_block_len_calculate(&self) -> usize {
+    fn general_info_block_len_calculate(&self) -> u64 {
         // In C, each `char*` must be non-NULL. In Rust, `String` is never null.
         // It's also guaranteed to be at least empty if we have a Trajectory
         // due to Trajectory::new()
@@ -1399,10 +1399,10 @@ impl Trajectory {
         total += last_pgp_signature_len;
         total += forcefield_name_len;
 
-        total
+        u64::try_from(total).expect("u64 from usize")
     }
 
-    fn molecules_block_len_calculate(&self) -> usize {
+    fn molecules_block_len_calculate(&self) -> u64 {
         let mut length = 0;
         for molecule in &self.molecules {
             length += bounded_len(&molecule.name);
@@ -1424,7 +1424,7 @@ impl Trajectory {
                 length += bounded_len(&atom.atom_type);
             }
 
-            for bond in &molecule.bonds {
+            for _ in &molecule.bonds {
                 length += size_of::<i64>() + size_of::<i64>(); // bond.from_atom_id + bond.to_atom_id
             }
         }
@@ -1442,7 +1442,7 @@ impl Trajectory {
         if !self.var_num_atoms {
             length += usize::try_from(self.n_molecules).expect("usize from i64") * size_of::<u64>();
         }
-        length
+        u64::try_from(length).expect("u64 from usize")
     }
 
     pub fn data_block_len_calculate(
@@ -1454,7 +1454,7 @@ impl Trajectory {
         stride_length: u64,
         num_first_particle: u64,
         n_particles: u64,
-    ) -> usize {
+    ) -> u64 {
         let mut length = 0;
         let size = data.data_type.get_size();
 
@@ -1507,7 +1507,261 @@ impl Trajectory {
                 * usize::try_from(data.n_values_per_frame).expect("usize from i64");
         }
 
-        length
+        u64::try_from(length).expect("u64 from usize")
+    }
+
+    /// Write the header of a data block, regardless of its type
+    fn block_header_write(&mut self, block: &mut GenBlock) {
+        self.output_file_init();
+        let out_file = self.output_file.as_mut().expect("init output_file");
+
+        block.header_contents_size = block.calculate_header_len();
+        utils::write_u64(
+            out_file,
+            block.header_contents_size,
+            self.endianness64,
+            self.output_swap64,
+        );
+        utils::write_u64(
+            out_file,
+            block.block_contents_size,
+            self.endianness64,
+            self.output_swap64,
+        );
+        utils::write_u64(
+            out_file,
+            block.id as u64,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        out_file
+            .write_all(&block.md5_hash)
+            .expect("able to write to output_file");
+        utils::fwrite_str(out_file, &block.name.as_ref().expect("block to have name"));
+        utils::write_u64(
+            out_file,
+            block.version,
+            self.endianness64,
+            self.output_swap64,
+        );
+    }
+
+    /// Write a general info block. This is the first block of a TNG file
+    fn general_info_block_write(&mut self) {
+        self.output_file_init();
+
+        let out_file = self.output_file.as_mut().expect("init input_file");
+        out_file
+            .seek(SeekFrom::Start(0))
+            .expect("no error handling");
+
+        let mut block = GenBlock::new();
+        block.name = Some("GENERAL INFO".to_string());
+        block.id = BlockID::TrajectoryFrameSet;
+        block.block_contents_size = self.general_info_block_len_calculate();
+        let header_file_pos = 0;
+        self.block_header_write(&mut block);
+
+        // TODO: HASH
+
+        let out_file = self.output_file.as_mut().expect("init input_file");
+        utils::fwrite_str(out_file, &self.first_program_name);
+        utils::fwrite_str(out_file, &self.last_program_name);
+        utils::fwrite_str(out_file, &self.first_user_name);
+        utils::fwrite_str(out_file, &self.last_user_name);
+        utils::fwrite_str(out_file, &self.first_computer_name);
+        utils::fwrite_str(out_file, &self.last_computer_name);
+        utils::fwrite_str(out_file, &self.first_pgp_signature);
+        utils::fwrite_str(out_file, &self.last_pgp_signature);
+        utils::fwrite_str(out_file, &self.forcefield_name);
+
+        utils::write_u64(out_file, self.time, self.endianness64, self.output_swap64);
+        utils::write_bool(out_file, self.var_num_atoms);
+        utils::write_i64(
+            out_file,
+            self.frame_set_n_frames,
+            self.endianness64,
+            self.output_swap64,
+        );
+        utils::write_i64(
+            out_file,
+            self.first_trajectory_frame_set_output_pos,
+            self.endianness64,
+            self.output_swap64,
+        );
+        utils::write_i64(
+            out_file,
+            self.last_trajectory_frame_set_output_pos,
+            self.endianness64,
+            self.output_swap64,
+        );
+        utils::write_i64(
+            out_file,
+            self.medium_stride_length,
+            self.endianness64,
+            self.output_swap64,
+        );
+        utils::write_i64(
+            out_file,
+            self.long_stride_length,
+            self.endianness64,
+            self.output_swap64,
+        );
+        utils::write_i64(
+            out_file,
+            self.distance_unit_exponential,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        //TODO: HASH
+    }
+
+    /// Write a molecules block.
+    fn molecules_block_write(&mut self) {
+        self.output_file_init();
+
+        let mut block = GenBlock::new();
+        block.name = Some("MOLECULES".to_string());
+        block.id = BlockID::Molecules;
+        self.molecules_block_len_calculate();
+
+        self.block_header_write(&mut block);
+
+        // TODO: HASH
+
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        utils::write_i64(
+            out_file,
+            self.n_molecules,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        for (molecule, mol_count) in self.molecules.iter().zip(&self.molecule_cnt_list) {
+            utils::write_i64(out_file, molecule.id, self.endianness64, self.output_swap64);
+            utils::fwrite_str(out_file, &molecule.name);
+            utils::write_i64(
+                out_file,
+                molecule.quaternary_str,
+                self.endianness64,
+                self.output_swap64,
+            );
+
+            if !self.var_num_atoms {
+                utils::write_i64(out_file, *mol_count, self.endianness64, self.output_swap64);
+            }
+            utils::write_i64(
+                out_file,
+                molecule.n_chains,
+                self.endianness64,
+                self.output_swap64,
+            );
+            utils::write_i64(
+                out_file,
+                molecule.n_residues,
+                self.endianness64,
+                self.output_swap64,
+            );
+            utils::write_i64(
+                out_file,
+                molecule.n_atoms,
+                self.endianness64,
+                self.output_swap64,
+            );
+
+            if molecule.n_chains > 0 {
+                for chain in &molecule.chains {
+                    utils::write_u64(out_file, chain.id, self.endianness64, self.output_swap64);
+                    utils::fwrite_str(out_file, &chain.name);
+                    utils::write_u64(
+                        out_file,
+                        chain.n_residues,
+                        self.endianness64,
+                        self.output_swap64,
+                    );
+                    let (start, end) = chain.residues_indices;
+                    for res_index in start..end {
+                        let residue = &molecule.residues[res_index];
+                        utils::write_u64(
+                            out_file,
+                            residue.id,
+                            self.endianness64,
+                            self.output_swap64,
+                        );
+                        utils::fwrite_str(out_file, &residue.name);
+                        utils::write_u64(
+                            out_file,
+                            residue.n_atoms,
+                            self.endianness64,
+                            self.output_swap64,
+                        );
+
+                        let atom_slice = &molecule.atoms[residue.n_atoms as usize
+                            ..residue.n_atoms as usize + residue.atoms_offset];
+                        for atom in atom_slice {
+                            utils::write_i64(
+                                out_file,
+                                atom.id,
+                                self.endianness64,
+                                self.output_swap64,
+                            );
+                            utils::fwrite_str(out_file, &atom.name);
+                            utils::fwrite_str(out_file, &atom.atom_type);
+                        }
+                    }
+                }
+            } else if molecule.n_residues > 0 {
+                for residue in &molecule.residues {
+                    utils::write_u64(out_file, residue.id, self.endianness64, self.output_swap64);
+                    utils::fwrite_str(out_file, &residue.name);
+                    utils::write_u64(
+                        out_file,
+                        residue.n_atoms,
+                        self.endianness64,
+                        self.output_swap64,
+                    );
+                    let atom_slice = &molecule.atoms
+                        [residue.n_atoms as usize..residue.n_atoms as usize + residue.atoms_offset];
+                    for atom in atom_slice {
+                        utils::write_i64(out_file, atom.id, self.endianness64, self.output_swap64);
+                        utils::fwrite_str(out_file, &atom.name);
+                        utils::fwrite_str(out_file, &atom.atom_type);
+                    }
+                }
+            } else {
+                for atom in &molecule.atoms {
+                    utils::write_i64(out_file, atom.id, self.endianness64, self.output_swap64);
+                    utils::fwrite_str(out_file, &atom.name);
+                    utils::fwrite_str(out_file, &atom.atom_type);
+                }
+            }
+
+            utils::write_i64(
+                out_file,
+                molecule.n_bonds,
+                self.endianness64,
+                self.output_swap64,
+            );
+
+            for bond in &molecule.bonds {
+                utils::write_i64(
+                    out_file,
+                    bond.from_atom_id,
+                    self.endianness64,
+                    self.output_swap64,
+                );
+                utils::write_i64(
+                    out_file,
+                    bond.to_atom_id,
+                    self.endianness64,
+                    self.output_swap64,
+                );
+            }
+        }
+
+        // TODO; HASH
     }
 
     pub fn file_headers_write(&mut self) {
@@ -1540,10 +1794,29 @@ impl Trajectory {
                 total_len += self.data_block_len_calculate(data, true, 1, 1, 1, 0, 1);
             }
 
+            let orig_len = u64::try_from(orig_len).expect("u64 from usize");
             if total_len > orig_len {
-                self.migrate_data_in_file()
+                self.migrate_data_in_file(
+                    i64::try_from(orig_len + 1).expect("i64 from usize"),
+                    i64::try_from(total_len - orig_len).expect("i64 from usize"),
+                );
+                self.last_trajectory_frame_set_input_pos =
+                    self.last_trajectory_frame_set_output_pos;
             }
+
+            self.reread_frame_set_at_file_pos(
+                u64::try_from(self.last_trajectory_frame_set_input_pos).expect("u64 from i64"),
+            );
+
+            // In order to write non-trajectory data the current_trajectory_frame_set_output_file_pos
+            // must temporarily be reset
+            let temp_pos = self.current_trajectory_frame_set_output_file_pos;
+            self.current_trajectory_frame_set_output_file_pos = -1;
         }
+
+        self.general_info_block_write();
+
+        self.molecules_block_write();
     }
 
     fn file_pos_of_subsequent_trajectory_block_get(&mut self) -> i64 {
@@ -1587,6 +1860,8 @@ impl Trajectory {
             .expect("init input_file")
             .seek(SeekFrom::Start(u64::try_from(pos).expect("u64 from i64")))
             .expect("no error handling");
+
+        pos
     }
 
     fn length_of_current_frame_set_contents_get(&mut self) -> i64 {
@@ -1642,6 +1917,12 @@ impl Trajectory {
     fn frame_set_pointers_update(&mut self) {
         self.output_file_init();
         let mut block = GenBlock::new();
+        let temp_input_file = self
+            .input_file
+            .as_mut()
+            .expect("init input_file")
+            .try_clone()
+            .expect("able to clone file");
 
         let output_file_pos = self.get_output_file_position();
         let out_file = self.output_file.as_mut().expect("init output_file");
@@ -1677,7 +1958,9 @@ impl Trajectory {
                     &mut u64::try_from(pos).expect("u64 from i64"),
                 );
             }
-            out_file.write(&pos.to_ne_bytes()).expect("write to out");
+            out_file
+                .write_all(&pos.to_ne_bytes())
+                .expect("write to out");
         }
 
         // Update previous frame set
@@ -1710,11 +1993,185 @@ impl Trajectory {
                     &mut u64::try_from(pos).expect("u64 from i64"),
                 )
             }
-            out_file.write(&pos.to_ne_bytes()).expect("write to out");
+            out_file
+                .write_all(&pos.to_ne_bytes())
+                .expect("write to out");
         }
 
-        // Update the frame set on medium stride step after
-        todo!()
+        // Update the frame set one medium stride step after
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        if self
+            .current_trajectory_frame_set
+            .medium_stride_next_frame_set_file_pos
+            > 0
+        {
+            out_file
+                .seek(SeekFrom::Start(
+                    u64::try_from(
+                        self.current_trajectory_frame_set
+                            .medium_stride_next_frame_set_file_pos,
+                    )
+                    .expect("u64 from i64"),
+                ))
+                .expect("no error handling");
+            self.block_header_read(&mut block);
+            let contents_start_pos = self.get_output_file_position();
+
+            let out_file = self.output_file.as_mut().expect("init output_file");
+            out_file
+                .seek(SeekFrom::Current(
+                    i64::try_from(
+                        block.block_contents_size
+                            - u64::try_from(3 * size_of::<i64>() + 2 * size_of::<f64>())
+                                .expect("u64 from usize"),
+                    )
+                    .expect("i64 from u64"),
+                ))
+                .expect("no error handling");
+            if let Some(swap_fn) = self.input_swap64 {
+                swap_fn(
+                    self.endianness64,
+                    &mut u64::try_from(pos).expect("u64 from i64"),
+                )
+            }
+            out_file
+                .write_all(&pos.to_ne_bytes())
+                .expect("write to out");
+
+            // TODO: hash_mode
+        }
+
+        // Update the frame set one medium stride before
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        if self
+            .current_trajectory_frame_set
+            .medium_stride_prev_frame_set_file_pos
+            > 0
+        {
+            out_file
+                .seek(SeekFrom::Start(
+                    u64::try_from(
+                        self.current_trajectory_frame_set
+                            .medium_stride_prev_frame_set_file_pos,
+                    )
+                    .expect("u64 from i64"),
+                ))
+                .expect("no error handling");
+            self.block_header_read(&mut block);
+
+            let out_file = self.output_file.as_mut().expect("init output_file");
+            out_file
+                .seek(SeekFrom::Current(
+                    i64::try_from(
+                        block.block_contents_size
+                            - u64::try_from(4 * size_of::<i64>() + 2 * size_of::<f64>())
+                                .expect("u64 from usize"),
+                    )
+                    .expect("i64 from u64"),
+                ))
+                .expect("no error handling");
+            if let Some(swap_fn) = self.input_swap64 {
+                swap_fn(
+                    self.endianness64,
+                    &mut u64::try_from(pos).expect("u64 from i64"),
+                )
+            }
+            out_file
+                .write_all(&pos.to_ne_bytes())
+                .expect("write to out");
+
+            // TODO: hash_mode
+        }
+
+        // Update the frame set one long stride after
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        if self
+            .current_trajectory_frame_set
+            .long_stride_next_frame_set_file_pos
+            > 0
+        {
+            out_file
+                .seek(SeekFrom::Start(
+                    u64::try_from(
+                        self.current_trajectory_frame_set
+                            .long_stride_next_frame_set_file_pos,
+                    )
+                    .expect("u64 from i64"),
+                ))
+                .expect("no error handling");
+            self.block_header_read(&mut block);
+
+            let out_file = self.output_file.as_mut().expect("init output_file");
+            out_file
+                .seek(SeekFrom::Current(
+                    i64::try_from(
+                        block.block_contents_size
+                            - u64::try_from(1 * size_of::<i64>() + 2 * size_of::<f64>())
+                                .expect("u64 from usize"),
+                    )
+                    .expect("i64 from u64"),
+                ))
+                .expect("no error handling");
+            if let Some(swap_fn) = self.input_swap64 {
+                swap_fn(
+                    self.endianness64,
+                    &mut u64::try_from(pos).expect("u64 from i64"),
+                )
+            }
+            out_file
+                .write_all(&pos.to_ne_bytes())
+                .expect("write to out");
+
+            // TODO: hash_mode
+        }
+
+        // Update the frame set one long stride before
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        if self
+            .current_trajectory_frame_set
+            .long_stride_prev_frame_set_file_pos
+            > 0
+        {
+            out_file
+                .seek(SeekFrom::Start(
+                    u64::try_from(
+                        self.current_trajectory_frame_set
+                            .long_stride_prev_frame_set_file_pos,
+                    )
+                    .expect("u64 from i64"),
+                ))
+                .expect("no error handling");
+            self.block_header_read(&mut block);
+
+            let out_file = self.output_file.as_mut().expect("init output_file");
+            out_file
+                .seek(SeekFrom::Current(
+                    i64::try_from(
+                        block.block_contents_size
+                            - u64::try_from(2 * size_of::<i64>() + 2 * size_of::<f64>())
+                                .expect("u64 from usize"),
+                    )
+                    .expect("i64 from u64"),
+                ))
+                .expect("no error handling");
+            if let Some(swap_fn) = self.input_swap64 {
+                swap_fn(
+                    self.endianness64,
+                    &mut u64::try_from(pos).expect("u64 from i64"),
+                )
+            }
+            out_file
+                .write_all(&pos.to_ne_bytes())
+                .expect("write to out");
+
+            // TODO: hash_mode
+        }
+
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        out_file
+            .seek(SeekFrom::Start(output_file_pos))
+            .expect("no error handling");
+        self.input_file = Some(temp_input_file.try_clone().expect("able to clone file"));
     }
 
     /// Migrate a whole frame set from one position in the file to another.
@@ -1732,7 +2189,7 @@ impl Trajectory {
         out_file
             .seek(SeekFrom::Start(new_pos))
             .expect("no error handling");
-        out_file.write(&contents);
+        out_file.write_all(&contents);
 
         self.current_trajectory_frame_set_output_file_pos =
             i64::try_from(new_pos).expect("i64 from u64");
@@ -1781,8 +2238,21 @@ impl Trajectory {
             self.block_header_read(&mut block);
 
             let frame_set_length = self.length_of_current_frame_set_contents_get();
-            self.frame_set_complete_migrate();
+            self.frame_set_complete_migrate(
+                traj_start_pos,
+                usize::try_from(frame_set_length).expect("usize from u64"),
+                self.input_file_len,
+            );
+
+            empty_space += frame_set_length
         }
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(
+                u64::try_from(orig_file_pos).expect("u64 from i64"),
+            ))
+            .expect("no error handling");
     }
 
     fn file_headers_len_get(&mut self) -> usize {

@@ -2,8 +2,8 @@ use crate::{API_VERSION, MAX_STR_LEN, MD5_HASH_LEN};
 
 /// Standard non-trajectory blocks
 /// Block IDs of standard non-trajectory blocks
-#[repr(i64)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[repr(u64)]
 pub(crate) enum BlockID {
     // === Standard non-trajectory blocks ===
     GeneralInfo = 0x0000_0000_0000_0000,
@@ -282,16 +282,17 @@ impl GenBlock {
     /// If the block name is `None`, it will be treated as an empty string.
     ///
     /// Returns the total header size in bytes.
-    pub(crate) fn calculate_header_len(&self) -> usize {
+    pub(crate) fn calculate_header_len(&self) -> u64 {
         // Ensure we have at least an empty string
         let name = self.name.as_deref().unwrap_or("");
         let name_len = std::cmp::min(name.len() + 1, MAX_STR_LEN); // +1 for null-terminator
 
-        std::mem::size_of::<u64>()  // header_contents_size
+        let length = std::mem::size_of::<u64>()  // header_contents_size
         + std::mem::size_of::<u64>()  // block_contents_size
         + std::mem::size_of::<BlockID>() // id
         + std::mem::size_of::<u64>()   // block_version
         + MD5_HASH_LEN             // checksum
-        + name_len // name (null-terminated and bounded)
+        + name_len; // name (null-terminated and bounded)
+        u64::try_from(length).expect("u64 from usize")
     }
 }
