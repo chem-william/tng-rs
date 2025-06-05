@@ -380,6 +380,13 @@ pub fn write_f32(
         .expect("to be able to write to output_file");
 }
 
+pub fn write_u8(output_file: &mut File, value: u8) {
+    output_file
+        .write_all(&[value])
+        .expect("to be able to write bool to output_file");
+    // TODO: HASH
+}
+
 pub fn write_bool(output_file: &mut File, value: bool) {
     let byte = if value { 1u8 } else { 0u8 };
     output_file
