@@ -2,6 +2,7 @@ mod atom;
 mod bond;
 mod chain;
 mod data;
+mod fix_point;
 mod gen_block;
 mod molecule;
 mod particle_mapping;
