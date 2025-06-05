@@ -2751,6 +2751,26 @@ impl Trajectory {
         Ok(())
     }
 
+    /// Write one frame set, including mapping and related data blocks to [`self.output_file`]
+    /// of [`Self`]
+    fn frame_set_write(&mut self) -> Result<(), ()> {
+        let frame_set = &self.current_trajectory_frame_set;
+        if frame_set.n_written_frames == frame_set.n_frames {
+            return Ok(());
+        }
+
+        self.current_trajectory_frame_set_output_file_pos =
+            i64::try_from(self.get_output_file_position()).expect("i64 from u64");
+        self.last_trajectory_frame_set_output_pos =
+            self.current_trajectory_frame_set_output_file_pos;
+
+        if self.first_trajectory_frame_set_output_pos == -1 {
+            return Err(());
+        }
+
+        Ok(())
+    }
+
     /// Get the number of frame sets
     fn num_frame_sets_get(&mut self) -> i64 {
         let mut count = 0;
