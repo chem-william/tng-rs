@@ -28,6 +28,17 @@ fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
     Ok(meta1.ino() == meta2.ino() && meta1.dev() == meta2.dev())
 }
 
+/// This returns the number of integers required for the storage of the algorithm with
+/// the best compression ratio
+fn tng_compress_algo() -> u64 {
+    // There are currently four parameters required
+    // 1) The compression algorithm for the first frame (initial_coding).
+    // 2) One parameter to the algorithm for the first frame (the initial coding parameter).
+    // 3) The compression algorithm for the remaining frames (coding).
+    // 4) One parameter to the algorithm for the remaining frames (the coding parameter).
+    return 4;
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct BlockMetaInfo {
     /// The datatype of the data block.
