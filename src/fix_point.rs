@@ -105,6 +105,8 @@ pub(crate) fn i32_fixed_pair_to_f64(hi: i32, lo: u32) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use assert_approx_eq::assert_approx_eq;
+
     use super::*;
 
     #[test]
@@ -159,10 +161,10 @@ mod tests {
     fn test_fix_u32_to_ud() {
         let max = 10.0;
         let tests = [0u32, u32::MAX / 2, u32::MAX];
-        println!("\n---- Testing fix_u32_to_ud (unsigned→double) ----");
-        for &f in &tests {
+        let expected = [0.0, 5.0, 10.0];
+        for (&f, exp_val) in tests.iter().zip(expected) {
             let d = u32_fixed_to_f64(f, max);
-            println!(" fix = {:10} (hex 0x{:08X}), back→ {:9.6}", f, f, d);
+            assert_approx_eq!(d, exp_val);
         }
     }
 
