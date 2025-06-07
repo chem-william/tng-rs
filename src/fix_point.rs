@@ -46,9 +46,9 @@ pub(crate) fn u32_fixed_to_f64(fixed: u32, max: f64) -> f64 {
 /// Signed 32 bit fixed point value to double
 ///
 /// c version: Ptngc_fix_t_to_d
-pub(crate) fn i32_fixed_to_f64(fixed: i32, max: f64) -> f64 {
+pub(crate) fn fix_u32_fixed_to_f64(fixed: u32, max: f64) -> f64 {
     // Extract sign bit
-    let negative = (fixed & SIGN32BIT) != 0;
+    let negative = ((fixed & SIGN32BIT) as i32) != 0;
     // Mask off the sign bit to get the magnitude in [0..MAX31BIT]
     let magnitude = (fixed & MAX31BIT) as f64;
     // Scale that magnitude into [0..max]
@@ -169,28 +169,20 @@ mod tests {
     }
 
     #[test]
-    fn test_fix_i32_to_d() {
+    fn test_fix_i32_to_f64() {
         let max = 10.0;
-        // Construct signed fixed values
         let tests = [
-            (MAX31BIT / 2) as i32,
-            ((MAX31BIT / 2) | SIGN32BIT) as i32,
-            MAX31BIT as i32,
-            (MAX31BIT | SIGN32BIT) as i32,
+            MAX31BIT / 2,
+            (MAX31BIT / 2) | SIGN32BIT,
+            MAX31BIT,
+            MAX31BIT | SIGN32BIT,
         ];
-        println!("\n---- Testing fix_i32_to_d (signed→double) ----");
-        for &f in &tests {
-            let sign = if ((f as u32 & SIGN32BIT) as i32) != 0 {
-                -1
-            } else {
-                1
-            };
-            let mag = f as u32 & MAX31BIT;
-            let d = i32_fixed_to_f64(f, max);
-            println!(
-                " fix = {:10} (mag={:10}, sign={:2}), back→ {:9.6}",
-                f as i64, mag, sign, d
-            );
+        let expected_fix = [1073741823, 3221225471, 2147483647, 4294967295];
+        let expected_val = [5.0, -5.0, 10.0, -10.0];
+        for ((&f, exp_fix), exp_val) in tests.iter().zip(expected_fix).zip(expected_val) {
+            let d = fix_u32_fixed_to_f64(f, max);
+            assert_eq!(exp_fix, f);
+            assert_approx_eq!(exp_val, d);
         }
     }
 
