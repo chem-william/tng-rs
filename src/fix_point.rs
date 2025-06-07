@@ -48,7 +48,7 @@ pub(crate) fn u32_fixed_to_f64(fixed: u32, max: f64) -> f64 {
 /// c version: Ptngc_fix_t_to_d
 pub(crate) fn fix_u32_fixed_to_f64(fixed: u32, max: f64) -> f64 {
     // Extract sign bit
-    let negative = ((fixed & SIGN32BIT) as i32) != 0;
+    let negative = (fixed & SIGN32BIT) != 0;
     // Mask off the sign bit to get the magnitude in [0..MAX31BIT]
     let magnitude = (fixed & MAX31BIT) as f64;
     // Scale that magnitude into [0..max]
@@ -60,7 +60,7 @@ pub(crate) fn fix_u32_fixed_to_f64(fixed: u32, max: f64) -> f64 {
 /// -2.1e9 to 2.1e9 and precision somewhere around 1e-9
 ///
 /// c version: Ptngc_d_to_i32x2
-pub(crate) fn f64_to_i32_fixed_pair(d: f64) -> (i32, u32) {
+pub(crate) fn f64_to_i32_fixed_pair(d: f64) -> (u32, u32) {
     // Handle sign & work with absolute value
     let mut abs = d;
     let mut sign_flag = false;
@@ -77,26 +77,28 @@ pub(crate) fn f64_to_i32_fixed_pair(d: f64) -> (i32, u32) {
     let mut hi = if ent_f > (MAX31BIT as f64) {
         MAX31BIT
     } else {
-        ent_f as i32
+        ent_f as u32
     };
     // Set the sign bit if needed
     if sign_flag {
-        hi |= SIGN32BIT;
+        hi = hi as u32 | SIGN32BIT;
     }
 
-    let lo = double_to_u32_fixed_point(frac, 1.0);
+    let lo = f64_to_u32_fixed_point(frac, 1.0);
 
     (hi, lo)
 }
 
 /// Convert two 32 bit integers to a floating point variable
 /// -2.1e9 to 2.1e9 and precision to somewhere around 1e-0
-pub(crate) fn i32_fixed_pair_to_f64(hi: i32, lo: u32) -> f64 {
+///
+/// c version: Ptngc_i32x2_to_d
+pub(crate) fn u32_fixed_pair_to_f64(hi: u32, lo: u32) -> f64 {
     let negative = (hi & SIGN32BIT) != 0;
     // Mask away the sign bit to get the absolute integer part
     let magnitude_hi = (hi & MAX31BIT) as f64;
 
-    let ent = magnitude_hi as f64;
+    let ent = magnitude_hi;
     let frac = u32_fixed_to_f64(lo, 1.);
     let val = ent + frac;
 
@@ -187,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn test_d_to_i32x2_and_back() {
+    fn test_f64_to_i32x2_and_back() {
         let tests = [
             -12.345678,
             -1.0,
@@ -198,16 +200,10 @@ mod tests {
             12.345678,
             123456789.0,
         ];
-        println!("\n---- Testing d_to_i32x2 and i32x2_to_d ----");
         for &d in &tests {
             let (hi, lo) = f64_to_i32_fixed_pair(d);
-            let sign = if (hi as u32 & SIGN32BIT) != 0 { -1 } else { 1 };
-            let mag_hi = (hi as u32 & MAX31BIT);
-            let roundtrip = i32_fixed_pair_to_f64(hi, lo);
-            println!(
-                " d = {:12.6}, hi = {:10} (mag_hi={:10}, sign={:2}), lo = {:10}, back→ {:12.6}",
-                d, hi as i64, mag_hi, sign, lo, roundtrip
-            );
+            let roundtrip = u32_fixed_pair_to_f64(hi, lo);
+            assert_approx_eq!(d, roundtrip);
         }
     }
 }
