@@ -9,3 +9,9 @@ The port matches the behavior at commit `f8d55273` at [https://gitlab.com/gromac
 
  ## Notes
  Currently assumes that files have only been written on 64-bit systems
+
+ ## Development
+ You can run the tests with debug output in the following way:
+ ```bash
+ RUST_LOG=debug cargo test -- --nocapture
+ ```
