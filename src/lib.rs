@@ -1,6 +1,7 @@
 mod atom;
 mod bond;
 mod chain;
+mod compress;
 mod data;
 mod fix_point;
 mod gen_block;
