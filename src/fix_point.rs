@@ -5,8 +5,8 @@
 pub struct FixT(u32);
 
 impl FixT {
-    const MAX31BIT: u32 = 2147483647; // (1 << 31) - 1
-    const SIGN32BIT: u32 = 2147483648; // 1 << 31
+    pub(crate) const MAX31BIT: u32 = 2147483647; // (1 << 31) - 1
+    pub(crate) const SIGN32BIT: u32 = 2147483648; // 1 << 31
 
     /// Positive `f64` to 32 bit fixed point value
     ///
