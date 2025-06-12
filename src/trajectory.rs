@@ -3924,4 +3924,62 @@ impl Trajectory {
 
         Err(())
     }
+
+    fn tng_compress_pos_float(
+        &self,
+        pos: &[f32],
+        n_atoms: usize,
+        n_frames: usize,
+        desired_precision: f32,
+        speed: usize,
+        algo: &[i32],
+    ) -> Option<()> {
+        let (prec_hi, prec_lo) = f64_to_fixt_pair(f64::from(desired_precision));
+        let quant = quantize_float(pos, n_atoms, n_frames, precision(prec_hi, prec_lo) as f32);
+
+        if let Ok(ok_quant) = quant {
+            self.tng_compress_pos_int(&ok_quant, n_atoms, n_frames, prec_hi, prec_lo, speed, algo);
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    fn tng_compress_pos_int(
+        &self,
+        pos: &[i32],
+        n_atoms: usize,
+        n_frames: usize,
+        prec_hi: FixT,
+        prec_lo: FixT,
+        speed: usize,
+        algo: &[i32],
+    ) {
+        let mut inner_speed = speed;
+        if speed == 0 {
+            inner_speed = SPEED_DEFAULT;
+        }
+
+        // Boundaries of `speed`
+        inner_speed = speed.clamp(1, 6);
+
+        let initial_coding = algo[0];
+        let mut initial_coding_parameter = algo[1];
+        let coding = algo[2];
+        let coding_parameter = algo[3];
+
+        let quant_inter = quant_inter_differences(pos, n_atoms, n_frames);
+        let quant_intra = quant_intra_differences(pos, n_atoms, n_frames);
+
+        // If any of the above codings / coding parameters are == -1, the optimal parameters must be found
+        if initial_coding == -1 {
+            initial_coding_parameter = -1;
+
+            // determine_best_pos_initial_coding()
+        }
+    }
+
+    fn tng_compress_pos(&self) {
+        todo!()
+    }
 }
