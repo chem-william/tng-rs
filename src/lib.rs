@@ -1,6 +1,8 @@
 mod atom;
 mod bond;
+mod bwlzh;
 mod chain;
+mod coder;
 mod compress;
 mod data;
 mod fix_point;
