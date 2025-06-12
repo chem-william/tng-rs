@@ -2757,7 +2757,7 @@ impl Trajectory {
 
     /// Write one frame set, including mapping and related data blocks to [`self.output_file`]
     /// of [`Self`]
-    fn frame_set_write(&mut self) -> Result<(), ()> {
+    pub fn frame_set_write(&mut self) -> Result<(), ()> {
         let frame_set = &self.current_trajectory_frame_set;
         if frame_set.n_written_frames == frame_set.n_frames {
             return Ok(());
