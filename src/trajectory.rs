@@ -21,6 +21,10 @@ use std::path::{Path, PathBuf};
 
 use flate2::read::ZlibDecoder;
 
+/// Default to relatively fast compression. For very good compression it makes sense
+/// to choose speed = 4 or speed = 5.
+const SPEED_DEFAULT: usize = 2;
+
 fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
     let meta1 = file1.metadata()?;
     let meta2 = file2.metadata()?;
