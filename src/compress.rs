@@ -167,7 +167,7 @@ pub(crate) fn determine_best_pos_initial_coding(
     (0, 0)
 }
 
-/// Buffer num 8 bit bytes into buffer location buf
+/// Buffer `num` 8 bit bytes into buffer location `buf`
 ///
 /// # Panic
 /// Panics if `buf.len() < num`.
