@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use log::debug;
 const MAX_VALS_PER_BLOCK: usize = 200000;
 
@@ -6,7 +8,7 @@ const PARTIAL_MTF3: bool = true;
 const PARTIAL_MTF: bool = false;
 
 pub(crate) const fn bwlzh_get_buflen(nvals: usize) -> usize {
-    return 132000 + nvals * 8 + 12 * ((nvals + MAX_VALS_PER_BLOCK) / MAX_VALS_PER_BLOCK);
+    132000 + nvals * 8 + 12 * ((nvals + MAX_VALS_PER_BLOCK) / MAX_VALS_PER_BLOCK)
 }
 
 pub(crate) const fn ptngc_comp_huff_buflen(nvals: i32) -> i32 {
@@ -72,23 +74,23 @@ pub(crate) fn bwlzh_compress_gen(
         debug!("Creating vals16 block from {thisvals} values");
     }
 
-    ptngc_comp_conv_to_vals16(&vals[valstart..], thisvals, vals16);
+    let nvals16 = ptngc_comp_conv_to_vals16(&vals[valstart..], vals16);
     valstart += thisvals;
 
     0
 }
 
 /// Coding 32 bit ints in sequences of 16 bit ints. Worst case the output is `3*nvals` long
-pub(crate) fn ptngc_comp_conv_to_vals16(vals: &[u32], nvals: usize, vals16: &mut [u32]) -> i32 {
+pub(crate) fn ptngc_comp_conv_to_vals16(vals: &[u32], vals16: &mut [u32]) -> usize {
     let mut j = 0;
 
-    for i in 0..nvals {
-        if vals[i] <= 0x7FFF {
-            vals16[j] = vals[i];
+    for val in vals {
+        if *val <= 0x7FFF {
+            vals16[j] = *val;
             j += 1;
         } else {
-            let lo = (vals[i] & 0x7FFF) | 0x8000;
-            let hi = vals[i] >> 15;
+            let lo = (val & 0x7FFF) | 0x8000;
+            let hi = val >> 15;
             vals16[j] = lo;
             j += 1;
 
@@ -106,10 +108,10 @@ pub(crate) fn ptngc_comp_conv_to_vals16(vals: &[u32], nvals: usize, vals16: &mut
         }
     }
 
-    i32::try_from(j).expect("i32 from usize")
+    j
 }
 
-pub(crate) fn ptngc_comp_conv_from_vals16(vals16: &[u32], nvals16: i32, vals: &mut [u32]) -> i32 {
+pub(crate) fn ptngc_comp_conv_from_vals16(vals16: &[u32], nvals16: usize, vals: &mut [u32]) -> i32 {
     let mut i: usize = 0;
     let mut j = 0;
     while i < usize::try_from(nvals16).expect("usize from i32") {
@@ -157,7 +159,7 @@ mod conv_to_vals16 {
         let vals = [0x1234, 0x7FFF, 0x0000, 0x0001];
         let mut vals16 = [0u32; 20];
 
-        let nvals16 = ptngc_comp_conv_to_vals16(&vals, vals.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
 
         assert_eq!(nvals16, 4);
         assert_eq!(vals16[0], 0x1234);
@@ -176,7 +178,7 @@ mod conv_to_vals16 {
         let vals = [0x12345678];
         let mut vals16 = [0u32; 20];
 
-        let nvals16 = ptngc_comp_conv_to_vals16(&vals, vals.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
 
         assert_eq!(nvals16, 2);
         let expected_lo = (0x12345678 & 0x7FFF) | 0x8000;
@@ -197,7 +199,7 @@ mod conv_to_vals16 {
         let vals = [0x80000000];
         let mut vals16 = [0u32; 20];
 
-        let nvals16 = ptngc_comp_conv_to_vals16(&vals, vals.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
 
         assert_eq!(nvals16, 3);
         let expected_lo = 0x8000;
@@ -222,7 +224,7 @@ mod conv_to_vals16 {
         ];
         let mut vals16 = [0u32; 20];
 
-        let _ = ptngc_comp_conv_to_vals16(&vals, vals.len(), &mut vals16);
+        let _ = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
 
         // vals[0] = 0x7FFF -> single chunk
         assert_eq!(vals16[0], 0x7FFF);
@@ -256,7 +258,7 @@ mod conv_to_vals16 {
         ];
         let mut vals16 = [0u32; 20];
 
-        let nvals16 = ptngc_comp_conv_to_vals16(&vals, vals.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
 
         // Should produce: 1 + 2 + 1 + 3 = 7 chunks
         assert_eq!(nvals16, 7);
@@ -285,7 +287,7 @@ mod conv_to_vals16 {
         let vals: [u32; 0] = [];
         let mut vals16 = [0u32; 20];
 
-        let nvals16 = ptngc_comp_conv_to_vals16(&vals, 0, &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
 
         assert_eq!(nvals16, 0);
     }
@@ -297,7 +299,7 @@ mod conv_to_vals16 {
         let vals = [0xFFFFFFFF];
         let mut vals16 = [0u32; 20];
 
-        let nvals16 = ptngc_comp_conv_to_vals16(&vals, vals.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
 
         assert_eq!(nvals16, 3);
 
@@ -326,7 +328,7 @@ mod conv_to_vals16 {
             let vals = [val];
             let mut vals16 = [0u32; 10];
 
-            let nvals16 = ptngc_comp_conv_to_vals16(&vals, vals.len(), &mut vals16);
+            let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
             assert_eq!(
                 nvals16, expected_chunks,
                 "Value 0x{:X} should produce {} chunks",
@@ -347,7 +349,7 @@ mod roundtrip {
         let mut reconstructed = [0u32; 10];
 
         // Compress
-        let nvals16 = ptngc_comp_conv_to_vals16(&original, original.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&original, &mut vals16);
 
         // Decompress
         let nvals_reconstructed =
@@ -375,7 +377,7 @@ mod roundtrip {
         let mut reconstructed = [0u32; 10];
 
         // Compress
-        let nvals16 = ptngc_comp_conv_to_vals16(&original, original.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&original, &mut vals16);
 
         // Decompress
         let nvals_reconstructed =
@@ -400,7 +402,7 @@ mod roundtrip {
         let mut reconstructed = [0u32; 10];
 
         // Compress
-        let nvals16 = ptngc_comp_conv_to_vals16(&original, original.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&original, &mut vals16);
 
         // Decompress
         let nvals_reconstructed =
@@ -430,7 +432,7 @@ mod roundtrip {
         let mut reconstructed = [0u32; 20];
 
         // Compress
-        let nvals16 = ptngc_comp_conv_to_vals16(&original, original.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&original, &mut vals16);
 
         println!("  Compression: {} values -> {} chunks", 8, nvals16);
 
@@ -470,7 +472,7 @@ mod roundtrip {
         let mut reconstructed = vec![0u32; 1000];
 
         // Compress
-        let nvals16 = ptngc_comp_conv_to_vals16(&original, original.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&original, &mut vals16);
 
         // Decompress
         let nvals_reconstructed =
@@ -509,7 +511,7 @@ mod roundtrip {
         let mut reconstructed = [0u32; 30];
 
         // Compress
-        let nvals16 = ptngc_comp_conv_to_vals16(&original, original.len(), &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&original, &mut vals16);
 
         // Decompress
         let nvals_reconstructed =
@@ -535,7 +537,7 @@ mod roundtrip {
             let mut reconstructed = vec![0u32; 10];
 
             // Compress
-            let nvals16 = ptngc_comp_conv_to_vals16(case, case.len(), &mut vals16);
+            let nvals16 = ptngc_comp_conv_to_vals16(case, &mut vals16);
 
             // Decompress
             let nvals_reconstructed = ptngc_comp_conv_from_vals16(
@@ -559,7 +561,7 @@ mod roundtrip {
         let mut reconstructed = [0u32; 10];
 
         // Compress
-        let nvals16 = ptngc_comp_conv_to_vals16(&original, 0, &mut vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&original, &mut vals16);
 
         // Decompress
         let nvals_reconstructed =
@@ -577,8 +579,8 @@ mod roundtrip {
         let mut vals16_a = [0u32; 10];
         let mut vals16_b = [0u32; 10];
 
-        let nvals16_a = ptngc_comp_conv_to_vals16(&[test_value], 1, &mut vals16_a);
-        let nvals16_b = ptngc_comp_conv_to_vals16(&[test_value], 1, &mut vals16_b);
+        let nvals16_a = ptngc_comp_conv_to_vals16(&[test_value], &mut vals16_a);
+        let nvals16_b = ptngc_comp_conv_to_vals16(&[test_value], &mut vals16_b);
 
         assert_eq!(nvals16_a, nvals16_b);
         for i in 0..nvals16_a as usize {
