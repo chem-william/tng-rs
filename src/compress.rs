@@ -192,8 +192,8 @@ fn compress_quantized_pos(
     quant: &[i32],
     quant_inter: Option<&[i32]>,
     quant_intra: Option<&[i32]>,
-    n_atoms: usize,
-    n_frames: usize,
+    n_atoms: u32,
+    n_frames: u32,
     speed: usize,
     initial_coding: i32,
     initial_coding_parameter: i32,
@@ -201,10 +201,91 @@ fn compress_quantized_pos(
     coding_parameter: i32,
     prec_hi: FixT,
     prec_lo: FixT,
-    data: Option<&[u8]>,
+    data: &mut Option<&mut [u8]>,
 ) -> usize {
+    let mut bufloc = 0;
     // Information needed for decompression
-    if data.is_some() {}
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(&mut mut_data[bufloc..], FixT::from(MAGIC_INT_POS), 4);
+    }
+    bufloc += 4;
+
+    // Number of atoms
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(&mut mut_data[bufloc..], FixT::from(n_atoms), 4);
+    }
+    bufloc += 4;
+
+    // Number of frames
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(&mut mut_data[bufloc..], FixT::from(n_frames), 4);
+    }
+    bufloc += 4;
+
+    // Initial coding
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(initial_coding).expect("u32 from i32")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Initial coding parameter
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(initial_coding_parameter).expect("u32 from i32")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Coding
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(coding).expect("u32 from i32")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Coding parameter
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(coding_parameter).expect("u32 from i32")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Precision
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(&mut mut_data[bufloc..], prec_lo, 4);
+    }
+    bufloc += 4;
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(&mut mut_data[bufloc..], prec_hi, 4);
+    }
+    bufloc += 4;
+
+    // The initial frame
+    match initial_coding {
+        TNG_COMPRESS_ALGO_POS_XTC2
+        | TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE
+        | TNG_COMPRESS_ALGO_POS_XTC3 => {
+            let coder = Coder::default();
+            let length = n_atoms * 3;
+            // let datablock =
+            //     coder.pack_array(quant, length, coding, coding_parameter, n_atoms, speed);
+        }
+        TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {}
+        _ => {}
+    }
+
     0
 }
 
