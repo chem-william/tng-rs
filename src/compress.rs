@@ -1,37 +1,36 @@
-use crate::fix_point::{FixT, fixt_pair_to_f64};
+use crate::{
+    coder::Coder,
+    fix_point::{FixT, fixt_pair_to_f64},
+};
 
 const MAX_FVAL: f32 = 2147483647.0;
 
 // Compression algorithms (matching the original trajng assignments) The compression
 // backends require that some of the algorithms must have the same value
-const TNG_COMPRESS_ALGO_STOPBIT: i32 = 1;
-const TNG_COMPRESS_ALGO_TRIPLET: i32 = 2;
-const TNG_COMPRESS_ALGO_BWLZH1: i32 = 8;
-const TNG_COMPRESS_ALGO_BWLZH2: i32 = 9;
+pub(crate) const TNG_COMPRESS_ALGO_STOPBIT: i32 = 1;
+pub(crate) const TNG_COMPRESS_ALGO_TRIPLET: i32 = 2;
+pub(crate) const TNG_COMPRESS_ALGO_BWLZH1: i32 = 8;
+pub(crate) const TNG_COMPRESS_ALGO_BWLZH2: i32 = 9;
 
-const TNG_COMPRESS_ALGO_POS_STOPBIT_INTER: i32 = TNG_COMPRESS_ALGO_STOPBIT;
-const TNG_COMPRESS_ALGO_POS_TRIPLET_INTER: i32 = TNG_COMPRESS_ALGO_TRIPLET;
-const TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA: i32 = 3;
-const TNG_COMPRESS_ALGO_POS_XTC2: i32 = 5;
-const TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE: i32 = 7;
-const TNG_COMPRESS_ALGO_POS_BWLZH_INTER: i32 = TNG_COMPRESS_ALGO_BWLZH1;
-const TNG_COMPRESS_ALGO_POS_BWLZH_INTRA: i32 = TNG_COMPRESS_ALGO_BWLZH2;
-const TNG_COMPRESS_ALGO_POS_XTC3: i32 = 10;
+pub(crate) const TNG_COMPRESS_ALGO_POS_STOPBIT_INTER: i32 = TNG_COMPRESS_ALGO_STOPBIT;
+pub(crate) const TNG_COMPRESS_ALGO_POS_TRIPLET_INTER: i32 = TNG_COMPRESS_ALGO_TRIPLET;
+pub(crate) const TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA: i32 = 3;
+pub(crate) const TNG_COMPRESS_ALGO_POS_XTC2: i32 = 5;
+pub(crate) const TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE: i32 = 7;
+pub(crate) const TNG_COMPRESS_ALGO_POS_BWLZH_INTER: i32 = TNG_COMPRESS_ALGO_BWLZH1;
+pub(crate) const TNG_COMPRESS_ALGO_POS_BWLZH_INTRA: i32 = TNG_COMPRESS_ALGO_BWLZH2;
+pub(crate) const TNG_COMPRESS_ALGO_POS_XTC3: i32 = 10;
 
-const TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE: i32 = TNG_COMPRESS_ALGO_STOPBIT;
-const TNG_COMPRESS_ALGO_VEL_TRIPLET_INTER: i32 = TNG_COMPRESS_ALGO_TRIPLET;
-const TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE: i32 = 3;
-const TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER: i32 = 6;
-const TNG_COMPRESS_ALGO_VEL_BWLZH_INTER: i32 = TNG_COMPRESS_ALGO_BWLZH1;
-const TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE: i32 = TNG_COMPRESS_ALGO_BWLZH2;
+pub(crate) const TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE: i32 = TNG_COMPRESS_ALGO_STOPBIT;
+pub(crate) const TNG_COMPRESS_ALGO_VEL_TRIPLET_INTER: i32 = TNG_COMPRESS_ALGO_TRIPLET;
+pub(crate) const TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE: i32 = 3;
+pub(crate) const TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER: i32 = 6;
+pub(crate) const TNG_COMPRESS_ALGO_VEL_BWLZH_INTER: i32 = TNG_COMPRESS_ALGO_BWLZH1;
+pub(crate) const TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE: i32 = TNG_COMPRESS_ALGO_BWLZH2;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-struct Coder {
-    pack_temporary: u32,
-    pack_temporary_bits: i32,
-    stat_overflow: i32,
-    stat_numval: i32,
-}
+// This becomes TNGP for positions (little endian) and TNGV for velocities. In ASCII
+const MAGIC_INT_POS: u32 = 0x50474E54;
+const MAGIC_INT_VEL: u32 = 0x56474E54;
 
 #[inline]
 pub fn precision(hi: FixT, lo: FixT) -> f64 {
