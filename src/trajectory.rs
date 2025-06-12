@@ -40,7 +40,7 @@ fn tng_compress_algo() -> u64 {
     // 2) One parameter to the algorithm for the first frame (the initial coding parameter).
     // 3) The compression algorithm for the remaining frames (coding).
     // 4) One parameter to the algorithm for the remaining frames (the coding parameter).
-    return 4;
+    4
 }
 
 #[derive(Debug, Clone, Default)]
