@@ -77,7 +77,181 @@ pub(crate) fn bwlzh_compress_gen(
     let nvals16 = ptngc_comp_conv_to_vals16(&vals[valstart..], vals16);
     valstart += thisvals;
 
+    debug!("Resulting vals16 values: {nvals16}");
+    debug!("BWT");
+    let bwt_index = ptngc_comp_to_bwt(vals16, nvals16);
+
     0
+}
+
+/// Burrows-Wheeler transform
+fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize) -> (i32, i32) {
+    if nvals > 0xFFFFFF {
+        println!("BWT cannot pack more than {} values.", 0xFFFFFF);
+    }
+
+    // Also note that repeat pattern k (kmax) cannot be larger than 255
+    let mut indices: Vec<usize> = (0..nvals).collect();
+
+    // Find the length of the initial repeating pattern for the strings.
+    // First mark that the index does not have a found repeating string.
+    let mut nrepeat = vec![0; nvals];
+
+    for i in 0..nvals {
+        // If we have not already found a repeating string we must find it
+        if nrepeat[i] == 0 {
+            let maxrepeat = nvals * 2;
+            let mut good_j = -1;
+            let mut good_k = 0;
+            let kmax = 16;
+            // Track repeating patterns.
+            // k=1 corresponds to AAAAA...
+            // k=2 corresponds to ABABAB...
+            // k=3 corresponds to ABCABCABCABC...
+            // k=4 corresponds to ABCDABCDABCD...
+            // etc.
+            let mut k = kmax;
+            'k_loop: while k >= 1 {
+                debug!("Trying k={} at i={}", k, i);
+
+                // for j = k; j < maxrepeat; j += k
+                let mut j = k;
+                while j < maxrepeat {
+                    debug!("Trying j={} at i={} for k={}", j, i, k);
+
+                    // check if vals[i+m] == vals[i+j+m] for m in 0..k
+                    let mut is_equal = true;
+                    let mut m = 0;
+
+                    while m < k {
+                        let a = &vals[(i + m) % nvals];
+                        let b = &vals[(i + j + m) % nvals];
+                        if a != b {
+                            is_equal = false;
+                            break;
+                        }
+                        m += 1;
+                    }
+
+                    if is_equal {
+                        // we have a repeat of length `k` at offset `j`
+                        let new_j = i32::try_from(if j + k > maxrepeat { j } else { j + k })
+                            .expect("i32 from usize");
+                        if new_j > good_j || (new_j == good_j && k < good_k) {
+                            // We have found that the strings repeat for this length...
+                            good_j = new_j;
+                            // ...and with this length of the repeating pattern
+                            good_k = k;
+                            debug!("Best j and k is now {} and {}", good_j, good_k);
+                        }
+                        j += k;
+                        continue;
+                    } else {
+                        // We know that it is no point in trying with more than `m`
+                        if j == 0 {
+                            k = m;
+                            debug!("Setting new k to m: {}", k);
+                        } else {
+                            k -= 1;
+                        }
+                        debug!("Trying next k");
+                        continue 'k_loop;
+                    }
+                }
+
+                // if we exit the j-loop normally, try the next smaller `k`
+                k -= 1;
+            }
+
+            // from `good_j` and `good_k` we know the repeat for a large
+            // number of strings. The very last repeat length should not
+            // be assigned, since it can be much longer if a new test is
+            // done
+            let mut m = 0;
+            while m + good_k
+                < usize::try_from(good_j).expect("we just converted the other way around")
+                && i + m < nvals
+            {
+                // compute how many we actually repeat
+                let repeat = (good_j as usize - m).min(nvals);
+                // pack: low 8 bits = good_k, high bits = repeat
+                nrepeat[i + m] = (good_k as u32) | ((repeat as u32) << 8);
+
+                m += good_k;
+            }
+
+            // If no repetition was found for this value, signal that here
+            if nrepeat[i] == 0 {
+                // 257 == 1<<8 | 1
+                nrepeat[i + m] = 257;
+            }
+        }
+    }
+
+    // Sort cyclic shift matrix
+    bwt_sort(&mut indices, nvals, vals, &nrepeat);
+    (0, 0)
+}
+
+/// c version: ptngc_bwt_merge_sort_inner
+fn bwt_sort(indices: &mut [usize], nvals: usize, vals: &[u32], nrepeat: &[u32]) {
+    // Only sort the [0..nvals] portion
+    indices[..nvals].sort_by(|&ia, &ib| compare_index(ia, ib, nvals, vals, nrepeat));
+}
+
+fn compare_index(
+    mut i1: usize,
+    mut i2: usize,
+    nvals: usize,
+    vals: &[u32],
+    nrepeat: &[u32],
+) -> Ordering {
+    let mut compared = 0;
+    while compared < nvals {
+        // If we have repeating patterns, we might be able to start the
+        // comparison later in the string
+        // Do we have a repeating pattern? If so are
+        // the repeating patterns the same length?
+        let packed1 = nrepeat[i1] as usize;
+        let packed2 = nrepeat[i2] as usize;
+        let repeat1 = packed1 >> 8;
+        let k1 = packed1 & 0xFF;
+        let repeat2 = packed2 >> 8;
+        let k2 = packed2 & 0xFF;
+
+        if repeat1 > 1 && repeat2 > 1 && k1 == k2 {
+            // fast lexicographic compare of the next block of size k1
+            let ord = vals
+                .iter()
+                .cycle()
+                .skip(i1)
+                .take(k1)
+                .cmp(vals.iter().cycle().skip(i2).take(k1));
+            if ord != Ordering::Equal {
+                return ord;
+            }
+            // blocks were identical → skip ahead by min(repeat1, repeat2)
+            let skip = repeat1.min(repeat2);
+            i1 = (i1 + skip) % nvals;
+            i2 = (i2 + skip) % nvals;
+            compared += skip;
+        } else {
+            // single-element fallback
+            let a = vals[i1];
+            let b = vals[i2];
+            if a < b {
+                return Ordering::Less;
+            }
+            if a > b {
+                return Ordering::Greater;
+            }
+            // advance each by one (cyclically)
+            i1 = (i1 + 1) % nvals;
+            i2 = (i2 + 1) % nvals;
+            compared += 1;
+        }
+    }
+    Ordering::Equal
 }
 
 /// Coding 32 bit ints in sequences of 16 bit ints. Worst case the output is `3*nvals` long
@@ -137,6 +311,94 @@ pub(crate) fn ptngc_comp_conv_from_vals16(vals16: &[u32], nvals16: usize, vals: 
         }
     }
     i32::try_from(j).expect("i32 from usize")
+}
+
+#[cfg(test)]
+mod sorting {
+    use super::*;
+
+    // in the following, some of the tests use bitshifts
+    // to construct the `nrepeat` vecs. that's to easier test the
+    // repeat logic. so when we write
+    //            (repeat << 8) | k
+    //
+    //    [ repeat (…bits…) ][      k (8 bits) ]
+    //    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    //          nrepeat entry
+
+    fn run_case(vals: &[u32], nrepeat: &[u32]) -> Vec<usize> {
+        let n = vals.len();
+        let mut idx: Vec<usize> = (0..n).collect();
+        bwt_sort(&mut idx, n, vals, nrepeat);
+        idx
+    }
+
+    #[test]
+    fn simple_in_order() {
+        let vals = [1, 2, 3];
+        let nrepeat = vec![0u32; vals.len()]; // no repeats
+        let sorted = run_case(&vals, &nrepeat);
+        assert_eq!(sorted, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn rotated_sequence() {
+        // rotations: [3,1,2], [1,2,3], [2,3,1]
+        let vals = [3, 1, 2];
+        let nrepeat = vec![0u32; vals.len()]; // no repeats
+        let sorted = run_case(&vals, &nrepeat);
+        // lex order: [1,2,3](@1), [2,3,1](@2), [3,1,2](@0)
+        assert_eq!(sorted, vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn all_equal() {
+        let vals = [7, 7, 7, 7];
+        let nrepeat = vec![0u32; vals.len()]; // no repeats
+        let sorted = run_case(&vals, &nrepeat);
+        // stable sort must preserve original [0,1,2,3]
+        assert_eq!(sorted, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn full_repeated_pattern() {
+        let vals = [1, 2, 1, 2, 1, 2];
+        let nrepeat = [(3 << 8) | 2; 6];
+        let sorted = run_case(&vals, &nrepeat);
+        assert_eq!(sorted, vec![0, 2, 4, 1, 3, 5]);
+    }
+
+    #[test]
+    fn partial_repeats_wrap() {
+        let vals = [3, 4, 5, 3, 4];
+        let nrepeat = [(2 << 8) | 3, 0, 0, (1 << 8) | 2, 0];
+        let sorted = run_case(&vals, &nrepeat);
+        assert_eq!(sorted, vec![3, 0, 4, 1, 2]);
+    }
+
+    #[test]
+    fn mismatched_k() {
+        let vals = [0, 1, 0, 1, 0, 2, 0, 2];
+        let nrepeat = [(3 << 8) | 2, 0, 0, 0, 0, (2 << 8) | 3, 0, 0];
+        let sorted = run_case(&vals, &nrepeat);
+        assert_eq!(sorted, vec![0, 2, 6, 4, 1, 3, 7, 5]);
+    }
+
+    #[test]
+    fn k_zero_malformed() {
+        let vals = [5, 6, 7];
+        let nrepeat = [(5 << 8), 0, 0];
+        let sorted = run_case(&vals, &nrepeat);
+        assert_eq!(sorted, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn overshoot_skip() {
+        let vals = [9, 8, 7, 6];
+        let nrepeat = [(10 << 8) | 1; 4];
+        let sorted = run_case(&vals, &nrepeat);
+        assert_eq!(sorted, vec![3, 2, 1, 0]);
+    }
 }
 
 #[cfg(test)]
