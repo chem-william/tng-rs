@@ -1,6 +1,13 @@
 use std::cmp::Ordering;
 
 use log::debug;
+
+use crate::{
+    dict::{DICT_SIZE, ptngc_comp_canonical_dict},
+    mtf::{
+        ptngc_comp_conv_to_mtf, ptngc_comp_conv_to_mtf_partial, ptngc_comp_conv_to_mtf_partial3,
+    },
+};
 const MAX_VALS_PER_BLOCK: usize = 200000;
 
 // TODO: enable these as compile-time features?
@@ -15,15 +22,15 @@ pub(crate) const fn ptngc_comp_huff_buflen(nvals: i32) -> i32 {
     132000 + nvals * 8
 }
 
-fn bwlzh_compress_no_lz77() {
-    todo!()
-}
-
 /// Compress the integers (positive, small integers are preferable) using bwlzh compression. The
 /// unsigned char *output should be allocated to be able to hold worst case. You can obtain this
 /// length conveniently by calling `comp_get_buflen()`
 pub(crate) fn bwlzh_compress(vals: &[u32], nvals: i32, output: &mut [u8]) -> i32 {
-    bwlzh_compress_gen(vals, nvals, output, 1, 0)
+    bwlzh_compress_gen(vals, nvals, output, 1)
+}
+
+pub(crate) fn bwlzh_compress_no_lz77(vals: &[u32], nvals: i32, output: &mut [u8]) -> i32 {
+    bwlzh_compress_gen(vals, nvals, output, 0)
 }
 
 pub(crate) fn bwlzh_compress_gen(
@@ -31,8 +38,8 @@ pub(crate) fn bwlzh_compress_gen(
     nvals: i32,
     output: &mut [u8],
     enable_lz77: i32,
-    verbose: i32,
 ) -> i32 {
+    let mut dict = vec![0; DICT_SIZE];
     let mut outdata = 0;
     let mut valsleft = 0;
     let mut valstart = 0;
@@ -44,12 +51,12 @@ pub(crate) fn bwlzh_compress_gen(
 
     let (vals16, rest) = tmpmem.split_at_mut(MAX_VALS_PER_BLOCK * 3);
     let (bwt, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-    let (mtf, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
+    let (mut mtf, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
     let (rle, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
     let (offsets, lens) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
 
     // TODO: enable feature flag "partial-mtf3"
-    let mtf3 = vec![0; MAX_VALS_PER_BLOCK * 3 * 3];
+    let mut mtf3 = vec![0; MAX_VALS_PER_BLOCK * 3 * 3];
 
     debug!("Number of input values: {nvals}");
 
@@ -72,20 +79,49 @@ pub(crate) fn bwlzh_compress_gen(
         }
         valsleft -= thisvals;
         debug!("Creating vals16 block from {thisvals} values");
+        let nvals16 = ptngc_comp_conv_to_vals16(&vals[valstart..], vals16);
+        valstart += thisvals;
+
+        debug!("Resulting vals16 values: {nvals16}");
+        debug!("BWT");
+        let bwt_index = ptngc_comp_to_bwt(vals16, nvals16, bwt);
+
+        // Store the number of real values in this block
+        // Store the number of nvals16 in this block
+        // Store the BWT index
+        for &word in &[thisvals, nvals16, bwt_index] {
+            let bytes = word.to_le_bytes(); // [low, …, high]
+            output[outdata..outdata + 4].copy_from_slice(&bytes);
+            outdata += 4;
+        }
+
+        debug!("MTF");
+        if PARTIAL_MTF3 {
+            ptngc_comp_conv_to_mtf_partial3(bwt, nvals16, &mut mtf3);
+            for imtfinner in 0..3 {
+                debug!("Doing partial MTF: {imtfinner}");
+
+                for j in 0..nvals16 {
+                    mtf[j] = u32::from(mtf3[imtfinner * nvals16 + j]);
+                }
+            }
+        } else if PARTIAL_MTF {
+            ptngc_comp_conv_to_mtf_partial(bwt, mtf);
+        } else {
+            ptngc_comp_canonical_dict(&mut dict);
+            ptngc_comp_conv_to_mtf(bwt, &dict, mtf);
+        }
+
+        if reducealgo == 1 {
+            todo!()
+        }
     }
-
-    let nvals16 = ptngc_comp_conv_to_vals16(&vals[valstart..], vals16);
-    valstart += thisvals;
-
-    debug!("Resulting vals16 values: {nvals16}");
-    debug!("BWT");
-    let bwt_index = ptngc_comp_to_bwt(vals16, nvals16);
 
     0
 }
 
 /// Burrows-Wheeler transform
-fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize) -> (i32, i32) {
+fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) -> usize {
     if nvals > 0xFFFFFF {
         println!("BWT cannot pack more than {} values.", 0xFFFFFF);
     }
@@ -101,8 +137,7 @@ fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize) -> (i32, i32) {
         // If we have not already found a repeating string we must find it
         if nrepeat[i] == 0 {
             let maxrepeat = nvals * 2;
-            let mut good_j = -1;
-            let mut good_k = 0;
+            let mut best_repeat: Option<(usize, usize)> = None;
             let kmax = 16;
             // Track repeating patterns.
             // k=1 corresponds to AAAAA...
@@ -135,14 +170,18 @@ fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize) -> (i32, i32) {
 
                     if is_equal {
                         // we have a repeat of length `k` at offset `j`
-                        let new_j = i32::try_from(if j + k > maxrepeat { j } else { j + k })
-                            .expect("i32 from usize");
-                        if new_j > good_j || (new_j == good_j && k < good_k) {
-                            // We have found that the strings repeat for this length...
-                            good_j = new_j;
-                            // ...and with this length of the repeating pattern
-                            good_k = k;
-                            debug!("Best j and k is now {} and {}", good_j, good_k);
+                        let new_j = if j + k > maxrepeat { j } else { j + k };
+                        match best_repeat {
+                            None => {
+                                best_repeat = Some((new_j, k));
+                                debug!("Best j and k is now {} and {}", new_j, k);
+                            }
+                            Some((best_j, best_k)) => {
+                                if new_j > best_j || (new_j == best_j && k < best_k) {
+                                    best_repeat = Some((new_j, k));
+                                    debug!("Best j and k is now {} and {}", new_j, k);
+                                }
+                            }
                         }
                         j += k;
                         continue;
@@ -167,30 +206,63 @@ fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize) -> (i32, i32) {
             // number of strings. The very last repeat length should not
             // be assigned, since it can be much longer if a new test is
             // done
-            let mut m = 0;
-            while m + good_k
-                < usize::try_from(good_j).expect("we just converted the other way around")
-                && i + m < nvals
-            {
-                // compute how many we actually repeat
-                let repeat = (good_j as usize - m).min(nvals);
-                // pack: low 8 bits = good_k, high bits = repeat
-                nrepeat[i + m] = (good_k as u32) | ((repeat as u32) << 8);
-
-                m += good_k;
-            }
-
-            // If no repetition was found for this value, signal that here
-            if nrepeat[i] == 0 {
-                // 257 == 1<<8 | 1
-                nrepeat[i + m] = 257;
+            if let Some((good_j, good_k)) = best_repeat {
+                let mut m = 0;
+                while m + good_k < good_j && i + m < nvals {
+                    let repeat = (good_j - m).min(nvals);
+                    nrepeat[i + m] = (good_k as u32) | ((repeat as u32) << 8);
+                    m += good_k;
+                }
+                if nrepeat[i] == 0 {
+                    nrepeat[i + m] = 257;
+                }
+            } else {
+                nrepeat[i] = 257;
             }
         }
     }
 
     // Sort cyclic shift matrix
     bwt_sort(&mut indices, nvals, vals, &nrepeat);
-    (0, 0)
+
+    // which one is the original string?
+    let index = indices.iter().position(|x| *x == 0).unwrap_or(nvals);
+
+    // Form output
+    for (i, &idx) in indices.iter().enumerate() {
+        let lastchar = if idx == 0 { nvals - 1 } else { idx - 1 };
+        output[i] = vals[lastchar];
+    }
+
+    index
+}
+
+/// Burrows-Wheeler inverse transform
+///
+/// c version: Ptngc_comp_from_bwt
+pub(crate) fn inverse_bwt(input: &[u32], index: usize, vals: &mut [u32]) {
+    // Straightforward from the Burrows-Wheeler paper (page 13).
+    let nvals = input.len();
+    let mut c = vec![0u32; 0x10000];
+    let mut p = vec![0u32; nvals];
+
+    for (i, &val) in input.iter().enumerate() {
+        p[i] = c[val as usize];
+        c[val as usize] += 1;
+    }
+
+    let mut sum = 0u32;
+    for count in c.iter_mut() {
+        sum += *count;
+        *count = sum - *count;
+    }
+
+    let mut idx = index;
+    for i in (0..nvals).rev() {
+        let val = input[idx];
+        vals[i] = val;
+        idx = (p[idx] + c[val as usize]) as usize;
+    }
 }
 
 /// c version: ptngc_bwt_merge_sort_inner
@@ -867,5 +939,83 @@ mod roundtrip {
         assert_eq!(nvals_a, nvals_b);
         assert_eq!(reconstructed_a[0], reconstructed_b[0]);
         assert_eq!(reconstructed_a[0], test_value);
+    }
+}
+
+#[cfg(test)]
+mod bwt {
+    use super::*;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    fn init_logger() {
+        INIT.call_once(|| {
+            env_logger::builder().is_test(true).try_init().ok();
+        });
+    }
+
+    fn roundtrip_bwt(vals: &[u32]) {
+        let mut output = vec![0; vals.len()];
+        let bwt_index = ptngc_comp_to_bwt(vals, vals.len(), &mut output);
+        let mut recovered = vec![0; vals.len()];
+        inverse_bwt(&output, bwt_index, &mut recovered);
+        assert_eq!(
+            recovered, vals,
+            "BWT roundtrip failed for input: {:?}",
+            vals
+        );
+    }
+
+    #[test]
+    fn test_bwt_roundtrip_empty() {
+        roundtrip_bwt(&[]);
+    }
+
+    #[test]
+    fn test_bwt_roundtrip_single() {
+        roundtrip_bwt(&[42]);
+    }
+
+    #[test]
+    fn test_bwt_roundtrip_simple_ascii() {
+        let input = b"banana".iter().map(|&b| b as u32).collect::<Vec<u32>>();
+        roundtrip_bwt(&input);
+    }
+
+    #[test]
+    fn test_bwt_roundtrip_full_ascii_range() {
+        init_logger();
+        let input = (0u8..=255u8).map(|b| b as u32).collect::<Vec<_>>();
+        // let ascii_string: String = (0u8..=255u8)
+        //     .map(|b| {
+        //         if b.is_ascii_graphic() || b == b' ' {
+        //             b as char
+        //         } else {
+        //             '.'
+        //         }
+        //     })
+        //     .collect();
+
+        // println!("{}", ascii_string);
+        roundtrip_bwt(&input);
+    }
+
+    #[test]
+    fn test_bwt_roundtrip_repeating_pattern() {
+        let input = b"ABABABABAB".iter().map(|&b| b as u32).collect::<Vec<_>>();
+        roundtrip_bwt(&input);
+    }
+
+    #[test]
+    fn test_bwt_roundtrip_palindrome() {
+        let input = b"racecar".iter().map(|&b| b as u32).collect::<Vec<_>>();
+        roundtrip_bwt(&input);
+    }
+
+    #[test]
+    fn test_bwt_roundtrip_binary_data() {
+        let input = vec![0u32, 1, 2, 3, 0, 1, 2, 3];
+        roundtrip_bwt(&input);
     }
 }
