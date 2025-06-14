@@ -1,20 +1,18 @@
 // In your lib.rs or a module file:
 
 /// Size of the full canonical dictionary / histogram table.
-const DICT_SIZE: usize = 0x20004;
+pub(crate) const DICT_SIZE: usize = 0x20004;
 
 /// Fill `dict` with the canonical sequence `[0, 1, 2, …, DICT_SIZE−1]`.
-/// Returns the total number of entries written [`DICT_SIZE`].
 ///
 /// # Panic
 ///
 /// Panics if `dict.len() < DICT_SIZE`.
-pub(crate) fn ptngc_comp_canonical_dict(dict: &mut [u32]) -> usize {
+pub(crate) fn ptngc_comp_canonical_dict(dict: &mut [u32]) {
     assert!(dict.len() >= DICT_SIZE, "dict buffer too small");
     for (i, slot) in dict.iter_mut().enumerate().take(DICT_SIZE) {
         *slot = i as u32;
     }
-    DICT_SIZE
 }
 
 /// Build a “dictionary” and histogram from the input values:
