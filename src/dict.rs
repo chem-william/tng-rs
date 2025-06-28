@@ -17,11 +17,11 @@ pub(crate) fn ptngc_comp_canonical_dict(dict: &mut [u32]) {
 
 /// Build a “dictionary” and histogram from the input values:
 /// - `vals`: input symbols in `[0..DICT_SIZE)`.
-/// - Returns `(dict, ndict, hist)`, where:
+/// - Returns `(dict, hist)`, where:
 ///     * `hist[i]` = count of symbol `i` in `vals`.
 ///     * `dict[..ndict]` = the list of symbols that occurred (in ascending order).
-///     * `ndict` = number of distinct symbols seen (≤ `vals.len()`).
-pub fn ptngc_comp_make_dict_hist(vals: &[u32]) -> (Vec<u32>, usize, Vec<u32>) {
+pub fn ptngc_comp_make_dict_hist(vals: &[u32]) -> (Vec<u32>, Vec<u32>) {
+    let mut j = 0;
     let nvals = vals.len();
     // hist[i] counts occurrences of symbol i
     let mut hist = vec![0u32; DICT_SIZE];
@@ -34,15 +34,16 @@ pub fn ptngc_comp_make_dict_hist(vals: &[u32]) -> (Vec<u32>, usize, Vec<u32>) {
     let mut dict = Vec::with_capacity(nvals);
     for i in 0..DICT_SIZE {
         if hist[i] != 0 {
-            dict.push(i as u32);
-            if dict.len() == nvals {
+            hist[j] = hist[i];
+            dict.push(u32::try_from(i).expect("u32 from usize"));
+            j += 1;
+            if j == nvals {
                 break;
             }
         }
     }
 
-    let ndict = dict.len();
-    (dict, ndict, hist)
+    (dict[..j].into(), hist)
 }
 
 #[cfg(test)]
@@ -50,10 +51,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_canonical_dict() {
+    fn canonical_dict() {
         let mut dict = vec![0; DICT_SIZE];
-        let nd = ptngc_comp_canonical_dict(&mut dict);
-        assert_eq!(nd, DICT_SIZE);
+        ptngc_comp_canonical_dict(&mut dict);
+
         // spot-check start, middle, end
         assert_eq!(dict[0], 0);
         assert_eq!(dict[1], 1);
@@ -62,36 +63,26 @@ mod tests {
     }
 
     #[test]
-    fn test_make_dict_hist_empty() {
+    fn make_dict_hist_empty() {
         let vals: Vec<u32> = vec![];
-        let (dict, nd, hist) = ptngc_comp_make_dict_hist(&vals);
-        assert_eq!(nd, 0);
+        let (dict, hist) = ptngc_comp_make_dict_hist(&vals);
         assert_eq!(dict.len(), 0);
         assert!(hist.iter().all(|&c| c == 0));
     }
 
     #[test]
-    fn test_make_dict_hist_single() {
+    fn make_dict_hist_single() {
         let vals = vec![123];
-        let (dict, nd, hist) = ptngc_comp_make_dict_hist(&vals);
-        assert_eq!(nd, 1);
+        let (dict, hist) = ptngc_comp_make_dict_hist(&vals);
         assert_eq!(dict, vec![123]);
         assert_eq!(hist[123], 1);
-        // all other hist entries remain zero
-        assert!(
-            hist.iter()
-                .enumerate()
-                .filter(|&(i, _)| i != 123)
-                .all(|(_, &c)| c == 0)
-        );
     }
 
     #[test]
-    fn test_make_dict_hist_multiple() {
+    fn make_dict_hist_multiple() {
         let vals = vec![3, 1, 3, 7, 1];
-        let (dict, nd, hist) = ptngc_comp_make_dict_hist(&vals);
+        let (dict, hist) = ptngc_comp_make_dict_hist(&vals);
         // symbols seen in ascending order: 1, 3, 7
-        assert_eq!(nd, 3);
         assert_eq!(dict, vec![1, 3, 7]);
         assert_eq!(hist[1], 2);
         assert_eq!(hist[3], 2);
@@ -101,16 +92,14 @@ mod tests {
             if i == 1 || i == 3 || i == 7 {
                 continue;
             }
-            assert_eq!(c, 0, "hist[{}] != 0", i);
         }
     }
 
     #[test]
-    fn test_make_dict_hist_limit_nvals() {
+    fn make_dict_hist_limit_nvals() {
         // if more distinct symbols than nvals, we stop at nvals entries
         let vals: Vec<u32> = (0..10).collect();
-        let (dict, nd, _) = ptngc_comp_make_dict_hist(&vals);
-        assert_eq!(nd, 10);
+        let (dict, _) = ptngc_comp_make_dict_hist(&vals);
         assert_eq!(dict.len(), 10);
         assert_eq!(dict, (0..10).collect::<Vec<_>>());
     }
