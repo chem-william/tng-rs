@@ -1,0 +1,266 @@
+use crate::{
+    bwlzh::ptngc_comp_conv_to_vals16, dict::ptngc_comp_make_dict_hist,
+    huffman::ptngc_comp_conv_to_huffman, rle::ptngc_comp_conv_to_rle,
+};
+
+const fn ptngc_comp_huff_buflen(nvals: i32) -> i32 {
+    132000 + nvals * 8
+}
+
+// The value pointed to be `chosen_algo` should be sent as -1 for autodetect
+pub(crate) fn ptngc_comp_huff_compress_verbose(
+    mut vals: Vec<u32>,
+    huffman: &mut [u8],
+    huffman_len: &mut i32,
+    huffdatalen: &mut usize,
+    huffman_lengths: &mut Vec<usize>,
+    chosen_algo: &mut i32,
+    isvals16: bool,
+) {
+    let mut nvals16 = 0;
+    let mut nvals = vals.len();
+
+    // Do I need to convert to vals16?
+    if !isvals16 {
+        let mut vals16 = vec![0; nvals * 3];
+        let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
+        nvals = nvals16;
+        vals.clone_from_slice(&vals16[..nvals]);
+    } else {
+        nvals16 = nvals;
+    }
+
+    // Determine probabilities
+    let (dict, mut hist) = ptngc_comp_make_dict_hist(&vals);
+
+    // First compress the data using huffman coding (place it ready for output at 14 (code for algorithm+length etc.))
+    let mut nhuff = 0;
+    let mut nhuffdict = 0;
+    let mut nhuffdictunpack = 0;
+    let mut huffdict = vec![0; 0x20005];
+    let mut huffdictunpack = vec![0; 0x20005];
+    ptngc_comp_conv_to_huffman(
+        &vals,
+        &dict,
+        &mut hist,
+        &mut huffman[14..],
+        &mut nhuff,
+        &mut huffdict,
+        &mut nhuffdict,
+        &mut huffdictunpack,
+        &mut nhuffdictunpack,
+    );
+    let ndict = dict.len();
+    *huffdatalen = nhuff;
+
+    // Algorithm 0 stores the huffman dictionary directly (+ a code for
+    // the algorithm) + lengths of the huffman buffer (4) and the huffman dictionary (3).
+    huffman_lengths[0] = nhuff + nhuffdict + 1 * 2 + 3 * 4 + 3 + 3;
+
+    // Next we try to compress the huffman dictionary using huffman coding ... (algorithm 1)
+
+    // Determine probabilities
+    let (dict, mut hist) = ptngc_comp_make_dict_hist(&huffdictunpack[..nhuffdictunpack]);
+    let ndict1 = dict.len();
+    // Pack huffman dictionary
+    let mut huffman1 = vec![0; 0x20005];
+    let mut huffdict1 = vec![0; 0x20005];
+    let mut huffdictunpack1 = vec![0; 0x20005];
+    let mut nhuff1 = 0;
+    let mut nhuffdict1 = 0;
+    let mut nhuffdictunpack1 = 0;
+    ptngc_comp_conv_to_huffman(
+        &huffdictunpack,
+        &dict,
+        &mut hist,
+        &mut huffman1,
+        &mut nhuff1,
+        &mut huffdict1,
+        &mut nhuffdict1,
+        &mut huffdictunpack1,
+        &mut nhuffdictunpack1,
+    );
+    huffman_lengths[1] = nhuff + nhuff1 + nhuffdict1 + 1 * 2 + 3 * 4 + 3 + 3 + 3 + 3 + 3;
+
+    // ... and rle + huffman coding ... (algorithm 2) Pack any repetitive patterns
+    let huffdictrle = ptngc_comp_conv_to_rle(&huffdictunpack[..nhuffdictunpack], 1);
+
+    // Determine probabilities
+    let (dict, mut hist) = ptngc_comp_make_dict_hist(&huffdictrle);
+    let ndict2 = dict.len();
+    // Pack huffman dictionary
+    let mut huffman2 = vec![0; 6 * 0x20005];
+    let mut huffdict2 = vec![0; 0x20005];
+    let mut huffdictunpack2 = vec![0; 0x20005];
+    let mut nhuff2 = 0;
+    let mut nhuffdict2 = 0;
+    let mut nhuffdictunpack2 = 0;
+    ptngc_comp_conv_to_huffman(
+        &huffdictrle,
+        &dict,
+        &mut hist,
+        &mut huffman2,
+        &mut nhuff2,
+        &mut huffdict2,
+        &mut nhuffdict2,
+        &mut huffdictunpack2,
+        &mut nhuffdictunpack2,
+    );
+    let nhuffrle = huffdictrle.len();
+    huffman_lengths[2] = nhuff + nhuff2 + nhuffdict2 + 1 * 2 + 3 * 4 + 3 + 3 + 3 + 3 + 3 + 3;
+
+    // Choose the best algorithm and output the data
+    if (*chosen_algo == 0)
+        || ((*chosen_algo == -1)
+            && ((huffman_lengths[0] < huffman_lengths[1])
+                && (huffman_lengths[0] < huffman_lengths[2])))
+    {
+        *chosen_algo = 0;
+        *huffman_len = i32::try_from(huffman_lengths[0]).expect("i32 from usize");
+        huffman[0] = isvals16 as u8;
+        huffman[1] = 0;
+        huffman[2] = (nvals16 & 0xFF) as u8;
+        huffman[3] = ((nvals16 >> 8) & 0xFF) as u8;
+        huffman[4] = (((nvals16) >> 16) & 0xFF) as u8;
+        huffman[5] = (((nvals16) >> 24) & 0xFF) as u8;
+        huffman[6] = (nvals & 0xFF) as u8;
+        huffman[7] = (((nvals) >> 8) & 0xFF) as u8;
+        huffman[8] = (((nvals) >> 16) & 0xFF) as u8;
+        huffman[9] = (((nvals) >> 24) & 0xFF) as u8;
+        huffman[10] = ((nhuff) & 0xFF) as u8;
+        huffman[11] = (((nhuff) >> 8) & 0xFF) as u8;
+        huffman[12] = (((nhuff) >> 16) & 0xFF) as u8;
+        huffman[13] = (((nhuff) >> 24) & 0xFF) as u8;
+        huffman[14 + nhuff] = ((nhuffdict) & 0xFF) as u8;
+        huffman[15 + nhuff] = (((nhuffdict) >> 8) & 0xFF) as u8;
+        huffman[16 + nhuff] = (((nhuffdict) >> 16) & 0xFF) as u8;
+        huffman[17 + nhuff] = ((ndict) & 0xFF) as u8;
+        huffman[18 + nhuff] = (((ndict) >> 8) & 0xFF) as u8;
+        huffman[19 + nhuff] = (((ndict) >> 16) & 0xFF) as u8;
+        for i in 0..nhuffdict {
+            huffman[20 + nhuff + i] = huffdict[i];
+        }
+    } else if (*chosen_algo == 1)
+        || ((*chosen_algo == -1) && (huffman_lengths[1] < huffman_lengths[2]))
+    {
+        *chosen_algo = 1;
+        *huffman_len = i32::try_from(huffman_lengths[1]).expect("i32 from usize");
+        huffman[0] = isvals16 as u8;
+        huffman[1] = 1;
+        huffman[2] = ((nvals16) & 0xFF) as u8;
+        huffman[3] = (((nvals16) >> 8) & 0xFF) as u8;
+        huffman[4] = (((nvals16) >> 16) & 0xFF) as u8;
+        huffman[5] = (((nvals16) >> 24) & 0xFF) as u8;
+        huffman[6] = ((nvals) & 0xFF) as u8;
+        huffman[7] = (((nvals) >> 8) & 0xFF) as u8;
+        huffman[8] = (((nvals) >> 16) & 0xFF) as u8;
+        huffman[9] = (((nvals) >> 24) & 0xFF) as u8;
+        huffman[10] = ((nhuff) & 0xFF) as u8;
+        huffman[11] = (((nhuff) >> 8) & 0xFF) as u8;
+        huffman[12] = (((nhuff) >> 16) & 0xFF) as u8;
+        huffman[13] = (((nhuff) >> 24) & 0xFF) as u8;
+        huffman[14 + nhuff] = ((nhuffdictunpack) & 0xFF) as u8;
+        huffman[15 + nhuff] = (((nhuffdictunpack) >> 8) & 0xFF) as u8;
+        huffman[16 + nhuff] = (((nhuffdictunpack) >> 16) & 0xFF) as u8;
+        huffman[17 + nhuff] = ((ndict) & 0xFF) as u8;
+        huffman[18 + nhuff] = (((ndict) >> 8) & 0xFF) as u8;
+        huffman[19 + nhuff] = (((ndict) >> 16) & 0xFF) as u8;
+        huffman[20 + nhuff] = ((nhuff1) & 0xFF) as u8;
+        huffman[21 + nhuff] = (((nhuff1) >> 8) & 0xFF) as u8;
+        huffman[22 + nhuff] = (((nhuff1) >> 16) & 0xFF) as u8;
+        huffman[23 + nhuff] = ((nhuffdict1) & 0xFF) as u8;
+        huffman[24 + nhuff] = (((nhuffdict1) >> 8) & 0xFF) as u8;
+        huffman[25 + nhuff] = (((nhuffdict1) >> 16) & 0xFF) as u8;
+        huffman[26 + nhuff] = ((ndict1) & 0xFF) as u8;
+        huffman[27 + nhuff] = (((ndict1) >> 8) & 0xFF) as u8;
+        huffman[28 + nhuff] = (((ndict1) >> 16) & 0xFF) as u8;
+        for i in 0..nhuff1 {
+            huffman[29 + nhuff + i] = huffman1[i];
+        }
+        for i in 0..nhuffdict1 {
+            huffman[29 + nhuff + nhuff1 + i] = huffdict1[i];
+        }
+    } else {
+        *chosen_algo = 2;
+        *huffman_len = i32::try_from(huffman_lengths[2]).expect("i32 from usize");
+        huffman[0] = isvals16 as u8;
+        huffman[1] = 2;
+        huffman[2] = ((nvals16) & 0xFF) as u8;
+        huffman[3] = (((nvals16) >> 8) & 0xFF) as u8;
+        huffman[4] = (((nvals16) >> 16) & 0xFF) as u8;
+        huffman[5] = (((nvals16) >> 24) & 0xFF) as u8;
+        huffman[6] = ((nvals) & 0xFF) as u8;
+        huffman[7] = (((nvals) >> 8) & 0xFF) as u8;
+        huffman[8] = (((nvals) >> 16) & 0xFF) as u8;
+        huffman[9] = (((nvals) >> 24) & 0xFF) as u8;
+        huffman[10] = ((nhuff) & 0xFF) as u8;
+        huffman[11] = (((nhuff) >> 8) & 0xFF) as u8;
+        huffman[12] = (((nhuff) >> 16) & 0xFF) as u8;
+        huffman[13] = (((nhuff) >> 24) & 0xFF) as u8;
+        huffman[14 + nhuff] = ((nhuffdictunpack) & 0xFF) as u8;
+        huffman[15 + nhuff] = (((nhuffdictunpack) >> 8) & 0xFF) as u8;
+        huffman[16 + nhuff] = (((nhuffdictunpack) >> 16) & 0xFF) as u8;
+        huffman[17 + nhuff] = ((ndict) & 0xFF) as u8;
+        huffman[18 + nhuff] = (((ndict) >> 8) & 0xFF) as u8;
+        huffman[19 + nhuff] = (((ndict) >> 16) & 0xFF) as u8;
+        huffman[20 + nhuff] = ((nhuffrle) & 0xFF) as u8;
+        huffman[21 + nhuff] = (((nhuffrle) >> 8) & 0xFF) as u8;
+        huffman[22 + nhuff] = (((nhuffrle) >> 16) & 0xFF) as u8;
+        huffman[23 + nhuff] = ((nhuff2) & 0xFF) as u8;
+        huffman[24 + nhuff] = (((nhuff2) >> 8) & 0xFF) as u8;
+        huffman[25 + nhuff] = (((nhuff2) >> 16) & 0xFF) as u8;
+        huffman[26 + nhuff] = ((nhuffdict2) & 0xFF) as u8;
+        huffman[27 + nhuff] = (((nhuffdict2) >> 8) & 0xFF) as u8;
+        huffman[28 + nhuff] = (((nhuffdict2) >> 16) & 0xFF) as u8;
+        huffman[29 + nhuff] = ((ndict2) & 0xFF) as u8;
+        huffman[30 + nhuff] = (((ndict2) >> 8) & 0xFF) as u8;
+        huffman[31 + nhuff] = (((ndict2) >> 16) & 0xFF) as u8;
+        for i in 0..nhuff2 {
+            huffman[32 + nhuff + i] = huffman2[i];
+        }
+        for i in 0..nhuffdict2 {
+            huffman[32 + nhuff + nhuff2 + i] = huffdict2[i];
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Once;
+
+    use super::ptngc_comp_huff_compress_verbose;
+    static INIT: Once = Once::new();
+
+    fn init_logger() {
+        INIT.call_once(|| {
+            env_logger::builder().is_test(true).try_init().ok();
+        });
+    }
+
+    #[test]
+    fn it_works() {
+        init_logger();
+        let vals = vec![1, 2, 3, 4, 5];
+        let mut huffman = vec![0; 10000];
+        let mut huffman_len = 0;
+        let mut huffdatalen = 0;
+        let mut huffman_lengths = vec![0; 3];
+        let mut chosen_algo = -1;
+        let isvals16 = false;
+
+        ptngc_comp_huff_compress_verbose(
+            vals,
+            &mut huffman,
+            &mut huffman_len,
+            &mut huffdatalen,
+            &mut huffman_lengths,
+            &mut chosen_algo,
+            isvals16,
+        );
+        dbg!(chosen_algo);
+        dbg!(huffman_len);
+        dbg!(huffdatalen);
+        dbg!(huffman_lengths);
+        println!("{:?}", &huffman[..huffman_len as usize]);
+    }
+}

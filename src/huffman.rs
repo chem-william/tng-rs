@@ -1,3 +1,5 @@
+use std::cmp::{Ordering, Reverse};
+
 use log::debug;
 
 const MAX_HUFFMAN_LEN: usize = 31;
@@ -101,7 +103,7 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
         // Create array of leafs (will be array of nodes/trees during buildup of tree)
         let mut htree = Vec::with_capacity(ndict);
         bitptr = 0;
-        // Instead of copying the address of `huffman`, we just the index to 0
+        // Instead of copying the address of `huffman`, we just the index to 0.
         // in the original code, `huffman` and `huffman_ptr` would point to the same
         // location in memory (at the start of the array)
         huffman_index = 0usize;
@@ -115,8 +117,7 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
         }
 
         // Sort the leafs wrt probability
-        htree.sort_by_key(HTreeNodeLeaf::prob);
-        htree.reverse();
+        htree.sort_by_key(|item| Reverse(item.prob()));
 
         // Build the tree
         if ndict == 1 {
@@ -183,7 +184,19 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
             });
 
         // Sort codes wrt length/value
-        codelength.sort_by_key(|c| (c.length, c.dict));
+        // codelength.sort_by_key(|c| (c.length, c.dict));
+        codelength.sort_by(|a, b| {
+            if a.length > b.length {
+                Ordering::Greater
+            } else if a.length < b.length {
+                Ordering::Less
+            } else if a.dict > b.dict {
+                Ordering::Greater
+            } else {
+                // covers both a.dict < b.dict AND a.dict == b.dict
+                Ordering::Less
+            }
+        });
 
         // Canonicalize codes
         let mut code = 0;
@@ -234,7 +247,17 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
     //  unless there's really that many values in use. If that is so,
     //  well, either we compress well, or we have many values anyway.
     // First sort the dictionary wrt symbol
-    codelength.sort_by_key(|c| c.dict);
+    // codelength.sort_by_key(|c| c.dict);
+    codelength.sort_by(|a, b| {
+        if a.dict > b.dict {
+            Ordering::Greater
+        } else if a.dict < b.dict {
+            Ordering::Less
+        } else {
+            // covers both a.dict < b.dict AND a.dict == b.dict
+            Ordering::Less
+        }
+    });
 
     bitptr = 0;
     let mut huffman_dict_index = 0usize; // Instead of the huffman_ptr
@@ -366,7 +389,7 @@ fn assign_codes(
     match htree {
         HTreeNodeLeaf::Leaf(leaf) => {
             codelength[leaf.idict].length = length + 1;
-            codelength[leaf.idict].code = (code << 1) | leaf.bit as u32;
+            codelength[leaf.idict].code = (code << 1) | (leaf.bit as u32);
 
             debug!(
                 "I am a leaf: {} {}",
@@ -501,17 +524,17 @@ mod tests {
             &mut huffman_dict_unpackedlen,
         );
 
-        assert_eq!(huffman_len, 3);
+        assert_eq!(huffman_len, 2);
         assert_eq!(huffman_dictlen, 7);
         assert_eq!(huffman_dict_unpackedlen, 8);
-        assert_eq!(huffman[..huffman_len], vec![203, 236, 192]);
+        assert_eq!(huffman[..huffman_len], vec![91, 144]);
         assert_eq!(
             huffman_dict[..huffman_dictlen],
-            vec![4, 0, 0, 71, 12, 81, 128]
+            vec![4, 0, 0, 67, 20, 113, 128]
         );
         assert_eq!(
             huffman_dict_unpacked[..huffman_dict_unpackedlen],
-            vec![4, 0, 0, 0, 3, 1, 2, 3]
+            vec![4, 0, 0, 0, 1, 2, 3, 3]
         );
     }
 
