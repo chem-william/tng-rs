@@ -4,9 +4,11 @@ use log::debug;
 
 use crate::{
     dict::{DICT_SIZE, ptngc_comp_canonical_dict},
+    lz77::ptngc_comp_to_lz77,
     mtf::{
         ptngc_comp_conv_to_mtf, ptngc_comp_conv_to_mtf_partial, ptngc_comp_conv_to_mtf_partial3,
     },
+    rle::ptngc_comp_conv_to_rle,
 };
 const MAX_VALS_PER_BLOCK: usize = 200000;
 
@@ -44,6 +46,7 @@ pub(crate) fn bwlzh_compress_gen(
     let mut valsleft = 0;
     let mut valstart = 0;
     let mut thisvals: usize = 0;
+    let mut huffalgo = 0;
     let bwlzhuff =
         vec![0; usize::try_from(ptngc_comp_huff_buflen(3 * nvals)).expect("usize from i32")];
     let total_len = MAX_VALS_PER_BLOCK * 18;
@@ -113,8 +116,40 @@ pub(crate) fn bwlzh_compress_gen(
         }
 
         if reducealgo == 1 {
-            todo!()
+            debug!("LZ77");
+
+            // from c
+            // reducealgo = 1;
+            let lz77_result = ptngc_comp_to_lz77(mtf);
+            let rle = lz77_result.data;
+            let lens = lz77_result.lengths;
+            let offsets = lz77_result.offsets;
+
+            debug!("Resulting LZ77 values: {}", rle.len());
+            debug!("Resulting LZ77 lens: {}", lens.len());
+            debug!("Resulting LZ77 offsets: {}", offsets.len());
+
+            // block that is "if 0"
+            if lens.len() < 2 {
+                reducealgo = 0;
+            }
         }
+
+        if reducealgo == 0 {
+            debug!("RLE");
+
+            // Do RLE. For any repetitive characters
+            let rle = ptngc_comp_conv_to_rle(mtf, 1);
+            debug!("Resulting RLE values: {}", rle.len());
+        }
+
+        // reducealgo: RLE == 0, LZ77 == 1
+        output[outdata] = reducealgo;
+        outdata += 1;
+
+        debug!("Huffman");
+        huffalgo = -1;
+        // ptngc_comp_huff_compress_verbose();
     }
 
     0
@@ -882,8 +917,8 @@ mod roundtrip {
 
             // Verify round-trip
             assert_eq!(nvals_reconstructed as usize, case.len());
-            for (idx, recon) in reconstructed.iter().enumerate() {
-                assert_eq!(*recon, case[idx]);
+            for idx in 0..case.len() {
+                assert_eq!(reconstructed[idx], case[idx]);
             }
         }
     }
