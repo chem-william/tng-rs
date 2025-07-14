@@ -23,7 +23,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     // Do I need to convert to vals16?
     if !isvals16 {
         let mut vals16 = vec![0; nvals * 3];
-        let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
+        nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
         nvals = nvals16;
         vals.clone_from_slice(&vals16[..nvals]);
     } else {
@@ -63,14 +63,14 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     let (dict, mut hist) = ptngc_comp_make_dict_hist(&huffdictunpack[..nhuffdictunpack]);
     let ndict1 = dict.len();
     // Pack huffman dictionary
-    let mut huffman1 = vec![0; 0x20005];
-    let mut huffdict1 = vec![0; 0x20005];
-    let mut huffdictunpack1 = vec![0; 0x20005];
     let mut nhuff1 = 0;
     let mut nhuffdict1 = 0;
     let mut nhuffdictunpack1 = 0;
+    let mut huffman1 = vec![0; 0x20005];
+    let mut huffdict1 = vec![0; 0x20005];
+    let mut huffdictunpack1 = vec![0; 0x20005];
     ptngc_comp_conv_to_huffman(
-        &huffdictunpack,
+        &huffdictunpack[..nhuffdictunpack],
         &dict,
         &mut hist,
         &mut huffman1,
@@ -257,10 +257,78 @@ mod tests {
             &mut chosen_algo,
             isvals16,
         );
-        dbg!(chosen_algo);
-        dbg!(huffman_len);
-        dbg!(huffdatalen);
-        dbg!(huffman_lengths);
-        println!("{:?}", &huffman[..huffman_len as usize]);
+        assert_eq!(chosen_algo, 0);
+        assert_eq!(huffman_len, 29);
+        assert_eq!(huffdatalen, 2);
+        assert_eq!(huffman_lengths, vec![29, 41, 45]);
+        assert_eq!(
+            huffman[..huffman_len as usize],
+            vec![
+                0, 0, 5, 0, 0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 27, 112, 7, 0, 0, 5, 0, 0, 5, 0, 0, 69,
+                20, 81, 198
+            ]
+        );
+    }
+    fn test_algorithm_helper(algo: i32, expected_len: i32, expected_output: &[u8]) {
+        init_logger();
+        let vals = vec![10, 20, 30, 40, 50, 60];
+        let mut huffman = vec![0; 10000];
+        let mut huffman_len = 0;
+        let mut huffdatalen = 0;
+        let isvals16 = false;
+        let mut chosen_algo = algo;
+        let mut huffman_lengths = vec![0; 3];
+
+        ptngc_comp_huff_compress_verbose(
+            vals.clone(),
+            &mut huffman,
+            &mut huffman_len,
+            &mut huffdatalen,
+            &mut huffman_lengths,
+            &mut chosen_algo,
+            isvals16,
+        );
+
+        assert_eq!(chosen_algo, algo);
+        assert_eq!(huffman_len, expected_len);
+        assert_eq!(huffdatalen, 2);
+        assert_eq!(huffman_lengths, vec![37, 55, 58]);
+        assert_eq!(&huffman[..huffman_len as usize], expected_output);
+    }
+
+    #[test]
+    fn all_algorithms() {
+        let expected_outputs = [
+            (
+                0,
+                37,
+                vec![
+                    0, 0, 6, 0, 0, 0, 6, 0, 0, 0, 2, 0, 0, 0, 25, 119, 15, 0, 0, 6, 0, 0, 60, 0, 0,
+                    0, 34, 0, 68, 0, 140, 1, 24, 2, 48, 4, 96,
+                ],
+            ),
+            (
+                1,
+                55,
+                vec![
+                    0, 1, 6, 0, 0, 0, 6, 0, 0, 0, 2, 0, 0, 0, 25, 119, 64, 0, 0, 6, 0, 0, 10, 0, 0,
+                    14, 0, 0, 4, 0, 0, 224, 1, 128, 24, 1, 0, 32, 4, 0, 128, 60, 0, 0, 133, 28, 64,
+                    0, 0, 0, 0, 0, 0, 17, 128,
+                ],
+            ),
+            (
+                2,
+                58,
+                vec![
+                    0, 2, 6, 0, 0, 0, 6, 0, 0, 0, 2, 0, 0, 0, 25, 119, 64, 0, 0, 6, 0, 0, 31, 0, 0,
+                    9, 0, 0, 15, 0, 0, 6, 0, 0, 240, 110, 66, 228, 44, 133, 144, 178, 22, 62, 0, 0,
+                    138, 40, 146, 70, 0, 0, 0, 0, 0, 0, 1, 32,
+                ],
+            ),
+        ];
+
+        for (algo, expected_len, expected_output) in expected_outputs {
+            test_algorithm_helper(algo, expected_len, &expected_output);
+        }
     }
 }
