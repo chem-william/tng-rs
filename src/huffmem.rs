@@ -1,15 +1,29 @@
 use crate::{
-    bwlzh::ptngc_comp_conv_to_vals16, dict::ptngc_comp_make_dict_hist,
-    huffman::ptngc_comp_conv_to_huffman, rle::ptngc_comp_conv_to_rle,
+    bwlzh::{N_HUFFMAN_ALGO, ptngc_comp_conv_to_vals16},
+    dict::ptngc_comp_make_dict_hist,
+    huffman::ptngc_comp_conv_to_huffman,
+    rle::ptngc_comp_conv_to_rle,
 };
 
 const fn ptngc_comp_huff_buflen(nvals: i32) -> i32 {
     132000 + nvals * 8
 }
 
+const HUFF_ALGO_NAMES: [&str; 3] = [
+    "Huffman (dict=raw)",
+    "Huffman (dict=Huffman)",
+    "Huffman (dict=RLE+Huffman)",
+];
+pub const fn ptngc_comp_get_huff_algo_name(algo: usize) -> Option<&'static str> {
+    if algo < 0 || algo >= N_HUFFMAN_ALGO {
+        return None;
+    };
+    Some(HUFF_ALGO_NAMES[algo])
+}
+
 // The value pointed to be `chosen_algo` should be sent as -1 for autodetect
 pub(crate) fn ptngc_comp_huff_compress_verbose(
-    mut vals: Vec<u32>,
+    vals: &mut [u32],
     huffman: &mut [u8],
     huffman_len: &mut i32,
     huffdatalen: &mut usize,
@@ -17,7 +31,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     chosen_algo: &mut i32,
     isvals16: bool,
 ) {
-    let mut nvals16 = 0;
+    let nvals16;
     let mut nvals = vals.len();
 
     // Do I need to convert to vals16?
@@ -240,7 +254,7 @@ mod tests {
     #[test]
     fn it_works() {
         init_logger();
-        let vals = vec![1, 2, 3, 4, 5];
+        let mut vals = vec![1, 2, 3, 4, 5];
         let mut huffman = vec![0; 10000];
         let mut huffman_len = 0;
         let mut huffdatalen = 0;
@@ -249,7 +263,7 @@ mod tests {
         let isvals16 = false;
 
         ptngc_comp_huff_compress_verbose(
-            vals,
+            &mut vals,
             &mut huffman,
             &mut huffman_len,
             &mut huffdatalen,
@@ -271,7 +285,7 @@ mod tests {
     }
     fn test_algorithm_helper(algo: i32, expected_len: i32, expected_output: &[u8]) {
         init_logger();
-        let vals = vec![10, 20, 30, 40, 50, 60];
+        let mut vals = vec![10, 20, 30, 40, 50, 60];
         let mut huffman = vec![0; 10000];
         let mut huffman_len = 0;
         let mut huffdatalen = 0;
@@ -280,7 +294,7 @@ mod tests {
         let mut huffman_lengths = vec![0; 3];
 
         ptngc_comp_huff_compress_verbose(
-            vals.clone(),
+            &mut vals,
             &mut huffman,
             &mut huffman_len,
             &mut huffdatalen,

@@ -227,8 +227,8 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
         writebits(
             codelength[r].code,
             codelength[r].length,
-            huffman,            // The slice itself, not a pointer to it
-            &mut huffman_index, // Mutable reference to the index
+            huffman,
+            &mut huffman_index,
             &mut bitptr,
         );
     }
@@ -236,6 +236,7 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
     if bitptr != 0 {
         writebits(0, 8 - bitptr, huffman, &mut huffman_index, &mut bitptr);
     }
+
     *huffman_len = huffman_index;
 
     // Output dictionary
@@ -324,16 +325,15 @@ fn flush_8bits(combine: &mut u32, output: &mut [u8], output_index: &mut usize, b
     while *bitptr >= 8 {
         let mask = !(0xFFu32 << (*bitptr - 8));
         let out = (*combine >> (*bitptr - 8)) as u8;
-
         if *output_index < output.len() {
             output[*output_index] = out;
             *output_index += 1;
         }
-
         *bitptr -= 8;
         *combine &= mask;
     }
 }
+
 fn writebits(
     value: u32,
     mut length: usize,
@@ -341,14 +341,14 @@ fn writebits(
     output_index: &mut usize,
     bitptr: &mut usize,
 ) {
-    let mut mask: u32;
-    // let mut combine = output[*output_index] as u32;
+    // Read current byte from output position
     let mut combine: u32 = if *output_index < output.len() {
         output[*output_index] as u32
     } else {
         0
     };
 
+    let mut mask: u32;
     if length >= 8 {
         mask = 0xFFu32 << (length - 8);
     } else {
@@ -356,7 +356,7 @@ fn writebits(
     }
 
     while length > 8 {
-        // Make room for the bits.
+        // Make room for the bits
         combine <<= 8;
         *bitptr += 8;
         combine |= (value & mask) >> (length - 8);
@@ -366,13 +366,14 @@ fn writebits(
     }
 
     if length != 0 {
-        // Make room for the bits.
+        // Make room for the bits
         combine <<= length;
         *bitptr += length;
-        combine |= value;
+        combine |= value & mask;
         flush_8bits(&mut combine, output, output_index, bitptr);
     }
 
+    // Write back to current position
     if *output_index < output.len() {
         output[*output_index] = combine as u8;
     }

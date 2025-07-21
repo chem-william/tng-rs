@@ -4,6 +4,7 @@ use log::debug;
 
 use crate::{
     dict::{DICT_SIZE, ptngc_comp_canonical_dict},
+    huffmem::{ptngc_comp_get_huff_algo_name, ptngc_comp_huff_compress_verbose},
     lz77::ptngc_comp_to_lz77,
     mtf::{
         ptngc_comp_conv_to_mtf, ptngc_comp_conv_to_mtf_partial, ptngc_comp_conv_to_mtf_partial3,
@@ -15,6 +16,7 @@ const MAX_VALS_PER_BLOCK: usize = 200000;
 // TODO: enable these as compile-time features?
 const PARTIAL_MTF3: bool = true;
 const PARTIAL_MTF: bool = false;
+pub const N_HUFFMAN_ALGO: usize = 3;
 
 pub(crate) const fn bwlzh_get_buflen(nvals: usize) -> usize {
     132000 + nvals * 8 + 12 * ((nvals + MAX_VALS_PER_BLOCK) / MAX_VALS_PER_BLOCK)
@@ -27,11 +29,11 @@ pub(crate) const fn ptngc_comp_huff_buflen(nvals: i32) -> i32 {
 /// Compress the integers (positive, small integers are preferable) using bwlzh compression. The
 /// unsigned char *output should be allocated to be able to hold worst case. You can obtain this
 /// length conveniently by calling `comp_get_buflen()`
-pub(crate) fn bwlzh_compress(vals: &[u32], nvals: i32, output: &mut [u8]) -> i32 {
+pub(crate) fn bwlzh_compress(vals: &[u32], nvals: i32, output: &mut [u8]) -> usize {
     bwlzh_compress_gen(vals, nvals, output, 1)
 }
 
-pub(crate) fn bwlzh_compress_no_lz77(vals: &[u32], nvals: i32, output: &mut [u8]) -> i32 {
+pub(crate) fn bwlzh_compress_no_lz77(vals: &[u32], nvals: i32, output: &mut [u8]) -> usize {
     bwlzh_compress_gen(vals, nvals, output, 0)
 }
 
@@ -40,14 +42,14 @@ pub(crate) fn bwlzh_compress_gen(
     nvals: i32,
     output: &mut [u8],
     enable_lz77: i32,
-) -> i32 {
+) -> usize {
     let mut dict = vec![0; DICT_SIZE];
     let mut outdata = 0;
     let mut valsleft = 0;
     let mut valstart = 0;
     let mut thisvals: usize = 0;
     let mut huffalgo = 0;
-    let bwlzhuff =
+    let mut bwlzhhuff =
         vec![0; usize::try_from(ptngc_comp_huff_buflen(3 * nvals)).expect("usize from i32")];
     let total_len = MAX_VALS_PER_BLOCK * 18;
     let mut tmpmem = vec![0u32; total_len];
@@ -149,10 +151,190 @@ pub(crate) fn bwlzh_compress_gen(
 
         debug!("Huffman");
         huffalgo = -1;
-        // ptngc_comp_huff_compress_verbose();
+        let mut bwlzhhufflen = 0;
+        let mut huffdatalen = 0;
+        let mut nhufflen = vec![0; N_HUFFMAN_ALGO];
+        ptngc_comp_huff_compress_verbose(
+            rle,
+            &mut bwlzhhuff,
+            &mut bwlzhhufflen,
+            &mut huffdatalen,
+            &mut nhufflen,
+            &mut huffalgo,
+            true,
+        );
+
+        // if verbose
+        debug!("Huffman data length is {huffdatalen}");
+        for (i, nhl) in nhufflen.iter().enumerate().take(N_HUFFMAN_ALGO) {
+            debug!(
+                "Huffman dictionary for algorithm {} is {}",
+                ptngc_comp_get_huff_algo_name(i).expect("algo name"),
+                nhl - huffdatalen
+            )
+        }
+
+        // Store the number of huffman values in this block
+        let nrle = rle.len();
+        output[outdata] = (nrle & 0xFF) as u8;
+        outdata += 1;
+        output[outdata] = ((nrle >> 8) & 0xFF) as u8;
+        outdata += 1;
+        output[outdata] = ((nrle >> 16) & 0xFF) as u8;
+        outdata += 1;
+        output[outdata] = ((nrle >> 24) & 0xFF) as u8;
+        outdata += 1;
+
+        // Store the size of the huffman block
+        output[outdata] = (nrle & 0xFF) as u8;
+        outdata += 1;
+        output[outdata] = ((nrle >> 8) & 0xFF) as u8;
+        outdata += 1;
+        output[outdata] = ((nrle >> 16) & 0xFF) as u8;
+        outdata += 1;
+        output[outdata] = ((nrle >> 24) & 0xFF) as u8;
+        outdata += 1;
+
+        // Store the huffman block
+        output[outdata..outdata + usize::try_from(bwlzhhufflen).expect("i32 to usize")]
+            .copy_from_slice(&bwlzhhuff);
+        outdata += usize::try_from(bwlzhhufflen).expect("i32 to usize");
+
+        if reducealgo == 1 {
+            let noffsets = offsets.len();
+            // Store the number of values in this block
+            output[outdata] = (noffsets & 0xFF) as u8;
+            outdata += 1;
+            output[outdata] = ((noffsets >> 8) & 0xFF) as u8;
+            outdata += 1;
+            output[outdata] = ((noffsets >> 16) & 0xFF) as u8;
+            outdata += 1;
+            output[outdata] = ((noffsets >> 24) & 0xFF) as u8;
+            outdata += 1;
+
+            if noffsets > 0 {
+                debug!("Huffman for offsets");
+
+                huffalgo = -1;
+                ptngc_comp_huff_compress_verbose(
+                    offsets,
+                    &mut bwlzhhuff,
+                    &mut bwlzhhufflen,
+                    &mut huffdatalen,
+                    &mut nhufflen,
+                    &mut huffalgo,
+                    true,
+                );
+
+                // if verbose
+                debug!("Huffman data length is {huffdatalen} B");
+                for (i, nhl) in nhufflen.iter().enumerate().take(N_HUFFMAN_ALGO) {
+                    debug!(
+                        "Huffman dictionary for algorithm {} is {}",
+                        ptngc_comp_get_huff_algo_name(i).expect("algo name"),
+                        nhl - huffdatalen
+                    )
+                }
+                debug!(
+                    "Resulting algorithm: {}. Size={} B",
+                    ptngc_comp_get_huff_algo_name(usize::try_from(huffalgo).expect("usize to i32"))
+                        .expect("algo name"),
+                    bwlzhhufflen
+                );
+
+                // If huffman was bad for these offsets, just store the offsets as pairs
+                if bwlzhhufflen < i32::try_from(noffsets).expect("i32 from usize") * 2 {
+                    output[outdata] = 0;
+
+                    // Store the size of the huffman block
+                    output[outdata] = (bwlzhhufflen & 0xFF) as u8;
+                    outdata += 1;
+                    output[outdata] = ((bwlzhhufflen >> 8) & 0xFF) as u8;
+                    outdata += 1;
+                    output[outdata] = ((bwlzhhufflen >> 16) & 0xFF) as u8;
+                    outdata += 1;
+                    output[outdata] = ((bwlzhhufflen >> 24) & 0xFF) as u8;
+                    outdata += 1;
+
+                    // Store the huffman block
+                    output
+                        [outdata..outdata + usize::try_from(bwlzhhufflen).expect("usize from i32")]
+                        .copy_from_slice(&bwlzhhuff);
+                    outdata += usize::try_from(bwlzhhufflen).expect("usize from i32");
+                } else {
+                    output[outdata] = 1;
+                    outdata += 1;
+                    for os in &mut *offsets {
+                        output[outdata] = (*os & 0xFF) as u8;
+                        outdata += 1;
+                        output[outdata] = ((*os >> 8) & 0xFF) as u8;
+                        outdata += 1;
+                    }
+
+                    // if verbose
+                    debug!("Store raw offsets: {} B", noffsets * 2);
+                }
+            }
+
+            // if verbose
+            debug!("Huffman for lengths");
+
+            huffalgo = -1;
+            ptngc_comp_huff_compress_verbose(
+                lens,
+                &mut bwlzhhuff,
+                &mut bwlzhhufflen,
+                &mut huffdatalen,
+                &mut nhufflen,
+                &mut huffalgo,
+                true,
+            );
+
+            // if verbose
+            debug!("Huffman data length is {} B", huffdatalen);
+            for (i, nhl) in nhufflen.iter().enumerate().take(N_HUFFMAN_ALGO) {
+                debug!(
+                    "Huffman dictionary for algorithm {} is {}",
+                    ptngc_comp_get_huff_algo_name(i).expect("algo name"),
+                    nhl - huffdatalen
+                );
+            }
+            debug!(
+                "Resulting algorithm: {}. Size={} B",
+                ptngc_comp_get_huff_algo_name(usize::try_from(huffalgo).expect("usize from i32"))
+                    .expect("algo name"),
+                bwlzhhufflen
+            );
+
+            // Store the number of values in this block
+            let nlens = lens.len();
+            output[outdata] = (nlens & 0xFF) as u8;
+            outdata += 1;
+            output[outdata] = ((nlens >> 8) & 0xFF) as u8;
+            outdata += 1;
+            output[outdata] = ((nlens >> 16) & 0xFF) as u8;
+            outdata += 1;
+            output[outdata] = ((nlens >> 24) & 0xFF) as u8;
+            outdata += 1;
+
+            // Store the size of the huffman block
+            output[outdata] = (bwlzhhufflen & 0xFF) as u8;
+            outdata += 1;
+            output[outdata] = ((bwlzhhufflen >> 8) & 0xFF) as u8;
+            outdata += 1;
+            output[outdata] = ((bwlzhhufflen >> 16) & 0xFF) as u8;
+            outdata += 1;
+            output[outdata] = ((bwlzhhufflen >> 24) & 0xFF) as u8;
+            outdata += 1;
+
+            // Store the huffman block
+            output[outdata..outdata + usize::try_from(bwlzhhufflen).expect("usize from i32")]
+                .copy_from_slice(&bwlzhhuff);
+            outdata += usize::try_from(bwlzhhufflen).expect("usize from i32");
+        }
     }
 
-    0
+    outdata
 }
 
 /// Burrows-Wheeler transform
