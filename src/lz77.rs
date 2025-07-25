@@ -5,9 +5,9 @@ const MAX_OFFSET: usize = 0xFFFF;
 
 #[derive(Debug, Clone)]
 pub struct Lz77Result {
-    pub data: Vec<u32>,
-    pub lengths: Vec<u32>,
-    pub offsets: Vec<u32>,
+    pub data: Vec<usize>,
+    pub lengths: Vec<usize>,
+    pub offsets: Vec<usize>,
 }
 
 fn add_circular(previous: &mut [i32], value: u32, position: i32) {
@@ -28,100 +28,127 @@ fn add_circular(previous: &mut [i32], value: u32, position: i32) {
 
 pub fn ptngc_comp_to_lz77(vals: &[u32]) -> Lz77Result {
     let nvals = vals.len();
-    let mut data = Vec::with_capacity(nvals * 2);
-    let mut lengths = Vec::with_capacity(nvals);
-    let mut offsets = Vec::with_capacity(nvals);
+    let mut noff = 0;
+    let mut ndat = 0;
+    let mut nlen = 0;
+
+    let mut data = vec![0; nvals];
+    let mut lengths = vec![0; nvals];
+    let mut offsets = vec![0; nvals];
 
     // Initialize the previous array (circular buffer for each possible value)
     let mut previous = vec![0i32; 0x20000 * (NUM_PREVIOUS + 3)];
 
     // Initialize circular buffers
-    for i in 0..0x20000 {
-        let base = (NUM_PREVIOUS + 3) * i;
-        previous[base] = 0; // Number of items in circular buffer
-        previous[base + 1] = 0; // Pointer to beginning of circular buffer
-        previous[base + 2] = -2; // Last offset that had this value
+    for chunk in previous.chunks_mut(NUM_PREVIOUS + 3) {
+        // chunk[0] = 0; // Number of items in circular buffer
+        // chunk[1] = 0; // Pointer to beginning of circular buffer
+        chunk[2] = -2; // Last offset that had this value
     }
 
+    let mut j;
     let mut i = 0;
     while i < nvals {
-        let first_offset = i.saturating_sub(MAX_OFFSET);
+        let firstoffset = i.saturating_sub(MAX_OFFSET);
 
         if i != 0 {
             let mut largest_len = 0;
             let mut largest_offset = 0;
-
-            // Search through circular buffer for possible string starts
-            let val_idx = (NUM_PREVIOUS + 3) * (vals[i] as usize);
-            let ncirc = previous[val_idx] as usize;
-
+            // Is this identical to a previous offset? Prefer close
+            // values for offset. Search through circular buffer for the
+            // possible values for the start of this string
+            let v = usize::try_from(vals[i]).expect("usize from u32");
+            let ncirc = previous[(NUM_PREVIOUS + 3) * v];
             for icirc in 0..ncirc {
-                let iptr = if previous[val_idx + 1] - (icirc as i32) - 1 < 0 {
-                    (previous[val_idx + 1] - (icirc as i32) - 1 + NUM_PREVIOUS as i32) as usize
-                } else {
-                    (previous[val_idx + 1] - (icirc as i32) - 1) as usize
-                };
-
-                let mut j = previous[val_idx + 3 + iptr] as usize;
-
-                if j < first_offset {
+                let mut iptr = previous[(NUM_PREVIOUS + 3) * v + 1] - icirc - 1;
+                if iptr < 0 {
+                    iptr += i32::try_from(NUM_PREVIOUS).expect("i32 from usize");
+                }
+                j = previous
+                    [(NUM_PREVIOUS + 3) * v + 3 + usize::try_from(iptr).expect("usize from i32")];
+                if j < i32::try_from(firstoffset).expect("i32 from usize") {
                     break;
                 }
 
-                // Find matching sequences
-                while j < i && vals[j] == vals[i] {
-                    if j >= first_offset {
+                let mut j_usize = usize::try_from(j).expect("usize from i32");
+                while (j_usize < i)
+                    && (usize::try_from(vals[j_usize]).expect("usize from u32") == v)
+                {
+                    if j_usize >= firstoffset {
                         let mut k = 0;
-                        while i + k < nvals && vals[j + k] == vals[i + k] {
+                        while (k + i) < nvals {
+                            if vals[j_usize + k] != vals[i + k] {
+                                break;
+                            }
                             k += 1;
                         }
 
-                        if k > largest_len && (k >= (i - j) + 16 || (k > 4 && i - j == 1)) {
+                        if (k > largest_len)
+                            && ((k >= (i - j_usize) + 16) || ((k > 4) && (i - j_usize == 1)))
+                        {
                             largest_len = k;
-                            largest_offset = j;
+                            largest_offset = j_usize;
                         }
                     }
+                    j_usize += 1;
                     j += 1;
                 }
             }
 
-            // Limit length to maximum
+            // Check how to write this info
             if largest_len > MAX_LEN {
                 largest_len = MAX_LEN;
             }
 
             if largest_len > 0 {
-                // Encode the match
                 if i - largest_offset == 1 {
-                    data.push(0);
+                    data[ndat] = 0;
+                    ndat += 1;
                 } else {
-                    data.push(1);
-                    offsets.push((i - largest_offset) as u32);
+                    data[ndat] = 1;
+                    ndat += 1;
+                    offsets[noff] = i - largest_offset;
+                    noff += 1;
                 }
-                lengths.push(largest_len as u32);
+                lengths[nlen] = largest_len;
+                nlen += 1;
 
-                // Add matched values to circular buffer
+                // Add these values to the circular buffer
                 for k in 0..largest_len {
-                    add_circular(&mut previous, vals[i + k], (i + k) as i32);
+                    add_circular(
+                        &mut previous,
+                        vals[i + k],
+                        i32::try_from(i + k).expect("i32 from usize"),
+                    );
                 }
                 i += largest_len - 1;
             } else {
-                // No match found, store literal
-                data.push(vals[i] + 2);
-                add_circular(&mut previous, vals[i], i as i32);
+                data[ndat] = v + 2;
+                ndat += 1;
+                // Add this value to circular buffer
+                add_circular(
+                    &mut previous,
+                    u32::try_from(v).expect("u32 from usize"),
+                    i32::try_from(i).expect("i32 from usize"),
+                );
             }
         } else {
-            // First element is always literal
-            data.push(vals[i] + 2);
-            add_circular(&mut previous, vals[i], i as i32);
+            data[ndat] = usize::try_from(vals[i] + 2).expect("usize from u32");
+            ndat += 1;
+            // Add this value to circular buffer
+            add_circular(
+                &mut previous,
+                vals[i],
+                i32::try_from(i).expect("i32 from usize"),
+            );
         }
         i += 1;
     }
 
     Lz77Result {
-        data,
-        lengths,
-        offsets,
+        data: data[..ndat].to_vec(),
+        lengths: lengths[..nlen].to_vec(),
+        offsets: offsets[..noff].to_vec(),
     }
 }
 
