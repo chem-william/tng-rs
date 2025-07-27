@@ -5,7 +5,7 @@ use crate::{
     rle::ptngc_comp_conv_to_rle,
 };
 
-const fn ptngc_comp_huff_buflen(nvals: i32) -> i32 {
+pub(crate) const fn ptngc_comp_huff_buflen(nvals: usize) -> usize {
     132000 + nvals * 8
 }
 
