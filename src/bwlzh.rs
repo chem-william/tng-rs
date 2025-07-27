@@ -3,14 +3,11 @@ use std::cmp::Ordering;
 use log::debug;
 
 use crate::{
-    dict::{DICT_SIZE, ptngc_comp_canonical_dict},
     huffmem::{
         ptngc_comp_get_huff_algo_name, ptngc_comp_huff_buflen, ptngc_comp_huff_compress_verbose,
     },
     lz77::ptngc_comp_to_lz77,
-    mtf::{
-        ptngc_comp_conv_to_mtf, ptngc_comp_conv_to_mtf_partial, ptngc_comp_conv_to_mtf_partial3,
-    },
+    mtf::ptngc_comp_conv_to_mtf_partial3,
     rle::ptngc_comp_conv_to_rle,
 };
 const MAX_VALS_PER_BLOCK: usize = 200000;
@@ -41,7 +38,6 @@ pub(crate) fn bwlzh_compress_gen(
     output: &mut [u8],
     enable_lz77: i32,
 ) -> usize {
-    let mut dict = vec![0; DICT_SIZE];
     let mut outdata = 0;
     let mut valsleft;
     let mut valstart;
@@ -893,8 +889,7 @@ mod conv_to_vals16 {
             let nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
             assert_eq!(
                 nvals16, expected_chunks,
-                "Value 0x{:X} should produce {} chunks",
-                val, expected_chunks
+                "Value 0x{val:X} should produce {expected_chunks} chunks",
             );
         }
     }
@@ -915,7 +910,7 @@ mod roundtrip {
 
         // Decompress
         let nvals_reconstructed =
-            ptngc_comp_conv_from_vals16(&vals16[..nvals16 as usize], nvals16, &mut reconstructed);
+            ptngc_comp_conv_from_vals16(&vals16[..nvals16], nvals16, &mut reconstructed);
 
         // Verify round-trip
         assert_eq!(nvals_reconstructed, 5);
@@ -943,7 +938,7 @@ mod roundtrip {
 
         // Decompress
         let nvals_reconstructed =
-            ptngc_comp_conv_from_vals16(&vals16[..nvals16 as usize], nvals16, &mut reconstructed);
+            ptngc_comp_conv_from_vals16(&vals16[..nvals16], nvals16, &mut reconstructed);
 
         // Verify round-trip
         assert_eq!(nvals_reconstructed, 3);
@@ -968,7 +963,7 @@ mod roundtrip {
 
         // Decompress
         let nvals_reconstructed =
-            ptngc_comp_conv_from_vals16(&vals16[..nvals16 as usize], nvals16, &mut reconstructed);
+            ptngc_comp_conv_from_vals16(&vals16[..nvals16], nvals16, &mut reconstructed);
 
         // Verify round-trip
         assert_eq!(nvals_reconstructed, 3);
@@ -1000,7 +995,7 @@ mod roundtrip {
 
         // Decompress
         let nvals_reconstructed =
-            ptngc_comp_conv_from_vals16(&vals16[..nvals16 as usize], nvals16, &mut reconstructed);
+            ptngc_comp_conv_from_vals16(&vals16[..nvals16], nvals16, &mut reconstructed);
 
         // Verify round-trip
         assert_eq!(nvals_reconstructed, 8);
@@ -1038,7 +1033,7 @@ mod roundtrip {
 
         // Decompress
         let nvals_reconstructed =
-            ptngc_comp_conv_from_vals16(&vals16[..nvals16 as usize], nvals16, &mut reconstructed);
+            ptngc_comp_conv_from_vals16(&vals16[..nvals16], nvals16, &mut reconstructed);
 
         // Verify round-trip
         assert_eq!(nvals_reconstructed as usize, original.len());
@@ -1077,7 +1072,7 @@ mod roundtrip {
 
         // Decompress
         let nvals_reconstructed =
-            ptngc_comp_conv_from_vals16(&vals16[..nvals16 as usize], nvals16, &mut reconstructed);
+            ptngc_comp_conv_from_vals16(&vals16[..nvals16], nvals16, &mut reconstructed);
 
         // Verify round-trip
         assert_eq!(nvals_reconstructed as usize, original.len());
@@ -1127,7 +1122,7 @@ mod roundtrip {
 
         // Decompress
         let nvals_reconstructed =
-            ptngc_comp_conv_from_vals16(&vals16[..nvals16 as usize], nvals16, &mut reconstructed);
+            ptngc_comp_conv_from_vals16(&vals16[..nvals16], nvals16, &mut reconstructed);
 
         // Verify round-trip
         assert_eq!(nvals16, 0);
@@ -1145,7 +1140,7 @@ mod roundtrip {
         let nvals16_b = ptngc_comp_conv_to_vals16(&[test_value], &mut vals16_b);
 
         assert_eq!(nvals16_a, nvals16_b);
-        for i in 0..nvals16_a as usize {
+        for i in 0..nvals16_a {
             assert_eq!(vals16_a[i], vals16_b[i]);
         }
 
@@ -1153,16 +1148,10 @@ mod roundtrip {
         let mut reconstructed_a = [0u32; 10];
         let mut reconstructed_b = [0u32; 10];
 
-        let nvals_a = ptngc_comp_conv_from_vals16(
-            &vals16_a[..nvals16_a as usize],
-            nvals16_a,
-            &mut reconstructed_a,
-        );
-        let nvals_b = ptngc_comp_conv_from_vals16(
-            &vals16_b[..nvals16_b as usize],
-            nvals16_b,
-            &mut reconstructed_b,
-        );
+        let nvals_a =
+            ptngc_comp_conv_from_vals16(&vals16_a[..nvals16_a], nvals16_a, &mut reconstructed_a);
+        let nvals_b =
+            ptngc_comp_conv_from_vals16(&vals16_b[..nvals16_b], nvals16_b, &mut reconstructed_b);
 
         assert_eq!(nvals_a, nvals_b);
         assert_eq!(reconstructed_a[0], reconstructed_b[0]);
