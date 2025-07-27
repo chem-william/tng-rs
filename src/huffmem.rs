@@ -37,7 +37,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     // Do I need to convert to vals16?
     if !isvals16 {
         let mut vals16 = vec![0; nvals * 3];
-        nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut vals16);
+        nvals16 = ptngc_comp_conv_to_vals16(vals, &mut vals16);
         nvals = nvals16;
         vals.clone_from_slice(&vals16[..nvals]);
     } else {
@@ -45,7 +45,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     }
 
     // Determine probabilities
-    let (dict, mut hist) = ptngc_comp_make_dict_hist(&vals);
+    let (dict, mut hist) = ptngc_comp_make_dict_hist(vals);
 
     // First compress the data using huffman coding (place it ready for output at 14 (code for algorithm+length etc.))
     let mut nhuff = 0;
@@ -54,7 +54,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     let mut huffdict = vec![0; 0x20005];
     let mut huffdictunpack = vec![0; 0x20005];
     ptngc_comp_conv_to_huffman(
-        &vals,
+        vals,
         &dict,
         &mut hist,
         &mut huffman[14..],
