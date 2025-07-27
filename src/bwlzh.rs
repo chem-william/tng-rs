@@ -25,18 +25,18 @@ pub(crate) const fn bwlzh_get_buflen(nvals: usize) -> usize {
 /// unsigned char *output should be allocated to be able to hold worst case. You can obtain this
 /// length conveniently by calling `comp_get_buflen()`
 pub(crate) fn bwlzh_compress(vals: &[u32], nvals: usize, output: &mut [u8]) -> usize {
-    bwlzh_compress_gen(vals, nvals, output, 1)
+    bwlzh_compress_gen(vals, nvals, output, true)
 }
 
 pub(crate) fn bwlzh_compress_no_lz77(vals: &[u32], nvals: usize, output: &mut [u8]) -> usize {
-    bwlzh_compress_gen(vals, nvals, output, 0)
+    bwlzh_compress_gen(vals, nvals, output, false)
 }
 
 pub(crate) fn bwlzh_compress_gen(
     vals: &[u32],
     nvals: usize,
     output: &mut [u8],
-    enable_lz77: i32,
+    enable_lz77: bool,
 ) -> usize {
     let mut outdata = 0;
     let mut valsleft;
@@ -69,7 +69,7 @@ pub(crate) fn bwlzh_compress_gen(
 
     while valsleft > 0 {
         let mut reducealgo = 1; // Reduce algo is LZ77
-        if enable_lz77 == 0 {
+        if !enable_lz77 {
             reducealgo = 0;
         }
         thisvals = valsleft;
@@ -1180,7 +1180,27 @@ mod test_bwlzh {
         let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
         let nvals = vals.len();
 
-        let noutput = bwlzh_compress(&vals, nvals, &mut output);
+        let noutput = bwlzh_compress_gen(&vals, nvals, &mut output, true);
+        let expected_output = vec![
+            5, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 29, 0, 0, 0, 1, 0, 5, 0,
+            0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 198, 192, 7, 0, 0, 4, 0, 0, 7, 0, 0, 8, 162, 138, 32, 0,
+            3, 0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 152, 6, 0, 0, 3, 0,
+            0, 2, 0, 0, 134, 40, 128, 0, 3, 0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1,
+            0, 0, 0, 152, 6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128,
+        ];
+        assert_eq!(noutput, 126);
+        assert_eq!(expected_output, output[..noutput]);
+    }
+
+    #[test]
+    fn without_lz77() {
+        init_logger();
+
+        let vals = vec![1, 2, 3, 4, 5];
+        let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
+        let nvals = vals.len();
+
+        let noutput = bwlzh_compress_gen(&vals, nvals, &mut output, false);
         let expected_output = vec![
             5, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 29, 0, 0, 0, 1, 0, 5, 0,
             0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 198, 192, 7, 0, 0, 4, 0, 0, 7, 0, 0, 8, 162, 138, 32, 0,
