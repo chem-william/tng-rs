@@ -502,49 +502,50 @@ fn compare_index(
     vals: &[u32],
     nrepeat: &[u32],
 ) -> Ordering {
-    let mut compared = 0;
-    while compared < nvals {
+    let mut i = 0;
+    while i < nvals {
         // If we have repeating patterns, we might be able to start the
         // comparison later in the string
         // Do we have a repeating pattern? If so are
         // the repeating patterns the same length?
-        let packed1 = nrepeat[i1] as usize;
-        let packed2 = nrepeat[i2] as usize;
-        let repeat1 = packed1 >> 8;
-        let k1 = packed1 & 0xFF;
-        let repeat2 = packed2 >> 8;
-        let k2 = packed2 & 0xFF;
+        let repeat1 = nrepeat[i1] >> 8;
+        let k1 = nrepeat[i1] & 0xFF;
+        let repeat2 = nrepeat[i2] >> 8;
+        let k2 = nrepeat[i2] & 0xFF;
 
         if repeat1 > 1 && repeat2 > 1 && k1 == k2 {
-            // fast lexicographic compare of the next block of size k1
-            let ord = vals
-                .iter()
-                .cycle()
-                .skip(i1)
-                .take(k1)
-                .cmp(vals.iter().cycle().skip(i2).take(k1));
-            if ord != Ordering::Equal {
-                return ord;
+            // Yes. Compare the repeating patterns
+            for j in 0..k1 {
+                let v1 = vals[(i1 + j as usize) % nvals];
+                let v2 = vals[(i2 + j as usize) % nvals];
+                if v1 < v2 {
+                    return Ordering::Less;
+                }
+                if v1 > v2 {
+                    return Ordering::Greater;
+                }
             }
-            // blocks were identical → skip ahead by min(repeat1, repeat2)
-            let skip = repeat1.min(repeat2);
-            i1 = (i1 + skip) % nvals;
-            i2 = (i2 + skip) % nvals;
-            compared += skip;
+
+            // The repeating patters are equal. Skip as far as we can before continuing
+            let mut maxskip;
+            maxskip = repeat1;
+            if repeat2 < repeat1 {
+                maxskip = repeat1;
+            }
+            i1 = (i1 + maxskip as usize) % nvals;
+            i2 = (i2 + maxskip as usize) % nvals;
+            i += maxskip as usize - 1;
         } else {
             // single-element fallback
-            let a = vals[i1];
-            let b = vals[i2];
-            if a < b {
+            if vals[i1] < vals[i2] {
                 return Ordering::Less;
             }
-            if a > b {
+            if vals[i1] > vals[i2] {
                 return Ordering::Greater;
             }
             // advance each by one (cyclically)
             i1 = (i1 + 1) % nvals;
             i2 = (i2 + 1) % nvals;
-            compared += 1;
         }
     }
     Ordering::Equal
