@@ -148,21 +148,21 @@ pub(crate) fn determine_best_pos_initial_coding(
         // Start with XTC2, it should always work
         current_coding = TNG_COMPRESS_ALGO_POS_XTC2;
         current_coding_parameter = 0;
-        let nitems = compress_quantized_pos(
-            quant,
-            None,
-            Some(quant_intra),
-            n_atoms,
-            1,
-            speed,
-            current_coding,
-            current_coding_parameter,
-            0,
-            0,
-            prec_hi,
-            prec_lo,
-            None,
-        );
+        // let nitems = compress_quantized_pos(
+        //     quant,
+        //     None,
+        //     Some(quant_intra),
+        //     n_atoms,
+        //     1,
+        //     speed,
+        //     current_coding,
+        //     current_coding_parameter,
+        //     0,
+        //     0,
+        //     prec_hi,
+        //     prec_lo,
+        //     None,
+        // );
     }
     (0, 0)
 }

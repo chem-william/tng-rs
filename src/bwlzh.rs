@@ -4,7 +4,9 @@ use log::debug;
 
 use crate::{
     dict::{DICT_SIZE, ptngc_comp_canonical_dict},
-    huffmem::{ptngc_comp_get_huff_algo_name, ptngc_comp_huff_compress_verbose},
+    huffmem::{
+        ptngc_comp_get_huff_algo_name, ptngc_comp_huff_buflen, ptngc_comp_huff_compress_verbose,
+    },
     lz77::ptngc_comp_to_lz77,
     mtf::{
         ptngc_comp_conv_to_mtf, ptngc_comp_conv_to_mtf_partial, ptngc_comp_conv_to_mtf_partial3,
@@ -22,42 +24,38 @@ pub(crate) const fn bwlzh_get_buflen(nvals: usize) -> usize {
     132000 + nvals * 8 + 12 * ((nvals + MAX_VALS_PER_BLOCK) / MAX_VALS_PER_BLOCK)
 }
 
-pub(crate) const fn ptngc_comp_huff_buflen(nvals: i32) -> i32 {
-    132000 + nvals * 8
-}
-
 /// Compress the integers (positive, small integers are preferable) using bwlzh compression. The
 /// unsigned char *output should be allocated to be able to hold worst case. You can obtain this
 /// length conveniently by calling `comp_get_buflen()`
-pub(crate) fn bwlzh_compress(vals: &[u32], nvals: i32, output: &mut [u8]) -> usize {
+pub(crate) fn bwlzh_compress(vals: &[u32], nvals: usize, output: &mut [u8]) -> usize {
     bwlzh_compress_gen(vals, nvals, output, 1)
 }
 
-pub(crate) fn bwlzh_compress_no_lz77(vals: &[u32], nvals: i32, output: &mut [u8]) -> usize {
+pub(crate) fn bwlzh_compress_no_lz77(vals: &[u32], nvals: usize, output: &mut [u8]) -> usize {
     bwlzh_compress_gen(vals, nvals, output, 0)
 }
 
 pub(crate) fn bwlzh_compress_gen(
     vals: &[u32],
-    nvals: i32,
+    nvals: usize,
     output: &mut [u8],
     enable_lz77: i32,
 ) -> usize {
     let mut dict = vec![0; DICT_SIZE];
     let mut outdata = 0;
-    let mut valsleft = 0;
-    let mut valstart = 0;
-    let mut thisvals: usize = 0;
-    let mut huffalgo = 0;
-    let mut bwlzhhuff =
-        vec![0; usize::try_from(ptngc_comp_huff_buflen(3 * nvals)).expect("usize from i32")];
+    let mut valsleft;
+    let mut valstart;
+    let mut thisvals;
+    let mut huffalgo;
+    let mut bwlzhhuff = vec![0; ptngc_comp_huff_buflen(3 * nvals)];
     let total_len = MAX_VALS_PER_BLOCK * 18;
     let mut tmpmem = vec![0u32; total_len];
 
     let (vals16, rest) = tmpmem.split_at_mut(MAX_VALS_PER_BLOCK * 3);
     let (bwt, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-    let (mut mtf, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
+    let (mtf, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
     let (rle, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
+    let mut nrle = 0;
     let (offsets, lens) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
 
     // TODO: enable feature flag "partial-mtf3"
@@ -70,7 +68,7 @@ pub(crate) fn bwlzh_compress_gen(
     output[outdata..outdata + 4].copy_from_slice(&bytes);
     outdata += 4;
 
-    valsleft = usize::try_from(nvals).expect("usize from i32");
+    valsleft = nvals;
     valstart = 0;
 
     while valsleft > 0 {
@@ -95,12 +93,13 @@ pub(crate) fn bwlzh_compress_gen(
         // Store the number of nvals16 in this block
         // Store the BWT index
         for &word in &[thisvals, nvals16, bwt_index] {
-            let bytes = word.to_le_bytes(); // [low, …, high]
+            let bytes = (word as u32).to_le_bytes(); // [low, …, high]
             output[outdata..outdata + 4].copy_from_slice(&bytes);
             outdata += 4;
         }
 
         debug!("MTF");
+        // TODO: make sure the other PARTIAL_MTFs stuff is implemented
         if PARTIAL_MTF3 {
             ptngc_comp_conv_to_mtf_partial3(bwt, nvals16, &mut mtf3);
             for imtfinner in 0..3 {
@@ -109,115 +108,58 @@ pub(crate) fn bwlzh_compress_gen(
                 for j in 0..nvals16 {
                     mtf[j] = u32::from(mtf3[imtfinner * nvals16 + j]);
                 }
-            }
-        } else if PARTIAL_MTF {
-            ptngc_comp_conv_to_mtf_partial(bwt, mtf);
-        } else {
-            ptngc_comp_canonical_dict(&mut dict);
-            ptngc_comp_conv_to_mtf(bwt, &dict, mtf);
-        }
+                // } else if PARTIAL_MTF {
+                //     ptngc_comp_conv_to_mtf_partial(bwt, mtf);
+                // } else {
+                //     ptngc_comp_canonical_dict(&mut dict);
+                //     ptngc_comp_conv_to_mtf(bwt, &dict, mtf);
+                // }
 
-        if reducealgo == 1 {
-            debug!("LZ77");
+                if reducealgo == 1 {
+                    debug!("LZ77");
 
-            // from c
-            // reducealgo = 1;
-            let lz77_result = ptngc_comp_to_lz77(mtf);
-            let rle = lz77_result.data;
-            let lens = lz77_result.lengths;
-            let offsets = lz77_result.offsets;
+                    let lz77_result = ptngc_comp_to_lz77(&mtf[..nvals16]);
+                    for (out, &src) in rle
+                        .iter_mut()
+                        .take(lz77_result.data.len())
+                        .zip(lz77_result.data.iter())
+                    {
+                        *out = src as u32;
+                    }
+                    nrle = lz77_result.data.len();
+                    let lens = lz77_result.lengths;
+                    let offsets = lz77_result.offsets;
 
-            debug!("Resulting LZ77 values: {}", rle.len());
-            debug!("Resulting LZ77 lens: {}", lens.len());
-            debug!("Resulting LZ77 offsets: {}", offsets.len());
+                    debug!("Resulting LZ77 values: {nrle}");
+                    debug!("Resulting LZ77 lens: {}", lens.len());
+                    debug!("Resulting LZ77 offsets: {}", offsets.len());
 
-            // block that is "if 0"
-            if lens.len() < 2 {
-                reducealgo = 0;
-            }
-        }
+                    // block that is "if 0"
+                    if lens.len() < 2 {
+                        reducealgo = 0;
+                    }
+                }
+                if reducealgo == 0 {
+                    debug!("RLE");
 
-        if reducealgo == 0 {
-            debug!("RLE");
+                    // Do RLE. For any repetitive characters
+                    let result = ptngc_comp_conv_to_rle(&mtf[..nvals16], 1);
+                    rle[..result.len()].copy_from_slice(&result);
+                    nrle = result.len();
+                    debug!("Resulting RLE values: {}", rle.len());
+                }
 
-            // Do RLE. For any repetitive characters
-            let rle = ptngc_comp_conv_to_rle(mtf, 1);
-            debug!("Resulting RLE values: {}", rle.len());
-        }
+                // reducealgo: RLE == 0, LZ77 == 1
+                output[outdata] = reducealgo;
+                outdata += 1;
 
-        // reducealgo: RLE == 0, LZ77 == 1
-        output[outdata] = reducealgo;
-        outdata += 1;
-
-        debug!("Huffman");
-        huffalgo = -1;
-        let mut bwlzhhufflen = 0;
-        let mut huffdatalen = 0;
-        let mut nhufflen = vec![0; N_HUFFMAN_ALGO];
-        ptngc_comp_huff_compress_verbose(
-            rle,
-            &mut bwlzhhuff,
-            &mut bwlzhhufflen,
-            &mut huffdatalen,
-            &mut nhufflen,
-            &mut huffalgo,
-            true,
-        );
-
-        // if verbose
-        debug!("Huffman data length is {huffdatalen}");
-        for (i, nhl) in nhufflen.iter().enumerate().take(N_HUFFMAN_ALGO) {
-            debug!(
-                "Huffman dictionary for algorithm {} is {}",
-                ptngc_comp_get_huff_algo_name(i).expect("algo name"),
-                nhl - huffdatalen
-            )
-        }
-
-        // Store the number of huffman values in this block
-        let nrle = rle.len();
-        output[outdata] = (nrle & 0xFF) as u8;
-        outdata += 1;
-        output[outdata] = ((nrle >> 8) & 0xFF) as u8;
-        outdata += 1;
-        output[outdata] = ((nrle >> 16) & 0xFF) as u8;
-        outdata += 1;
-        output[outdata] = ((nrle >> 24) & 0xFF) as u8;
-        outdata += 1;
-
-        // Store the size of the huffman block
-        output[outdata] = (nrle & 0xFF) as u8;
-        outdata += 1;
-        output[outdata] = ((nrle >> 8) & 0xFF) as u8;
-        outdata += 1;
-        output[outdata] = ((nrle >> 16) & 0xFF) as u8;
-        outdata += 1;
-        output[outdata] = ((nrle >> 24) & 0xFF) as u8;
-        outdata += 1;
-
-        // Store the huffman block
-        output[outdata..outdata + usize::try_from(bwlzhhufflen).expect("i32 to usize")]
-            .copy_from_slice(&bwlzhhuff);
-        outdata += usize::try_from(bwlzhhufflen).expect("i32 to usize");
-
-        if reducealgo == 1 {
-            let noffsets = offsets.len();
-            // Store the number of values in this block
-            output[outdata] = (noffsets & 0xFF) as u8;
-            outdata += 1;
-            output[outdata] = ((noffsets >> 8) & 0xFF) as u8;
-            outdata += 1;
-            output[outdata] = ((noffsets >> 16) & 0xFF) as u8;
-            outdata += 1;
-            output[outdata] = ((noffsets >> 24) & 0xFF) as u8;
-            outdata += 1;
-
-            if noffsets > 0 {
-                debug!("Huffman for offsets");
-
+                debug!("Huffman");
                 huffalgo = -1;
+                let mut bwlzhhufflen = 0;
+                let mut huffdatalen = 0;
+                let mut nhufflen = vec![0; N_HUFFMAN_ALGO];
                 ptngc_comp_huff_compress_verbose(
-                    offsets,
+                    &mut rle[..nrle],
                     &mut bwlzhhuff,
                     &mut bwlzhhufflen,
                     &mut huffdatalen,
@@ -227,7 +169,7 @@ pub(crate) fn bwlzh_compress_gen(
                 );
 
                 // if verbose
-                debug!("Huffman data length is {huffdatalen} B");
+                debug!("Huffman data length is {huffdatalen}");
                 for (i, nhl) in nhufflen.iter().enumerate().take(N_HUFFMAN_ALGO) {
                     debug!(
                         "Huffman dictionary for algorithm {} is {}",
@@ -235,16 +177,153 @@ pub(crate) fn bwlzh_compress_gen(
                         nhl - huffdatalen
                     )
                 }
-                debug!(
-                    "Resulting algorithm: {}. Size={} B",
-                    ptngc_comp_get_huff_algo_name(usize::try_from(huffalgo).expect("usize to i32"))
-                        .expect("algo name"),
-                    bwlzhhufflen
-                );
 
-                // If huffman was bad for these offsets, just store the offsets as pairs
-                if bwlzhhufflen < i32::try_from(noffsets).expect("i32 from usize") * 2 {
-                    output[outdata] = 0;
+                // Store the number of huffman values in this block
+                output[outdata] = (nrle & 0xFF) as u8;
+                outdata += 1;
+                output[outdata] = ((nrle >> 8) & 0xFF) as u8;
+                outdata += 1;
+                output[outdata] = ((nrle >> 16) & 0xFF) as u8;
+                outdata += 1;
+                output[outdata] = ((nrle >> 24) & 0xFF) as u8;
+                outdata += 1;
+
+                // Store the size of the huffman block
+                output[outdata] = (bwlzhhufflen & 0xFF) as u8;
+                outdata += 1;
+                output[outdata] = ((bwlzhhufflen >> 8) & 0xFF) as u8;
+                outdata += 1;
+                output[outdata] = ((bwlzhhufflen >> 16) & 0xFF) as u8;
+                outdata += 1;
+                output[outdata] = ((bwlzhhufflen >> 24) & 0xFF) as u8;
+                outdata += 1;
+
+                // Store the huffman block
+                let bwlzhufflen_usize = usize::try_from(bwlzhhufflen).expect("i32 to usize");
+                output[outdata..outdata + bwlzhufflen_usize]
+                    .copy_from_slice(&bwlzhhuff[..bwlzhufflen_usize]);
+                outdata += bwlzhufflen_usize;
+
+                if reducealgo == 1 {
+                    let noffsets = offsets.len();
+                    // Store the number of values in this block
+                    output[outdata] = (noffsets & 0xFF) as u8;
+                    outdata += 1;
+                    output[outdata] = ((noffsets >> 8) & 0xFF) as u8;
+                    outdata += 1;
+                    output[outdata] = ((noffsets >> 16) & 0xFF) as u8;
+                    outdata += 1;
+                    output[outdata] = ((noffsets >> 24) & 0xFF) as u8;
+                    outdata += 1;
+
+                    if noffsets > 0 {
+                        debug!("Huffman for offsets");
+
+                        huffalgo = -1;
+                        ptngc_comp_huff_compress_verbose(
+                            offsets,
+                            &mut bwlzhhuff,
+                            &mut bwlzhhufflen,
+                            &mut huffdatalen,
+                            &mut nhufflen,
+                            &mut huffalgo,
+                            true,
+                        );
+
+                        // if verbose
+                        debug!("Huffman data length is {huffdatalen} B");
+                        for (i, nhl) in nhufflen.iter().enumerate().take(N_HUFFMAN_ALGO) {
+                            debug!(
+                                "Huffman dictionary for algorithm {} is {}",
+                                ptngc_comp_get_huff_algo_name(i).expect("algo name"),
+                                nhl - huffdatalen
+                            )
+                        }
+                        debug!(
+                            "Resulting algorithm: {}. Size={} B",
+                            ptngc_comp_get_huff_algo_name(
+                                usize::try_from(huffalgo).expect("usize to i32")
+                            )
+                            .expect("algo name"),
+                            bwlzhhufflen
+                        );
+
+                        // If huffman was bad for these offsets, just store the offsets as pairs
+                        if bwlzhhufflen < i32::try_from(noffsets).expect("i32 from usize") * 2 {
+                            output[outdata] = 0;
+
+                            // Store the size of the huffman block
+                            output[outdata] = (bwlzhhufflen & 0xFF) as u8;
+                            outdata += 1;
+                            output[outdata] = ((bwlzhhufflen >> 8) & 0xFF) as u8;
+                            outdata += 1;
+                            output[outdata] = ((bwlzhhufflen >> 16) & 0xFF) as u8;
+                            outdata += 1;
+                            output[outdata] = ((bwlzhhufflen >> 24) & 0xFF) as u8;
+                            outdata += 1;
+
+                            // Store the huffman block
+                            output[outdata
+                                ..outdata + usize::try_from(bwlzhhufflen).expect("usize from i32")]
+                                .copy_from_slice(&bwlzhhuff);
+                            outdata += usize::try_from(bwlzhhufflen).expect("usize from i32");
+                        } else {
+                            output[outdata] = 1;
+                            outdata += 1;
+                            for os in &mut *offsets {
+                                output[outdata] = (*os & 0xFF) as u8;
+                                outdata += 1;
+                                output[outdata] = ((*os >> 8) & 0xFF) as u8;
+                                outdata += 1;
+                            }
+
+                            // if verbose
+                            debug!("Store raw offsets: {} B", noffsets * 2);
+                        }
+                    }
+
+                    // if verbose
+                    debug!("Huffman for lengths");
+
+                    huffalgo = -1;
+                    ptngc_comp_huff_compress_verbose(
+                        lens,
+                        &mut bwlzhhuff,
+                        &mut bwlzhhufflen,
+                        &mut huffdatalen,
+                        &mut nhufflen,
+                        &mut huffalgo,
+                        true,
+                    );
+
+                    // if verbose
+                    debug!("Huffman data length is {huffdatalen} B");
+                    for (i, nhl) in nhufflen.iter().enumerate().take(N_HUFFMAN_ALGO) {
+                        debug!(
+                            "Huffman dictionary for algorithm {} is {}",
+                            ptngc_comp_get_huff_algo_name(i).expect("algo name"),
+                            nhl - huffdatalen
+                        );
+                    }
+                    debug!(
+                        "Resulting algorithm: {}. Size={} B",
+                        ptngc_comp_get_huff_algo_name(
+                            usize::try_from(huffalgo).expect("usize from i32")
+                        )
+                        .expect("algo name"),
+                        bwlzhhufflen
+                    );
+
+                    // Store the number of values in this block
+                    let nlens = lens.len();
+                    output[outdata] = (nlens & 0xFF) as u8;
+                    outdata += 1;
+                    output[outdata] = ((nlens >> 8) & 0xFF) as u8;
+                    outdata += 1;
+                    output[outdata] = ((nlens >> 16) & 0xFF) as u8;
+                    outdata += 1;
+                    output[outdata] = ((nlens >> 24) & 0xFF) as u8;
+                    outdata += 1;
 
                     // Store the size of the huffman block
                     output[outdata] = (bwlzhhufflen & 0xFF) as u8;
@@ -261,76 +340,8 @@ pub(crate) fn bwlzh_compress_gen(
                         [outdata..outdata + usize::try_from(bwlzhhufflen).expect("usize from i32")]
                         .copy_from_slice(&bwlzhhuff);
                     outdata += usize::try_from(bwlzhhufflen).expect("usize from i32");
-                } else {
-                    output[outdata] = 1;
-                    outdata += 1;
-                    for os in &mut *offsets {
-                        output[outdata] = (*os & 0xFF) as u8;
-                        outdata += 1;
-                        output[outdata] = ((*os >> 8) & 0xFF) as u8;
-                        outdata += 1;
-                    }
-
-                    // if verbose
-                    debug!("Store raw offsets: {} B", noffsets * 2);
                 }
             }
-
-            // if verbose
-            debug!("Huffman for lengths");
-
-            huffalgo = -1;
-            ptngc_comp_huff_compress_verbose(
-                lens,
-                &mut bwlzhhuff,
-                &mut bwlzhhufflen,
-                &mut huffdatalen,
-                &mut nhufflen,
-                &mut huffalgo,
-                true,
-            );
-
-            // if verbose
-            debug!("Huffman data length is {} B", huffdatalen);
-            for (i, nhl) in nhufflen.iter().enumerate().take(N_HUFFMAN_ALGO) {
-                debug!(
-                    "Huffman dictionary for algorithm {} is {}",
-                    ptngc_comp_get_huff_algo_name(i).expect("algo name"),
-                    nhl - huffdatalen
-                );
-            }
-            debug!(
-                "Resulting algorithm: {}. Size={} B",
-                ptngc_comp_get_huff_algo_name(usize::try_from(huffalgo).expect("usize from i32"))
-                    .expect("algo name"),
-                bwlzhhufflen
-            );
-
-            // Store the number of values in this block
-            let nlens = lens.len();
-            output[outdata] = (nlens & 0xFF) as u8;
-            outdata += 1;
-            output[outdata] = ((nlens >> 8) & 0xFF) as u8;
-            outdata += 1;
-            output[outdata] = ((nlens >> 16) & 0xFF) as u8;
-            outdata += 1;
-            output[outdata] = ((nlens >> 24) & 0xFF) as u8;
-            outdata += 1;
-
-            // Store the size of the huffman block
-            output[outdata] = (bwlzhhufflen & 0xFF) as u8;
-            outdata += 1;
-            output[outdata] = ((bwlzhhufflen >> 8) & 0xFF) as u8;
-            outdata += 1;
-            output[outdata] = ((bwlzhhufflen >> 16) & 0xFF) as u8;
-            outdata += 1;
-            output[outdata] = ((bwlzhhufflen >> 24) & 0xFF) as u8;
-            outdata += 1;
-
-            // Store the huffman block
-            output[outdata..outdata + usize::try_from(bwlzhhufflen).expect("usize from i32")]
-                .copy_from_slice(&bwlzhhuff);
-            outdata += usize::try_from(bwlzhhufflen).expect("usize from i32");
         }
     }
 
@@ -364,12 +375,12 @@ fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) -> usize {
             // etc.
             let mut k = kmax;
             'k_loop: while k >= 1 {
-                debug!("Trying k={} at i={}", k, i);
+                debug!("Trying k={k} at i={i}");
 
                 // for j = k; j < maxrepeat; j += k
                 let mut j = k;
                 while j < maxrepeat {
-                    debug!("Trying j={} at i={} for k={}", j, i, k);
+                    debug!("Trying j={j} at i={i} for k={k}");
 
                     // check if vals[i+m] == vals[i+j+m] for m in 0..k
                     let mut is_equal = true;
@@ -391,12 +402,12 @@ fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) -> usize {
                         match best_repeat {
                             None => {
                                 best_repeat = Some((new_j, k));
-                                debug!("Best j and k is now {} and {}", new_j, k);
+                                debug!("Best j and k is now {new_j} and {k}");
                             }
                             Some((best_j, best_k)) => {
                                 if new_j > best_j || (new_j == best_j && k < best_k) {
                                     best_repeat = Some((new_j, k));
-                                    debug!("Best j and k is now {} and {}", new_j, k);
+                                    debug!("Best j and k is now {new_j} and {k}");
                                 }
                             }
                         }
@@ -406,7 +417,7 @@ fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) -> usize {
                         // We know that it is no point in trying with more than `m`
                         if j == 0 {
                             k = m;
-                            debug!("Setting new k to m: {}", k);
+                            debug!("Setting new k to m: {k}");
                         } else {
                             k -= 1;
                         }
@@ -577,7 +588,7 @@ pub(crate) fn ptngc_comp_conv_to_vals16(vals: &[u32], vals16: &mut [u32]) -> usi
 pub(crate) fn ptngc_comp_conv_from_vals16(vals16: &[u32], nvals16: usize, vals: &mut [u32]) -> i32 {
     let mut i: usize = 0;
     let mut j = 0;
-    while i < usize::try_from(nvals16).expect("usize from i32") {
+    while i < nvals16 {
         if vals16[i] <= 0x7FFF {
             vals[j] = vals16[i];
             j += 1;
@@ -1160,6 +1171,40 @@ mod roundtrip {
 }
 
 #[cfg(test)]
+mod test_bwlzh {
+    use super::*;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    fn init_logger() {
+        INIT.call_once(|| {
+            env_logger::builder().is_test(true).try_init().ok();
+        });
+    }
+
+    #[test]
+    fn it_works() {
+        init_logger();
+
+        let vals = vec![1, 2, 3, 4, 5];
+        let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
+        let nvals = vals.len();
+
+        let noutput = bwlzh_compress(&vals, nvals, &mut output);
+        let expected_output = vec![
+            5, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 29, 0, 0, 0, 1, 0, 5, 0,
+            0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 198, 192, 7, 0, 0, 4, 0, 0, 7, 0, 0, 8, 162, 138, 32, 0,
+            3, 0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 152, 6, 0, 0, 3, 0,
+            0, 2, 0, 0, 134, 40, 128, 0, 3, 0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1,
+            0, 0, 0, 152, 6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128,
+        ];
+        assert_eq!(noutput, 126);
+        assert_eq!(expected_output, output[..noutput]);
+    }
+}
+
+#[cfg(test)]
 mod bwt {
     use super::*;
     use std::sync::Once;
@@ -1177,11 +1222,7 @@ mod bwt {
         let bwt_index = ptngc_comp_to_bwt(vals, vals.len(), &mut output);
         let mut recovered = vec![0; vals.len()];
         inverse_bwt(&output, bwt_index, &mut recovered);
-        assert_eq!(
-            recovered, vals,
-            "BWT roundtrip failed for input: {:?}",
-            vals
-        );
+        assert_eq!(recovered, vals, "BWT roundtrip failed for input: {vals:?}",);
     }
 
     #[test]
@@ -1204,17 +1245,6 @@ mod bwt {
     fn test_bwt_roundtrip_full_ascii_range() {
         init_logger();
         let input = (0u8..=255u8).map(|b| b as u32).collect::<Vec<_>>();
-        // let ascii_string: String = (0u8..=255u8)
-        //     .map(|b| {
-        //         if b.is_ascii_graphic() || b == b' ' {
-        //             b as char
-        //         } else {
-        //             '.'
-        //         }
-        //     })
-        //     .collect();
-
-        // println!("{}", ascii_string);
         roundtrip_bwt(&input);
     }
 

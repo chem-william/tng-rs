@@ -342,11 +342,12 @@ fn writebits(
     bitptr: &mut usize,
 ) {
     // Read current byte from output position
-    let mut combine: u32 = if *output_index < output.len() {
-        output[*output_index] as u32
-    } else {
-        0
-    };
+    let mut combine = output[*output_index] as u32;
+    // let mut combine: u32 = if *output_index < output.len() {
+    //     output[*output_index] as u32
+    // } else {
+    //     0
+    // };
 
     let mut mask: u32;
     if length >= 8 {
@@ -369,7 +370,7 @@ fn writebits(
         // Make room for the bits
         combine <<= length;
         *bitptr += length;
-        combine |= value & mask;
+        combine |= value;
         flush_8bits(&mut combine, output, output_index, bitptr);
     }
 
