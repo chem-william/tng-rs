@@ -1212,6 +1212,84 @@ mod test_bwlzh {
         assert_eq!(noutput, 126);
         assert_eq!(expected_output, output[..noutput]);
     }
+
+    #[test]
+    fn repeated_values() {
+        init_logger();
+
+        let vals = vec![1, 1, 1, 2, 2, 2, 3, 3, 3];
+        let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
+        let nvals = vals.len();
+
+        let noutput = bwlzh_compress_gen(&vals, nvals, &mut output, true);
+        let expected_output = vec![
+            9, 0, 0, 0, 9, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 30, 0, 0, 0, 1, 0, 9, 0,
+            0, 0, 9, 0, 0, 0, 3, 0, 0, 0, 156, 66, 112, 7, 0, 0, 5, 0, 0, 5, 0, 0, 141, 20, 113,
+            68, 0, 4, 0, 0, 0, 27, 0, 0, 0, 1, 0, 4, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0, 140, 6, 0, 0,
+            3, 0, 0, 2, 0, 0, 134, 40, 128, 0, 4, 0, 0, 0, 27, 0, 0, 0, 1, 0, 4, 0, 0, 0, 4, 0, 0,
+            0, 1, 0, 0, 0, 140, 6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128,
+        ];
+        assert_eq!(noutput, 127);
+        assert_eq!(expected_output, output[..noutput]);
+    }
+
+    #[test]
+    fn single_value() {
+        init_logger();
+
+        let vals = vec![42];
+        let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
+        let nvals = vals.len();
+
+        let noutput = bwlzh_compress_gen(&vals, nvals, &mut output, true);
+        let expected_output = vec![
+            1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 31, 0, 0, 0, 1, 0, 1, 0,
+            0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 10, 0, 0, 1, 0, 0, 44, 0, 0, 0, 0, 0, 0, 0, 8, 64, 0,
+            1, 0, 0, 0, 25, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 1, 0, 0,
+            2, 0, 0, 33, 0, 1, 0, 0, 0, 25, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0,
+            4, 0, 0, 1, 0, 0, 2, 0, 0, 33,
+        ];
+        assert_eq!(noutput, 124);
+        assert_eq!(expected_output, output[..noutput]);
+    }
+
+    #[test]
+    fn empty_input() {
+        init_logger();
+
+        let vals = vec![];
+        let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
+        let nvals = vals.len();
+
+        let noutput = bwlzh_compress_gen(&vals, nvals, &mut output, true);
+        let expected_output = vec![0, 0, 0, 0];
+        assert_eq!(noutput, 4);
+        assert_eq!(expected_output, output[..noutput]);
+    }
+
+    #[test]
+    fn large_values() {
+        init_logger();
+
+        let vals = vec![0xFFFFFFFF, 0x80000000, 0x12345678, 0xABCDEF00];
+        dbg!(&vals);
+        let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
+        let nvals = vals.len();
+
+        let noutput = bwlzh_compress_gen(&vals, nvals, &mut output, true);
+        let expected_output = vec![
+            4, 0, 0, 0, 4, 0, 0, 0, 11, 0, 0, 0, 10, 0, 0, 0, 0, 11, 0, 0, 0, 57, 0, 0, 0, 1, 2,
+            11, 0, 0, 0, 11, 0, 0, 0, 5, 0, 0, 0, 61, 250, 197, 89, 24, 5, 1, 0, 10, 0, 0, 40, 0,
+            0, 12, 0, 0, 8, 0, 0, 6, 0, 0, 117, 215, 86, 172, 66, 95, 73, 124, 23, 228, 18, 248, 6,
+            0, 0, 134, 56, 228, 71, 32, 0, 11, 0, 0, 0, 58, 0, 0, 0, 1, 2, 11, 0, 0, 0, 11, 0, 0,
+            0, 5, 0, 0, 0, 185, 250, 80, 232, 200, 5, 1, 0, 10, 0, 0, 44, 0, 0, 13, 0, 0, 8, 0, 0,
+            6, 0, 0, 57, 177, 57, 64, 176, 162, 88, 81, 35, 213, 47, 22, 240, 6, 0, 0, 138, 40,
+            164, 71, 32, 0, 4, 0, 0, 0, 27, 0, 0, 0, 1, 0, 4, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0, 44,
+            6, 0, 0, 3, 0, 0, 2, 0, 0, 138, 24, 128,
+        ];
+        assert_eq!(noutput, 185);
+        assert_eq!(expected_output, output[..noutput]);
+    }
 }
 
 #[cfg(test)]
