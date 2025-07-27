@@ -15,7 +15,7 @@ const HUFF_ALGO_NAMES: [&str; 3] = [
     "Huffman (dict=RLE+Huffman)",
 ];
 pub const fn ptngc_comp_get_huff_algo_name(algo: usize) -> Option<&'static str> {
-    if algo < 0 || algo >= N_HUFFMAN_ALGO {
+    if algo >= N_HUFFMAN_ALGO {
         return None;
     };
     Some(HUFF_ALGO_NAMES[algo])
