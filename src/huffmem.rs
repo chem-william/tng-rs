@@ -27,7 +27,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     huffman: &mut [u8],
     huffman_len: &mut i32,
     huffdatalen: &mut usize,
-    huffman_lengths: &mut Vec<usize>,
+    huffman_lengths: &mut [usize],
     chosen_algo: &mut i32,
     isvals16: bool,
 ) {
