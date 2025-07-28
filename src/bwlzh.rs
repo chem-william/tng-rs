@@ -1238,7 +1238,6 @@ mod test_bwlzh {
         init_logger();
 
         let vals = vec![0xFFFFFFFF, 0x80000000, 0x12345678, 0xABCDEF00];
-        dbg!(&vals);
         let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
         let nvals = vals.len();
 
