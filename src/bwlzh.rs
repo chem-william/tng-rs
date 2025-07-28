@@ -1255,6 +1255,47 @@ mod test_bwlzh {
         assert_eq!(noutput, 185);
         assert_eq!(expected_output, output[..noutput]);
     }
+
+    #[test]
+    fn alternating_pattern() {
+        init_logger();
+
+        let vals = vec![1, 2, 1, 2, 1, 2, 1, 2, 1, 2];
+        let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
+        let nvals = vals.len();
+
+        let noutput = bwlzh_compress_gen(&vals, nvals, &mut output, true);
+        let expected_output = vec![
+            10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 28, 0, 0, 0, 1, 0, 8,
+            0, 0, 0, 8, 0, 0, 0, 2, 0, 0, 0, 203, 32, 6, 0, 0, 3, 0, 0, 4, 0, 0, 133, 18, 32, 0, 4,
+            0, 0, 0, 27, 0, 0, 0, 1, 0, 4, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0, 76, 6, 0, 0, 3, 0, 0,
+            2, 0, 0, 134, 40, 128, 0, 4, 0, 0, 0, 27, 0, 0, 0, 1, 0, 4, 0, 0, 0, 4, 0, 0, 0, 1, 0,
+            0, 0, 76, 6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128,
+        ];
+        assert_eq!(noutput, 125);
+        assert_eq!(expected_output, output[..noutput]);
+    }
+
+    #[test]
+    fn sequential() {
+        init_logger();
+
+        let vals = (0..20).collect::<Vec<_>>();
+        let mut output = vec![0; 4 + bwlzh_get_buflen(vals.len())];
+        let nvals = vals.len();
+
+        let noutput = bwlzh_compress_gen(&vals, nvals, &mut output, true);
+        let expected_output = vec![
+            20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 49, 0, 0, 0, 1, 0,
+            20, 0, 0, 0, 20, 0, 0, 0, 11, 0, 0, 0, 192, 18, 52, 86, 120, 154, 189, 111, 157, 247,
+            240, 18, 0, 0, 19, 0, 0, 21, 0, 0, 18, 73, 36, 146, 73, 36, 146, 73, 36, 146, 203, 44,
+            178, 203, 32, 0, 5, 0, 0, 0, 27, 0, 0, 0, 1, 0, 5, 0, 0, 0, 5, 0, 0, 0, 1, 0, 0, 0, 38,
+            6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128, 0, 5, 0, 0, 0, 27, 0, 0, 0, 1, 0, 5, 0, 0, 0,
+            5, 0, 0, 0, 1, 0, 0, 0, 38, 6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128,
+        ];
+        assert_eq!(noutput, 146);
+        assert_eq!(expected_output, output[..noutput]);
+    }
 }
 
 #[cfg(test)]
