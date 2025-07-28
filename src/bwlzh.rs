@@ -21,6 +21,14 @@ pub(crate) const fn bwlzh_get_buflen(nvals: usize) -> usize {
     132000 + nvals * 8 + 12 * ((nvals + MAX_VALS_PER_BLOCK) / MAX_VALS_PER_BLOCK)
 }
 
+// Instead of manually bitshifting like in the original c code, we just make use of
+// the copy functions from rust
+fn copy_bytes(source: u32, destination: &mut [u8], index: &mut usize) {
+    let bytes = source.to_le_bytes();
+    destination[*index..*index + 4].copy_from_slice(&bytes);
+    *index += 4
+}
+
 /// Compress the integers (positive, small integers are preferable) using bwlzh compression. The
 /// unsigned char *output should be allocated to be able to hold worst case. You can obtain this
 /// length conveniently by calling `comp_get_buflen()`
@@ -175,24 +183,10 @@ pub(crate) fn bwlzh_compress_gen(
                 }
 
                 // Store the number of huffman values in this block
-                output[outdata] = (nrle & 0xFF) as u8;
-                outdata += 1;
-                output[outdata] = ((nrle >> 8) & 0xFF) as u8;
-                outdata += 1;
-                output[outdata] = ((nrle >> 16) & 0xFF) as u8;
-                outdata += 1;
-                output[outdata] = ((nrle >> 24) & 0xFF) as u8;
-                outdata += 1;
+                copy_bytes(nrle as u32, output, &mut outdata);
 
                 // Store the size of the huffman block
-                output[outdata] = (bwlzhhufflen & 0xFF) as u8;
-                outdata += 1;
-                output[outdata] = ((bwlzhhufflen >> 8) & 0xFF) as u8;
-                outdata += 1;
-                output[outdata] = ((bwlzhhufflen >> 16) & 0xFF) as u8;
-                outdata += 1;
-                output[outdata] = ((bwlzhhufflen >> 24) & 0xFF) as u8;
-                outdata += 1;
+                copy_bytes(bwlzhhufflen as u32, output, &mut outdata);
 
                 // Store the huffman block
                 let bwlzhufflen_usize = usize::try_from(bwlzhhufflen).expect("i32 to usize");
@@ -203,14 +197,7 @@ pub(crate) fn bwlzh_compress_gen(
                 if reducealgo == 1 {
                     let noffsets = offsets.len();
                     // Store the number of values in this block
-                    output[outdata] = (noffsets & 0xFF) as u8;
-                    outdata += 1;
-                    output[outdata] = ((noffsets >> 8) & 0xFF) as u8;
-                    outdata += 1;
-                    output[outdata] = ((noffsets >> 16) & 0xFF) as u8;
-                    outdata += 1;
-                    output[outdata] = ((noffsets >> 24) & 0xFF) as u8;
-                    outdata += 1;
+                    copy_bytes(noffsets as u32, output, &mut outdata);
 
                     if noffsets > 0 {
                         debug!("Huffman for offsets");
@@ -249,14 +236,7 @@ pub(crate) fn bwlzh_compress_gen(
                             output[outdata] = 0;
 
                             // Store the size of the huffman block
-                            output[outdata] = (bwlzhhufflen & 0xFF) as u8;
-                            outdata += 1;
-                            output[outdata] = ((bwlzhhufflen >> 8) & 0xFF) as u8;
-                            outdata += 1;
-                            output[outdata] = ((bwlzhhufflen >> 16) & 0xFF) as u8;
-                            outdata += 1;
-                            output[outdata] = ((bwlzhhufflen >> 24) & 0xFF) as u8;
-                            outdata += 1;
+                            copy_bytes(bwlzhhufflen as u32, output, &mut outdata);
 
                             // Store the huffman block
                             output[outdata
@@ -312,24 +292,10 @@ pub(crate) fn bwlzh_compress_gen(
 
                     // Store the number of values in this block
                     let nlens = lens.len();
-                    output[outdata] = (nlens & 0xFF) as u8;
-                    outdata += 1;
-                    output[outdata] = ((nlens >> 8) & 0xFF) as u8;
-                    outdata += 1;
-                    output[outdata] = ((nlens >> 16) & 0xFF) as u8;
-                    outdata += 1;
-                    output[outdata] = ((nlens >> 24) & 0xFF) as u8;
-                    outdata += 1;
+                    copy_bytes(nlens as u32, output, &mut outdata);
 
                     // Store the size of the huffman block
-                    output[outdata] = (bwlzhhufflen & 0xFF) as u8;
-                    outdata += 1;
-                    output[outdata] = ((bwlzhhufflen >> 8) & 0xFF) as u8;
-                    outdata += 1;
-                    output[outdata] = ((bwlzhhufflen >> 16) & 0xFF) as u8;
-                    outdata += 1;
-                    output[outdata] = ((bwlzhhufflen >> 24) & 0xFF) as u8;
-                    outdata += 1;
+                    copy_bytes(bwlzhhufflen as u32, output, &mut outdata);
 
                     // Store the huffman block
                     output
