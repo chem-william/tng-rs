@@ -9,6 +9,7 @@ use crate::{
     lz77::ptngc_comp_to_lz77,
     mtf::ptngc_comp_conv_to_mtf_partial3,
     rle::ptngc_comp_conv_to_rle,
+    utils::copy_bytes,
 };
 const MAX_VALS_PER_BLOCK: usize = 200000;
 
@@ -19,14 +20,6 @@ pub const N_HUFFMAN_ALGO: usize = 3;
 
 pub(crate) const fn bwlzh_get_buflen(nvals: usize) -> usize {
     132000 + nvals * 8 + 12 * ((nvals + MAX_VALS_PER_BLOCK) / MAX_VALS_PER_BLOCK)
-}
-
-// Instead of manually bitshifting like in the original c code, we just make use of
-// the copy functions from rust
-fn copy_bytes(source: u32, destination: &mut [u8], index: &mut usize) {
-    let bytes = source.to_le_bytes();
-    destination[*index..*index + 4].copy_from_slice(&bytes);
-    *index += 4
 }
 
 /// Compress the integers (positive, small integers are preferable) using bwlzh compression. The

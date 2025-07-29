@@ -399,6 +399,14 @@ pub(crate) fn bounded_len(s: &str) -> usize {
     min(s.len().checked_add(1).unwrap_or(MAX_STR_LEN), MAX_STR_LEN)
 }
 
+// Instead of manually bitshifting like in the original c code, we just make use of
+// the copy functions from rust
+pub(crate) fn copy_bytes(source: u32, destination: &mut [u8], index: &mut usize) {
+    let bytes = source.to_le_bytes();
+    destination[*index..*index + 4].copy_from_slice(&bytes);
+    *index += 4
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
