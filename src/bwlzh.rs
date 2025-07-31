@@ -486,14 +486,10 @@ fn compare_index(
             }
 
             // The repeating patters are equal. Skip as far as we can before continuing
-            let mut maxskip;
-            maxskip = repeat1;
-            if repeat2 < repeat1 {
-                maxskip = repeat1;
-            }
-            i1 = (i1 + maxskip as usize) % nvals;
-            i2 = (i2 + maxskip as usize) % nvals;
-            i += maxskip as usize - 1;
+            let skip = std::cmp::min(repeat1, repeat2);
+            i1 = (i1 + skip as usize) % nvals;
+            i2 = (i2 + skip as usize) % nvals;
+            i += skip as usize;
         } else {
             // single-element fallback
             if vals[i1] < vals[i2] {
@@ -505,6 +501,7 @@ fn compare_index(
             // advance each by one (cyclically)
             i1 = (i1 + 1) % nvals;
             i2 = (i2 + 1) % nvals;
+            i += 1;
         }
     }
     Ordering::Equal
