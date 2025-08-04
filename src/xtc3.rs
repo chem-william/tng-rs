@@ -3,6 +3,8 @@ use crate::{
     xtc2::{ptngc_find_magic_index, ptngc_magic},
 };
 
+const IFLIPGAINCHECK: f64 = 0.89089871814033927; /*  1./(2**(1./6)) */
+
 // Maximum number of large atoms for large RLE
 const MAX_LARGE_RLE: usize = 1024;
 // Maximum number of small atoms in one group
@@ -99,7 +101,81 @@ impl Default for Xtc3Context {
     }
 }
 
+// Modifies three integer values for better compression of water
+fn swap_ints(input: &[i32], output: &mut [i32]) {
+    output[0] = input[0] + input[1];
+    output[1] = -input[1];
+    output[2] = input[1] + input[2];
+}
+
+fn swap_is_better(input: &[i32], minint: &[i32; 3]) -> (u32, u32) {
+    let mut normal_max = 0;
+    let mut swapped_max = 0;
+    let mut normal = [0; 3];
+    let mut swapped = [0; 3];
+
+    for i in 0..3 {
+        normal[0] = input[i] - minint[i];
+        normal[1] = input[3 + i] - input[i]; // minint[i]-minint[i] cancels out
+        normal[2] = input[6 + i] - input[3 + i]; // minint[i]-minint[i] cancels out
+        swap_ints(&mut normal, &mut swapped);
+
+        for j in 1..3 {
+            if positive_int(normal[j]) > normal_max {
+                normal_max = positive_int(normal[j]);
+            }
+
+            if positive_int(swapped[j]) > swapped_max {
+                swapped_max = positive_int(swapped[j]);
+            }
+        }
+    }
+
+    if normal_max == 0 {
+        normal_max = 1;
+    }
+
+    if swapped_max == 0 {
+        swapped_max = 1;
+    }
+
+    (normal_max, swapped_max)
+}
+
 impl Xtc3Context {
+    fn swapdecide(&mut self, input: &[i32], swapatoms: &mut bool) {
+        let mut didswap = false;
+
+        let (normal, swapped) = swap_is_better(input, &self.minint);
+        // We have to determine if it is worth to change the behaviour.
+        // If diff is positive it means that it is worth something to
+        // swap. But it costs 4 bits to do the change. If we assume that
+        // we gain 0.17 bit by the swap per value, and the runlength>2
+        // for four molecules in a row, we gain something. So check if we
+        // gain at least 0.17 bits to even attempt the swap.
+
+        if (swapped < normal) && ((f64::from(swapped) / f64::from(normal)).abs() < IFLIPGAINCHECK)
+            || ((normal < swapped)
+                && (f64::from(normal) / f64::from(swapped)).abs() < IFLIPGAINCHECK)
+        {
+            if swapped < normal {
+                if !*swapatoms {
+                    *swapatoms = true;
+                    didswap = true;
+                }
+            } else {
+                if *swapatoms {
+                    *swapatoms = false;
+                    didswap = true;
+                }
+            }
+        }
+
+        if didswap {
+            self.instructions.push(INSTR_FLIP);
+        }
+    }
+
     fn write_three_large(&mut self, i: usize) {
         match self.current_large_type {
             0 => {
@@ -338,10 +414,15 @@ pub(crate) fn ptngc_pack_array_xtc3(
 ) {
     let mut outdata = 0;
     let ntriplets = *length / 3;
+    let mut runlength = 0; // Initial runlength. "Stupidly" set to zero for simplicity and explicity
+
+    // Initial guess is that we should not swap the first two atoms in each large+small transition
+    let mut swapatoms = false;
+    // Wether swapping was actually done
+    let mut didswap;
     let mut inpdata = 0;
     let mut ntriplets_left = ntriplets;
     let mut large_index = [0; 3];
-    let mut didswap;
     let mut encode_ints: [i32; 3 + MAX_SMALL_RLE * 3] = [0; 3 + MAX_SMALL_RLE * 3];
     let mut refused = false;
 
@@ -421,7 +502,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
     );
 
     // Initial prevcoord is the minimum integers
-    let prevcoord = [
+    let mut prevcoord = [
         xtc3_context.minint[0],
         xtc3_context.minint[1],
         xtc3_context.minint[2],
@@ -440,9 +521,20 @@ pub(crate) fn ptngc_pack_array_xtc3(
             ntriplets_left -= 1;
             xtc3_context.flush_large(); // Flush all
         } else {
+            let mut min_runlength = 0;
+            let mut largest_required_base;
+            let mut largest_runlength_base;
+            let mut largest_required_index = 0;
+            let mut largest_runlength_index = 0;
+            let mut new_runlength = 0;
+            let mut new_small_index = 0;
+            let mut iter_runlength = 0;
+            let mut iter_small_index = 0;
+            let mut rle_index_dep = 0;
+
             didswap = false;
             // Insert the next batch of integers to be encoded into the buffer
-            let nencode = insert_batch(
+            let mut nencode = insert_batch(
                 &input,
                 ntriplets_left,
                 prevcoord.as_slice(),
@@ -478,9 +570,296 @@ pub(crate) fn ptngc_pack_array_xtc3(
                         delta[2] =
                             positive_int(input[inpdata + 5] - input[inpdata - natoms * 3 + 5]);
                         delta2[0] = positive_int(encode_ints[3]);
-                        delta2[0] = positive_int(encode_ints[4]);
-                        delta2[0] = positive_int(encode_ints[5]);
+                        delta2[1] = positive_int(encode_ints[4]);
+                        delta2[2] = positive_int(encode_ints[5]);
+
+                        if compute_intlen(&delta) * THRESHOLD_INTER_INTRA < compute_intlen(&delta2)
+                        {
+                            delta[0] =
+                                positive_int(input[inpdata + 6] - input[inpdata - natoms * 3 + 6]);
+                            delta[1] =
+                                positive_int(input[inpdata + 7] - input[inpdata - natoms * 3 + 7]);
+                            delta[2] =
+                                positive_int(input[inpdata + 8] - input[inpdata - natoms * 3 + 8]);
+
+                            delta2[0] = positive_int(encode_ints[6]);
+                            delta2[1] = positive_int(encode_ints[7]);
+                            delta2[2] = positive_int(encode_ints[8]);
+
+                            if compute_intlen(&delta) * THRESHOLD_INTER_INTRA
+                                < compute_intlen(&delta2)
+                            {
+                                no_swap = true;
+                            }
+                        }
                     }
+                }
+
+                if !no_swap {
+                    // Next we must decide if we should swap the first two values
+                    xtc3_context.swapdecide(&input[inpdata..], &mut swapatoms);
+
+                    // If we should do the integer swapping manipulation we should do it now
+                    if swapatoms {
+                        didswap = true;
+                        for i in 0..3 {
+                            let mut input = [0; 3];
+                            let mut output = [0; 3];
+                            input[0] = input[inpdata + i];
+                            input[1] = input[inpdata + 3 + i] - input[inpdata + i];
+                            input[2] = input[inpdata + 6 + i] - input[inpdata + 3 + i];
+                            swap_ints(&input, &mut output);
+                            encode_ints[i] = output[0];
+                            encode_ints[3 + i] = output[1];
+                            encode_ints[6 + i] = output[2];
+                        }
+                        // We have swapped atoms, so the minimum run-length is 2
+                        min_runlength = 2;
+                    }
+                }
+                // Cache large value for later possible combination with a sequence of small integers
+                if swapatoms && didswap {
+                    // This is a swapped integer, so `inpdata` is one atom later and intra coding is not ok
+                    xtc3_context.buffer_large(input, inpdata + 3, natoms, false);
+
+                    for ienc in 0..3 {
+                        prevcoord[ienc] = input[inpdata + 3 + ienc];
+                    }
+                } else {
+                    xtc3_context.buffer_large(input, inpdata, natoms, true);
+                    for ienc in 0..3 {
+                        prevcoord[ienc] = input[inpdata + ienc];
+                    }
+                }
+
+                // We have written a large integer so we have one less atoms to worry about
+                inpdata += 3;
+                ntriplets_left -= 1;
+
+                refused = false;
+
+                // Insert the next batch of integers to be encoded into the buffer
+                if swapatoms && didswap {
+                    // Keep swapped values
+                    for i in 0..2 {
+                        for ienc in 0..3 {
+                            encode_ints[i * 3 + ienc] = encode_ints[(i + 1) * 3 + ienc];
+                        }
+                    }
+                }
+                nencode = insert_batch(
+                    &input[inpdata..],
+                    ntriplets_left,
+                    prevcoord.as_slice(),
+                    encode_ints.as_mut_slice(),
+                    min_runlength,
+                );
+            }
+
+            // Here we should only have differences for the atom coordinates.
+            // Convert the ints to positive ints
+            for ienc in 0..nencode {
+                encode_ints[ienc] = positive_int(encode_ints[ienc])
+                    .try_into()
+                    .expect("i32 from u32");
+            }
+            // Now we must decide what base and runlength to do. If we have swapped atoms it will be
+            // at least 2. If even the next atom is large, we will not do anything
+            largest_required_base = 0;
+
+            // Determine required base
+            largest_runlength_base = (0..(min_runlength * 3))
+                .filter_map(|i| encode_ints.get(i))
+                .filter(|&&val| val > largest_required_base)
+                .next_back()
+                .copied()
+                .unwrap_or(0);
+            // Also compute what the largest base is for the current runlength setting!
+            // largest_runlength_base = 0;
+            // for ienc in 0..(runlength * 3).min(nencode) {
+            //     if encode_ints[ienc] > largest_runlength_base {
+            //         largest_runlength_base = encode_ints[ienc];
+            //     }
+            // }
+
+            largest_runlength_base = (0..(min_runlength * 3).min(nencode))
+                .filter_map(|i| encode_ints.get(i))
+                .filter(|&&val| val > largest_runlength_base)
+                .next_back()
+                .copied()
+                .unwrap_or(0);
+
+            largest_required_index =
+                ptngc_find_magic_index(largest_required_base.try_into().expect("i32 to u32"));
+            largest_runlength_index =
+                ptngc_find_magic_index(largest_runlength_base.try_into().expect("i32 to u32"));
+
+            if largest_required_index < largest_runlength_index {
+                new_runlength = min_runlength;
+                new_small_index = largest_required_index;
+            } else {
+                new_runlength = runlength;
+                new_small_index = largest_runlength_index;
+            }
+
+            // Only allow increase of runlength wrt min_runlength
+            if new_runlength < min_runlength {
+                new_runlength = min_runlength;
+            }
+
+            // If the current runlength is longer than the number of triplets left stop it from being so
+            if new_runlength > ntriplets_left {
+                new_runlength = ntriplets_left;
+            }
+
+            // We must at least try to get some small integers going
+            if new_runlength == 0 {
+                new_runlength = 1;
+                new_small_index = small_index;
+            }
+
+            iter_runlength = new_runlength;
+            iter_small_index = new_small_index;
+
+            // Iterate to find optimal encoding and runlength
+            loop {
+                new_runlength = iter_runlength;
+                new_small_index = iter_small_index;
+
+                // What is the largest runlength we can do with the currently
+                // selected encoding? Also the max supported runlength is MAX_SMALL_RLE triplets!
+                let mut ienc = 0;
+                while ienc < nencode && ienc < MAX_SMALL_RLE * 3 {
+                    let test_index =
+                        ptngc_find_magic_index(encode_ints[ienc].try_into().expect("i32 to u32"));
+                    if test_index > new_small_index {
+                        break;
+                    }
+
+                    ienc += 1;
+                }
+                if ienc / 3 > new_runlength {
+                    iter_runlength = ienc / 3;
+                }
+
+                // How large encoding do we have to use?
+                largest_runlength_base = (0..iter_runlength * 3)
+                    .filter_map(|i| encode_ints.get(i))
+                    .filter(|&&val| val > largest_runlength_base)
+                    .next_back()
+                    .copied()
+                    .unwrap_or(0);
+                largest_runlength_index = ptngc_find_magic_index(
+                    largest_runlength_base.try_into().expect("u32 from i32"),
+                );
+                if largest_runlength_index != new_small_index {
+                    iter_small_index = largest_runlength_index;
+                }
+
+                // to emulate the do .. while construct in c, we put this if statement at the end
+                if !((new_runlength != iter_runlength) || (new_small_index != iter_small_index)) {
+                    break;
+                }
+            }
+
+            // Verify that we got something good. We may have caught a
+            // substantially larger atom. If so we should just bail
+            // out and let the loop get on another lap. We may have a
+            // minimum runlength though and then we have to fulfill
+            // the request to write out these atoms!
+            rle_index_dep = 0;
+            if new_runlength < 3 {
+                rle_index_dep = IS_LARGE;
+            } else if new_runlength < 6 {
+                rle_index_dep = QUITE_LARGE;
+            }
+
+            if min_runlength > 0
+                || (new_small_index < small_index + IS_LARGE)
+                    && (new_small_index + rle_index_dep < max_large_index)
+                || (new_small_index + IS_LARGE < max_large_index)
+            {
+                // If doing inter-frame coding of large integers results
+                // in smaller values than the small value we should not
+                // produce a sequence of small values here.
+                let frame = inpdata / (natoms * 3);
+                let mut numsmaller = 0;
+
+                if !swapatoms && frame > 0 {
+                    for i in 0..new_runlength {
+                        let mut delta = [0; 3];
+                        let mut delta2 = [0; 3];
+                        delta[0] = positive_int(
+                            input[inpdata + i * 3] - input[inpdata - natoms * 3 + i * 3],
+                        );
+                        delta[1] = positive_int(
+                            input[inpdata + i * 3 + 1] - input[inpdata - natoms * 3 + i * 3 + 1],
+                        );
+                        delta[2] = positive_int(
+                            input[inpdata + i * 3 + 2] - input[inpdata - natoms * 3 + i * 3 + 2],
+                        );
+                        delta2[0] = positive_int(encode_ints[i * 3]);
+                        delta2[1] = positive_int(encode_ints[i * 3 + 1]);
+                        delta2[2] = positive_int(encode_ints[i * 3 + 2]);
+                        if compute_intlen(&delta) * THRESHOLD_INTER_INTRA < compute_intlen(&delta2)
+                        {
+                            numsmaller += 1;
+                        }
+                    }
+                }
+                // Most of the values should become smaller, otherwise
+                // we should encode them with intra coding.
+                if !swapatoms && (numsmaller >= 2 * new_runlength / 3) {
+                    // Put all the values in large arrays, instead of the small array
+                    if new_runlength > 0 {
+                        for i in 0..new_runlength {
+                            xtc3_context.buffer_large(input, inpdata + i * 3, natoms, true);
+                        }
+                        for i in 0..3 {
+                            prevcoord[i] = input[inpdata + (new_runlength - 1) * 3 + i];
+                        }
+                        inpdata += 3 * new_runlength;
+                        ntriplets_left -= new_runlength;
+                    }
+                } else if new_runlength != runlength || new_small_index != small_index {
+                    let mut change: i32 =
+                        i32::try_from(new_small_index - small_index).expect("i32 from usize");
+                    if new_small_index <= 0 {
+                        change = 0;
+                    }
+
+                    if change < 0 {
+                        for ixx in 0..new_runlength {
+                            let mut rejected;
+                            loop {
+                                let mut isum = 0.; // ints can be almost 32 bit so multiplication will overflow. So do doubles
+                                for ixyz in 0..3 {
+                                    // `encode_ints` is already positive (and multiplied by 2 versus the original, just as magic ints)
+                                    let id = f64::from(encode_ints[ixx * 3 + ixyz]);
+                                    isum += id * id;
+                                }
+                                rejected = false;
+
+                                let change_usize = usize::try_from(change).expect("usize from i32");
+                                if isum
+                                    > f64::from(ptngc_magic(small_index + change_usize))
+                                        * f64::from(ptngc_magic(small_index + change_usize))
+                                {
+                                    rejected = true;
+                                    change += 1;
+                                }
+                                if !(change < 0 && rejected) {
+                                    break;
+                                }
+                            }
+                            if change == 0 {
+                                break;
+                            }
+                        }
+                    }
+
+                    // Always accep the new small indices here
+                    unimplemented!("xtc3.c line 1463")
                 }
             }
         }
