@@ -1,5 +1,4 @@
 // Multiply two 32 bit unsigned integers returning a 64 bit unsigned value (in two integers)
-#[inline]
 fn ptngc_widemul(i1: u32, i2: u32) -> (u32, u32) {
     let result = (i1 as u64) * (i2 as u64);
     let olo = result as u32;
