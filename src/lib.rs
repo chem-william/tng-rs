@@ -19,6 +19,9 @@ mod rle;
 mod trajectory;
 mod trajectory_frame_set;
 mod utils;
+mod widemuldiv;
+mod xtc2;
+mod xtc3;
 
 /// The maximum length of a date string
 const MAX_DATE_STR_LEN: u64 = 24;
