@@ -42,30 +42,37 @@ pub(crate) fn ptngc_comp_conv_to_mtf(vals: &[u32], dict: &[u32], valsmtf: &mut [
 
 /// "Partial" MTF. Byte based. Move to front coding.
 /// Acceptable inputs are max 8 bits (0-0xFF)
-///
-/// # Panics
-///
-/// Panics if `vals.len() != valsmtf.len()`.
 pub(crate) fn comp_conv_to_mtf_byte(vals: &[u8], valsmtf: &mut [u8]) {
-    assert_eq!(vals.len(), valsmtf.len(), "input/output length mismatch");
+    let mut list = (1..256 + 1).collect::<Vec<i32>>();
+    let dict = (0..256).collect::<Vec<i32>>();
 
-    // Initialize the symbol list to [0,1,2,…,255].
-    let mut list: Vec<u8> = (0u8..=255).collect();
+    list[255] = -1;
+    let mut head = 0;
 
-    for (i, &v) in vals.iter().enumerate() {
-        // Find the index (r) of `v` in the list
-        let pos = list
-            .iter()
-            .position(|&sym| sym == v)
-            .expect("input byte out of 0..=255 range");
+    for i in 0..vals.len() {
+        let v = i32::from(vals[i]);
 
-        // Emit that index as the MTF code
-        valsmtf[i] = pos as u8;
+        // Find how early in the dict the value is
+        let mut ptr = head;
+        let mut oldptr = -1;
+        let mut r = 0;
+        while dict[usize::try_from(ptr).expect("usize from i32")] != v {
+            oldptr = ptr;
+            ptr = list[usize::try_from(ptr).expect("usize from i32")];
+            r += 1;
+        }
+        valsmtf[i] = r as u8;
 
-        // Move this symbol to front, if not already there
-        if pos != 0 {
-            list.remove(pos);
-            list.insert(0, v);
+        // Move it to fron in list
+        // Is it the head? Then it is already at the front
+        if oldptr != -1 {
+            // Remove it from inside the list
+            list[usize::try_from(oldptr).expect("usize from i32")] =
+                list[usize::try_from(ptr).expect("usize from i32")];
+
+            // Move it to the front
+            list[usize::try_from(ptr).expect("usize from i32")] = head;
+            head = ptr;
         }
     }
 }
