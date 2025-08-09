@@ -1,5 +1,7 @@
 use crate::{
+    bwlzh::{bwlzh_compress, bwlzh_compress_gen, bwlzh_compress_no_lz77, bwlzh_get_buflen},
     utils::copy_bytes,
+    widemuldiv::{ptngc_largeint_add, ptngc_largeint_mul},
     xtc2::{ptngc_find_magic_index, ptngc_magic},
 };
 
@@ -39,6 +41,20 @@ const THRESHOLD_INTER_INTRA: f64 = 5.0;
 // xtc3.
 const QUITE_LARGE: usize = 3;
 const IS_LARGE: usize = 6;
+
+// The base_compress routine first compresses all x coordinates, then
+// y and finally z. The bases used for each can be different. The
+// MAXBASEVALS value determines how many coordinates are compressed
+// into a single number. Only resulting whole bytes are dealt with for
+// simplicity. MAXMAXBASEVALS is the insanely large value to accept
+// files written with that value. BASEINTERVAL determines how often a
+// new base is actually computed and stored in the output
+// file. MAXBASEVALS*BASEINTERVAL values are stored using the same
+// base in BASEINTERVAL different integers. Note that the primarily
+// the decompression using a large MAXBASEVALS becomes very slow.
+const MAXMAXBASEVALS: usize = 16384;
+const MAXBASEVALS: usize = 24;
+const BASEINTERVAL: usize = 8;
 
 #[derive(Debug)]
 struct Xtc3Context {
@@ -209,9 +225,8 @@ impl Xtc3Context {
         }
     }
 
-    fn flush_large(&mut self) {
+    fn flush_large(&mut self, n: usize) {
         let mut i = 0;
-        let mut n = self.has_large;
 
         while i < n {
             // If the first large is of a different kind than the currently used we must
@@ -265,7 +280,7 @@ impl Xtc3Context {
         // If it is full we must write them all
         if self.has_large == MAX_LARGE_RLE {
             // Flush all
-            self.flush_large();
+            self.flush_large(self.has_large);
         }
         // Find out which is the best choice for the large integer. Direct coding, or some
         //kind of delta coding?
@@ -332,12 +347,125 @@ impl Xtc3Context {
     }
 }
 
+// How many bytes are needed to store `n` values in `base` base
+fn base_bytes(base: u32, n: usize) -> usize {
+    let mut largeint = [0; MAXBASEVALS + 1];
+    let mut largeint_tmp = [0; MAXBASEVALS + 1];
+    let mut numbytes = 0;
+
+    for i in 0..n {
+        if i != 0 {
+            ptngc_largeint_mul(base, &largeint, &mut largeint_tmp, n + 1);
+            largeint[..n + 1].copy_from_slice(&largeint_tmp[..n + 1]);
+        }
+        ptngc_largeint_add(base - 1, &mut largeint, n + 1);
+    }
+
+    for (i, &item) in largeint.iter().enumerate() {
+        if item > 0 {
+            for j in 0..4 {
+                if (item >> (j * 8)) & 0xFF > 0 {
+                    numbytes = i * 4 + j + 1;
+                }
+            }
+        }
+    }
+    numbytes
+}
+
+fn copy_single_byte(largeint: &mut [u32], j: usize, output: &mut Vec<u8>) {
+    let ilarge = j / 4;
+    let ibyte = j % 4;
+    let byte = ((largeint[ilarge] >> (ibyte * 8)) & 0xFF) as u8;
+    output.push(byte);
+}
+
+fn base_compress(data: &[u32], len: usize) -> (Vec<u8>, usize) {
+    let mut largeint = [0; MAXBASEVALS + 1];
+    let mut largeint_tmp = [0; MAXBASEVALS + 1];
+    let mut numbytes = 0;
+    let mut output = Vec::with_capacity(len + 3);
+
+    // Store the MAXBASEVALS value in the output
+    output.extend_from_slice(&(MAXBASEVALS as u16).to_le_bytes());
+    // Store the BASEINTERVAL value in the output
+    output.push(BASEINTERVAL as u8);
+
+    for ixyz in 0..3 {
+        let mut base = 0;
+        let mut nvals = 0;
+        let mut basegiven = 0;
+        largeint.fill(0);
+
+        for i in (ixyz..len).step_by(3) {
+            if nvals == 0 {
+                let mut basecheckvals = 0;
+                if basegiven == 0 {
+                    base = 0;
+                    // Find the largest value for this particular coordinate
+                    for k in (i..len).step_by(3) {
+                        if data[k] > base {
+                            base = data[k];
+                        }
+                        basecheckvals += 1;
+                        if basecheckvals == MAXBASEVALS * BASEINTERVAL {
+                            break;
+                        }
+                    }
+                    // The base is one larger than the largest value
+                    base += 1;
+                    if base < 2 {
+                        base = 2;
+                    }
+                    // Store the base in the output
+                    output.extend_from_slice(&base.to_le_bytes());
+                    basegiven = BASEINTERVAL;
+
+                    // How many bytes is needed to store MAXBASEVALS values using this base?
+                    numbytes = base_bytes(base, MAXBASEVALS);
+                }
+                basegiven -= 1;
+            }
+            if nvals != 0 {
+                ptngc_largeint_mul(base, &largeint, &mut largeint_tmp, MAXBASEVALS + 1);
+                largeint[..MAXBASEVALS + 1].copy_from_slice(&largeint_tmp);
+            }
+            ptngc_largeint_add(data[i], &mut largeint, MAXBASEVALS + 1);
+            nvals += 1;
+            if nvals == MAXBASEVALS {
+                for j in 0..numbytes {
+                    copy_single_byte(&mut largeint, j, &mut output);
+                }
+                nvals = 0;
+                largeint.fill(0);
+            }
+        }
+        if nvals > 0 {
+            numbytes = base_bytes(base, nvals);
+            for j in 0..numbytes {
+                copy_single_byte(&mut largeint, j, &mut output);
+            }
+        }
+    }
+
+    let output_len = output.len();
+    (output, output_len)
+}
+
 fn positive_int(item: i32) -> u32 {
     match item {
         i if i > 0 => 1 + (u32::try_from(i).expect("u32 from i32") - 1) * 2,
         i if i < 0 => 2 + (u32::try_from(-i).expect("u32 from i32") - 1) * 2,
         _ => 0, // Case when item == 0
     }
+}
+
+fn unpositive_int(val: i32) -> i32 {
+    let mut s = (val + 1) / 2;
+    if val % 2 == 0 {
+        s = -s;
+    }
+    s
 }
 
 fn compute_intlen(ints: &[u32]) -> f64 {
@@ -424,7 +552,8 @@ pub(crate) fn ptngc_pack_array_xtc3(
     let mut ntriplets_left = ntriplets;
     let mut large_index = [0; 3];
     let mut encode_ints: [i32; 3 + MAX_SMALL_RLE * 3] = [0; 3 + MAX_SMALL_RLE * 3];
-    let mut refused = false;
+    let mut refused = 0;
+    // let mut base_buf;
 
     let mut xtc3_context = Xtc3Context::default();
     xtc3_context.maxint.copy_from_slice(&input[..3]);
@@ -519,7 +648,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             xtc3_context.buffer_large(input, inpdata, natoms, true);
             inpdata += 3;
             ntriplets_left -= 1;
-            xtc3_context.flush_large(); // Flush all
+            xtc3_context.flush_large(xtc3_context.has_large); // Flush all
         } else {
             let mut min_runlength = 0;
             let mut largest_required_base;
@@ -546,7 +675,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             // Also, if we have not written any values yet, we must begin by writing a large atom. */
             if (inpdata == 0)
                 || (is_quite_large(&encode_ints, small_index, max_large_index))
-                || refused
+                || refused > 0
             {
                 // If any of the next two atoms are large we should probably write them as large and not swap them
                 let mut no_swap = false;
@@ -636,7 +765,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
                 inpdata += 3;
                 ntriplets_left -= 1;
 
-                refused = false;
+                refused = 0;
 
                 // Insert the next batch of integers to be encoded into the buffer
                 if swapatoms && didswap {
@@ -859,15 +988,226 @@ pub(crate) fn ptngc_pack_array_xtc3(
                     }
 
                     // Always accep the new small indices here
-                    unimplemented!("xtc3.c line 1463")
+                    small_index = new_small_index;
+                    // If we have a new runlength emit it
+                    if runlength != new_runlength {
+                        runlength = new_runlength;
+                        xtc3_context.instructions.push(INSTR_SMALL_RUNLENGTH);
+                        xtc3_context
+                            .rle
+                            .push(runlength.try_into().expect("u32 to usize"));
+                    }
                 }
+                // If we have a large previous integer we can combine it with a sequence
+                if xtc3_context.has_large > 0 {
+                    // If swapatoms is set to 1 but we did actually not
+                    // do any swapping, we must first write out the
+                    // large atom and then the small. If swapatoms is 1
+                    // and we did swapping we can use the efficient
+                    // encoding.
+                    if swapatoms && !didswap {
+                        // Flush all large atoms
+                        xtc3_context.flush_large(xtc3_context.has_large);
+                        xtc3_context.instructions.push(INSTR_ONLY_SMALL);
+                    } else {
+                        // Flush all large atoms but one!
+                        if xtc3_context.has_large > 1 {
+                            xtc3_context.flush_large(xtc3_context.has_large - 1);
+                        }
+
+                        // Here we must check if we should emit a large
+                        // type change instruction
+                        xtc3_context.large_instruction_change(0);
+                        xtc3_context.instructions.push(INSTR_DEFAULT);
+                        xtc3_context.write_three_large(0);
+                        xtc3_context.has_large = 0;
+                    }
+                } else {
+                    xtc3_context.instructions.push(INSTR_ONLY_SMALL);
+                }
+                // Insert the small integers into the small integer array
+                for &item in encode_ints[..runlength * 3].iter() {
+                    xtc3_context
+                        .smallintra
+                        .push(item.try_into().expect("i32 to u32"));
+                }
+                // Update `prevcoord`
+                for ienc in 0..runlength {
+                    prevcoord[0] += unpositive_int(encode_ints[ienc * 3]);
+                    prevcoord[1] += unpositive_int(encode_ints[ienc * 3 + 1]);
+                    prevcoord[2] += unpositive_int(encode_ints[ienc * 3 + 2]);
+                }
+                inpdata += 3;
+                ntriplets_left -= runlength;
+            } else {
+                refused += 1;
             }
+        }
+
+        // If we have large previous integers we must flush them now
+        if xtc3_context.has_large > 0 {
+            xtc3_context.flush_large(xtc3_context.has_large);
+        }
+
+        // Now it is time to compress all the data in the buffers with the bwlzh or base algo
+        // in c code: output_int
+        let bytes = xtc3_context.ninstr.to_ne_bytes();
+        output[outdata..outdata + 4].copy_from_slice(&bytes);
+        outdata += 4;
+
+        if xtc3_context.ninstr > 0 {
+            let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.ninstr)];
+            let bwlzh_buf_len = if *speed >= 5 {
+                bwlzh_compress(
+                    &xtc3_context.instructions,
+                    xtc3_context.ninstr,
+                    &mut bwlzh_buf,
+                )
+            } else {
+                bwlzh_compress_no_lz77(
+                    &xtc3_context.instructions,
+                    xtc3_context.ninstr,
+                    &mut bwlzh_buf,
+                )
+            };
+            // in c code: output_int
+            let bytes = bwlzh_buf_len.to_ne_bytes();
+            output[outdata..outdata + 4].copy_from_slice(&bytes);
+            output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf);
+            outdata += bwlzh_buf_len;
+        }
+
+        // in c code: output_int
+        let bytes = xtc3_context.nrle.to_ne_bytes();
+        output[outdata..outdata + 4].copy_from_slice(&bytes);
+        outdata += 4;
+
+        if xtc3_context.nrle > 0 {
+            let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nrle)];
+            let bwlzh_buf_len = if *speed >= 5 {
+                bwlzh_compress(&xtc3_context.rle, xtc3_context.nrle, &mut bwlzh_buf)
+            } else {
+                bwlzh_compress_no_lz77(&xtc3_context.rle, xtc3_context.nrle, &mut bwlzh_buf)
+            };
+            // in c code: output_int
+            let bytes = bwlzh_buf_len.to_ne_bytes();
+            output[outdata..outdata + 4].copy_from_slice(&bytes);
+            output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf);
+            outdata += bwlzh_buf_len;
+        }
+
+        // in c code: output_int
+        let bytes = xtc3_context.nlargedir.to_ne_bytes();
+        output[outdata..outdata + 4].copy_from_slice(&bytes);
+        outdata += 4;
+
+        let mut bwlzh_buf;
+        let mut bwlzh_buf_len;
+        if xtc3_context.nlargedir > 0 {
+            if *speed <= 2
+                || (*speed <= 5
+                    && (!heuristic_bwlzh(&xtc3_context.large_direct, xtc3_context.nlargedir)))
+            {
+                bwlzh_buf = vec![];
+                bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
+            } else {
+                bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nlargedir)];
+                bwlzh_buf_len = if *speed >= 5 {
+                    bwlzh_compress(
+                        &xtc3_context.large_direct,
+                        xtc3_context.nlargedir,
+                        &mut bwlzh_buf,
+                    )
+                } else {
+                    bwlzh_compress_no_lz77(
+                        &xtc3_context.large_direct,
+                        xtc3_context.nlargedir,
+                        &mut bwlzh_buf,
+                    )
+                };
+            }
+            // If this can be written using base compression we should do that
+            // let (base_buf, base_buf_len) =
+            //     base_compress(xtc3_context.large_direct, xtc3_context.nlargedir);
         }
     }
 }
 
+fn heuristic_bwlzh(ints: &[u32], nints: usize) -> bool {
+    let num = ints[..nints]
+        .iter()
+        .filter(|&&v| v >= 16384)
+        .fold(0, |acc, _| acc + 1);
+    num <= nints / 10
+}
+
 #[cfg(test)]
-mod tests {
+mod compress_tests {
+    use super::*;
+
+    #[test]
+    fn empty_input() {
+        let data = [];
+        let (output, _) = base_compress(&data, 0);
+        assert_eq!(output, [24, 0, 8]);
+    }
+
+    #[test]
+    fn single_zero() {
+        let data = [0];
+        let (output, _) = base_compress(&data, 1);
+        assert_eq!(output, [24, 0, 8, 2, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn single_nonzero() {
+        let data = [12345];
+        let (output, _) = base_compress(&data, 1);
+        assert_eq!(output, [24, 0, 8, 58, 48, 0, 0, 57, 48]);
+    }
+
+    #[test]
+    fn block_of_maxbasevals() {
+        let data = (0..MAXBASEVALS as u32).collect::<Vec<_>>();
+        let (output, _) = base_compress(&data, MAXBASEVALS);
+        assert_eq!(
+            output,
+            [
+                24, 0, 8, 22, 0, 0, 0, 173, 47, 64, 22, 0, 23, 0, 0, 0, 236, 161, 25, 241, 0, 24,
+                0, 0, 0, 55, 204, 186, 95, 2
+            ]
+        );
+    }
+
+    #[test]
+    fn repeat_value() {
+        let data = [7; 32];
+        let (output, _) = base_compress(&data, 32);
+        assert_eq!(
+            output,
+            [
+                24, 0, 8, 8, 0, 0, 0, 255, 255, 255, 255, 1, 8, 0, 0, 0, 255, 255, 255, 255, 1, 8,
+                0, 0, 0, 255, 255, 255, 63
+            ]
+        );
+    }
+
+    #[test]
+    fn squares() {
+        let data = (0..20).map(|v| v * v).collect::<Vec<_>>();
+        let (output, _) = base_compress(&data, 20);
+        assert_eq!(
+            output,
+            [
+                24, 0, 8, 69, 1, 0, 0, 71, 20, 239, 42, 12, 30, 0, 0, 106, 1, 0, 0, 221, 107, 73,
+                51, 235, 89, 8, 0, 34, 1, 0, 0, 157, 213, 218, 200, 159, 7, 0
+            ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod int_tests {
     use super::*;
 
     #[test]
