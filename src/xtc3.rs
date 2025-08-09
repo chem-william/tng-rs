@@ -5,7 +5,7 @@ use crate::{
     xtc2::{ptngc_find_magic_index, ptngc_magic},
 };
 
-const IFLIPGAINCHECK: f64 = 0.89089871814033927; /*  1./(2**(1./6)) */
+const IFLIPGAINCHECK: f64 = 0.890_898_718_140_339_27; /*  1./(2**(1./6)) */
 
 // Maximum number of large atoms for large RLE
 const MAX_LARGE_RLE: usize = 1024;
@@ -179,11 +179,9 @@ impl Xtc3Context {
                     *swapatoms = true;
                     didswap = true;
                 }
-            } else {
-                if *swapatoms {
-                    *swapatoms = false;
-                    didswap = true;
-                }
+            } else if *swapatoms {
+                *swapatoms = false;
+                didswap = true;
             }
         }
 
@@ -529,6 +527,12 @@ fn is_quite_large(input: &[i32], small_index: usize, max_large_index: usize) -> 
     is
 }
 
+fn output_int(output: &mut [u8], outdata: &mut usize, n: usize) {
+    let bytes = n.to_ne_bytes();
+    output[*outdata..*outdata + 4].copy_from_slice(&bytes);
+    *outdata += 4;
+}
+
 // Speed selects how careful to try to find the most efficient compression. The BWLZH algo is expensive!
 // Speed <=2 always avoids BWLZH everywhere it is possible.
 // Speed 3 and 4 and 5 use heuristics (check proportion of large value). This should mostly be safe.
@@ -539,7 +543,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
     length: &mut usize,
     natoms: usize,
     speed: &mut usize,
-) {
+) -> (Vec<u8>, usize) {
     let mut outdata = 0;
     let ntriplets = *length / 3;
     let mut runlength = 0; // Initial runlength. "Stupidly" set to zero for simplicity and explicity
@@ -664,7 +668,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             didswap = false;
             // Insert the next batch of integers to be encoded into the buffer
             let mut nencode = insert_batch(
-                &input,
+                input,
                 ntriplets_left,
                 prevcoord.as_slice(),
                 encode_ints.as_mut_slice(),
@@ -787,10 +791,8 @@ pub(crate) fn ptngc_pack_array_xtc3(
 
             // Here we should only have differences for the atom coordinates.
             // Convert the ints to positive ints
-            for ienc in 0..nencode {
-                encode_ints[ienc] = positive_int(encode_ints[ienc])
-                    .try_into()
-                    .expect("i32 from u32");
+            for item in encode_ints.iter_mut() {
+                *item = positive_int(*item).try_into().expect("i32 from u32");
             }
             // Now we must decide what base and runlength to do. If we have swapped atoms it will be
             // at least 2. If even the next atom is large, we will not do anything
@@ -1043,93 +1045,226 @@ pub(crate) fn ptngc_pack_array_xtc3(
                 refused += 1;
             }
         }
+    }
 
-        // If we have large previous integers we must flush them now
-        if xtc3_context.has_large > 0 {
-            xtc3_context.flush_large(xtc3_context.has_large);
-        }
+    // If we have large previous integers we must flush them now
+    if xtc3_context.has_large > 0 {
+        xtc3_context.flush_large(xtc3_context.has_large);
+    }
 
-        // Now it is time to compress all the data in the buffers with the bwlzh or base algo
+    // Now it is time to compress all the data in the buffers with the bwlzh or base algo
+    output_int(&mut output, &mut outdata, xtc3_context.ninstr);
+
+    if xtc3_context.ninstr > 0 {
+        let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.ninstr)];
+        let bwlzh_buf_len = if *speed >= 5 {
+            bwlzh_compress(
+                &xtc3_context.instructions,
+                xtc3_context.ninstr,
+                &mut bwlzh_buf,
+            )
+        } else {
+            bwlzh_compress_no_lz77(
+                &xtc3_context.instructions,
+                xtc3_context.ninstr,
+                &mut bwlzh_buf,
+            )
+        };
         // in c code: output_int
-        let bytes = xtc3_context.ninstr.to_ne_bytes();
-        output[outdata..outdata + 4].copy_from_slice(&bytes);
-        outdata += 4;
+        output_int(&mut output, &mut outdata, bwlzh_buf_len);
+        output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf);
+        outdata += bwlzh_buf_len;
+    }
 
-        if xtc3_context.ninstr > 0 {
-            let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.ninstr)];
-            let bwlzh_buf_len = if *speed >= 5 {
+    // in c code: output_int
+    output_int(&mut output, &mut outdata, xtc3_context.nrle);
+
+    if xtc3_context.nrle > 0 {
+        let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nrle)];
+        let bwlzh_buf_len = if *speed >= 5 {
+            bwlzh_compress(&xtc3_context.rle, xtc3_context.nrle, &mut bwlzh_buf)
+        } else {
+            bwlzh_compress_no_lz77(&xtc3_context.rle, xtc3_context.nrle, &mut bwlzh_buf)
+        };
+        output_int(&mut output, &mut outdata, bwlzh_buf_len);
+        output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf);
+        outdata += bwlzh_buf_len;
+    }
+
+    output_int(&mut output, &mut outdata, xtc3_context.nlargedir);
+
+    let mut bwlzh_buf;
+    let mut bwlzh_buf_len = 0;
+    if xtc3_context.nlargedir > 0 {
+        if *speed <= 2
+            || (*speed <= 5
+                && (!heuristic_bwlzh(&xtc3_context.large_direct, xtc3_context.nlargedir)))
+        {
+            bwlzh_buf = vec![];
+            bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
+        } else {
+            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nlargedir)];
+            bwlzh_buf_len = if *speed >= 5 {
                 bwlzh_compress(
-                    &xtc3_context.instructions,
-                    xtc3_context.ninstr,
+                    &xtc3_context.large_direct,
+                    xtc3_context.nlargedir,
                     &mut bwlzh_buf,
                 )
             } else {
                 bwlzh_compress_no_lz77(
-                    &xtc3_context.instructions,
-                    xtc3_context.ninstr,
+                    &xtc3_context.large_direct,
+                    xtc3_context.nlargedir,
                     &mut bwlzh_buf,
                 )
             };
-            // in c code: output_int
-            let bytes = bwlzh_buf_len.to_ne_bytes();
-            output[outdata..outdata + 4].copy_from_slice(&bytes);
-            output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf);
-            outdata += bwlzh_buf_len;
         }
+        // If this can be written using base compression we should do that
+        let (base_buf, base_buf_len) =
+            base_compress(&xtc3_context.large_direct, xtc3_context.nlargedir);
+        base_or_bwlzh_output(
+            &mut outdata,
+            &mut output,
+            &bwlzh_buf,
+            bwlzh_buf_len,
+            base_buf,
+            base_buf_len,
+        );
+    }
 
-        // in c code: output_int
-        let bytes = xtc3_context.nrle.to_ne_bytes();
-        output[outdata..outdata + 4].copy_from_slice(&bytes);
-        outdata += 4;
-
-        if xtc3_context.nrle > 0 {
-            let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nrle)];
-            let bwlzh_buf_len = if *speed >= 5 {
-                bwlzh_compress(&xtc3_context.rle, xtc3_context.nrle, &mut bwlzh_buf)
+    output_int(&mut output, &mut outdata, xtc3_context.nlargeintra);
+    if xtc3_context.nlargeintra > 0 {
+        if (*speed <= 2)
+            || ((*speed <= 5)
+                && (!heuristic_bwlzh(&xtc3_context.large_intra_delta, xtc3_context.nlargeintra)))
+        {
+            bwlzh_buf = vec![];
+            bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
+        } else {
+            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nlargedir)];
+            if *speed >= 5 {
+                bwlzh_compress(
+                    &xtc3_context.large_intra_delta,
+                    xtc3_context.nlargeintra,
+                    &mut bwlzh_buf,
+                );
             } else {
-                bwlzh_compress_no_lz77(&xtc3_context.rle, xtc3_context.nrle, &mut bwlzh_buf)
-            };
-            // in c code: output_int
-            let bytes = bwlzh_buf_len.to_ne_bytes();
-            output[outdata..outdata + 4].copy_from_slice(&bytes);
-            output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf);
-            outdata += bwlzh_buf_len;
-        }
-
-        // in c code: output_int
-        let bytes = xtc3_context.nlargedir.to_ne_bytes();
-        output[outdata..outdata + 4].copy_from_slice(&bytes);
-        outdata += 4;
-
-        let mut bwlzh_buf;
-        let mut bwlzh_buf_len;
-        if xtc3_context.nlargedir > 0 {
-            if *speed <= 2
-                || (*speed <= 5
-                    && (!heuristic_bwlzh(&xtc3_context.large_direct, xtc3_context.nlargedir)))
-            {
-                bwlzh_buf = vec![];
-                bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
-            } else {
-                bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nlargedir)];
-                bwlzh_buf_len = if *speed >= 5 {
-                    bwlzh_compress(
-                        &xtc3_context.large_direct,
-                        xtc3_context.nlargedir,
-                        &mut bwlzh_buf,
-                    )
-                } else {
-                    bwlzh_compress_no_lz77(
-                        &xtc3_context.large_direct,
-                        xtc3_context.nlargedir,
-                        &mut bwlzh_buf,
-                    )
-                };
+                bwlzh_compress_no_lz77(
+                    &xtc3_context.large_intra_delta,
+                    xtc3_context.nlargeintra,
+                    &mut bwlzh_buf,
+                );
             }
-            // If this can be written using base compression we should do that
-            // let (base_buf, base_buf_len) =
-            //     base_compress(xtc3_context.large_direct, xtc3_context.nlargedir);
         }
+        // If this can be written smaller using base compression we should do that
+        let (base_buf, base_buf_len) =
+            base_compress(&xtc3_context.large_intra_delta, xtc3_context.nlargeintra);
+        base_or_bwlzh_output(
+            &mut outdata,
+            &mut output,
+            &bwlzh_buf,
+            bwlzh_buf_len,
+            base_buf,
+            base_buf_len,
+        );
+    }
+    output_int(&mut output, &mut outdata, xtc3_context.nlargeinter);
+
+    if xtc3_context.nlargeinter > 0 {
+        if (*speed <= 2)
+            || ((*speed <= 5)
+                && (!heuristic_bwlzh(&xtc3_context.large_inter_delta, xtc3_context.nlargeinter)))
+        {
+            bwlzh_buf = vec![];
+            bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
+        } else {
+            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nlargeinter)];
+            if *speed >= 5 {
+                bwlzh_compress(
+                    &xtc3_context.large_inter_delta,
+                    xtc3_context.nlargeinter,
+                    &mut bwlzh_buf,
+                );
+            } else {
+                bwlzh_compress_no_lz77(
+                    &xtc3_context.large_inter_delta,
+                    xtc3_context.nlargeinter,
+                    &mut bwlzh_buf,
+                );
+            }
+        }
+        // If this can be written smaller using base compression we should do that
+        let (base_buf, base_buf_len) =
+            base_compress(&xtc3_context.large_inter_delta, xtc3_context.nlargeinter);
+        base_or_bwlzh_output(
+            &mut outdata,
+            &mut output,
+            &bwlzh_buf,
+            bwlzh_buf_len,
+            base_buf,
+            base_buf_len,
+        );
+    }
+
+    output_int(&mut output, &mut outdata, xtc3_context.nsmallintra);
+
+    if xtc3_context.nsmallintra > 0 {
+        if (*speed <= 2)
+            || ((*speed <= 5)
+                && (!heuristic_bwlzh(&xtc3_context.smallintra, xtc3_context.nsmallintra)))
+        {
+            bwlzh_buf = vec![];
+            bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
+        } else {
+            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nsmallintra)];
+            if *speed >= 5 {
+                bwlzh_compress(
+                    &xtc3_context.smallintra,
+                    xtc3_context.nsmallintra,
+                    &mut bwlzh_buf,
+                );
+            } else {
+                bwlzh_compress_no_lz77(
+                    &xtc3_context.smallintra,
+                    xtc3_context.nsmallintra,
+                    &mut bwlzh_buf,
+                );
+            }
+        }
+        // If this can be written smaller using base compression we should do that
+        let (base_buf, base_buf_len) =
+            base_compress(&xtc3_context.smallintra, xtc3_context.nsmallintra);
+        base_or_bwlzh_output(
+            &mut outdata,
+            &mut output,
+            &bwlzh_buf,
+            bwlzh_buf_len,
+            base_buf,
+            base_buf_len,
+        );
+    }
+    (output, outdata)
+}
+
+fn base_or_bwlzh_output(
+    outdata: &mut usize,
+    output: &mut [u8],
+    bwlzh_buf: &Vec<u8>,
+    bwlzh_buf_len: usize,
+    base_buf: Vec<u8>,
+    base_buf_len: usize,
+) {
+    if base_buf_len < bwlzh_buf_len {
+        output[*outdata] = 0;
+        *outdata += 1;
+        output_int(output, outdata, base_buf_len);
+        output[*outdata..*outdata + base_buf_len].copy_from_slice(&base_buf);
+        *outdata += base_buf_len;
+    } else {
+        output[*outdata] = 1;
+        *outdata += 1;
+        output_int(output, outdata, bwlzh_buf_len);
+        output[*outdata..*outdata + bwlzh_buf_len].copy_from_slice(bwlzh_buf);
+        *outdata += bwlzh_buf_len;
     }
 }
 
