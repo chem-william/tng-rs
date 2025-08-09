@@ -44,6 +44,11 @@ pub(crate) fn ptngc_largeint_mul(v1: u32, largeint_in: &[u32], largeint_out: &mu
     }
 }
 
+// Add a `u32` to a `largeint`
+pub(crate) fn ptngc_largeint_add(v1: u32, largeint: &mut [u32], n: usize) {
+    largeint_add_gen(v1, largeint, n, 0);
+}
+
 #[cfg(test)]
 mod widemul_tests {
     use super::*;
