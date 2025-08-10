@@ -1,6 +1,5 @@
 use crate::{
-    bwlzh::{bwlzh_compress, bwlzh_compress_gen, bwlzh_compress_no_lz77, bwlzh_get_buflen},
-    utils::copy_bytes,
+    bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_get_buflen},
     widemuldiv::{ptngc_largeint_add, ptngc_largeint_mul},
     xtc2::{ptngc_find_magic_index, ptngc_magic},
 };
@@ -59,23 +58,11 @@ const BASEINTERVAL: usize = 8;
 #[derive(Debug)]
 struct Xtc3Context {
     instructions: Vec<u32>,
-    ninstr: usize,
-    ninstr_alloc: usize,
     rle: Vec<u32>,
-    nrle: usize,
-    nrle_alloc: usize,
     large_direct: Vec<u32>,
-    nlargedir: usize,
-    nlargedir_alloc: usize,
     large_intra_delta: Vec<u32>,
-    nlargeintra: usize,
-    nlargeintra_alloc: usize,
     large_inter_delta: Vec<u32>,
-    nlargeinter: usize,
-    nlargeinter_alloc: usize,
     smallintra: Vec<u32>,
-    nsmallintra: usize,
-    nsmallintra_alloc: usize,
     minint: [i32; 3],
     maxint: [i32; 3],
     has_large: usize,
@@ -90,23 +77,11 @@ impl Default for Xtc3Context {
     fn default() -> Self {
         Self {
             instructions: Vec::new(),
-            ninstr: 0,
-            ninstr_alloc: 0,
             rle: Vec::new(),
-            nrle: 0,
-            nrle_alloc: 0,
             large_direct: Vec::new(),
-            nlargedir: 0,
-            nlargedir_alloc: 0,
             large_intra_delta: Vec::new(),
-            nlargeintra: 0,
-            nlargeintra_alloc: 0,
             large_inter_delta: Vec::new(),
-            nlargeinter: 0,
-            nlargeinter_alloc: 0,
             smallintra: Vec::new(),
-            nsmallintra: 0,
-            nsmallintra_alloc: 0,
             minint: [0; 3],
             maxint: [0; 3],
             has_large_ints: [0; MAX_LARGE_RLE * 3],
@@ -134,7 +109,7 @@ fn swap_is_better(input: &[i32], minint: &[i32; 3]) -> (u32, u32) {
         normal[0] = input[i] - minint[i];
         normal[1] = input[3 + i] - input[i]; // minint[i]-minint[i] cancels out
         normal[2] = input[6 + i] - input[3 + i]; // minint[i]-minint[i] cancels out
-        swap_ints(&mut normal, &mut swapped);
+        swap_ints(&normal, &mut swapped);
 
         for j in 1..3 {
             if positive_int(normal[j]) > normal_max {
@@ -244,7 +219,7 @@ impl Xtc3Context {
                 }
             } else {
                 self.instructions.push(INSTR_LARGE_RLE);
-                self.instructions.push(j.try_into().expect("usize to u32"));
+                self.rle.push(u32::try_from(j).expect("u32 from usize"));
                 for k in 0..j {
                     self.write_three_large(i + k);
                 }
@@ -252,7 +227,6 @@ impl Xtc3Context {
             i += j;
         }
         if self.has_large - n != 0 {
-            let j = 0;
             for i in 0..(self.has_large - n) {
                 self.has_large_type[i] = self.has_large_type[i + n];
                 for j in 0..3 {
@@ -527,7 +501,7 @@ fn is_quite_large(input: &[i32], small_index: usize, max_large_index: usize) -> 
     is
 }
 
-fn output_int(output: &mut [u8], outdata: &mut usize, n: usize) {
+fn output_int(output: &mut [u8], outdata: &mut usize, n: u32) {
     let bytes = n.to_ne_bytes();
     output[*outdata..*outdata + 4].copy_from_slice(&bytes);
     *outdata += 4;
@@ -618,20 +592,20 @@ pub(crate) fn ptngc_pack_array_xtc3(
     // just insert instructions to increase this value
     small_index = ptngc_find_magic_index(intmax);
 
-    copy_bytes(
+    output_int(
+        &mut output,
+        &mut outdata,
         positive_int(xtc3_context.minint[0]),
+    );
+    output_int(
         &mut output,
         &mut outdata,
-    );
-    copy_bytes(
         positive_int(xtc3_context.minint[1]),
-        &mut output,
-        &mut outdata,
     );
-    copy_bytes(
-        positive_int(xtc3_context.minint[2]),
+    output_int(
         &mut output,
         &mut outdata,
+        positive_int(xtc3_context.minint[2]),
     );
 
     // Initial prevcoord is the minimum integers
@@ -642,10 +616,6 @@ pub(crate) fn ptngc_pack_array_xtc3(
     ];
 
     while ntriplets_left > 0 {
-        // if ntriplets_left < 0 {
-        //     eprintln!("TRAJNG: BUG! ntriplets_left < 0!");
-        // }
-
         // If only less than three atoms left we just write them all as large integers. Here no swapping is done!
         if ntriplets_left < 3 {
             // TODO: does this loop not only run once?
@@ -655,15 +625,14 @@ pub(crate) fn ptngc_pack_array_xtc3(
             xtc3_context.flush_large(xtc3_context.has_large); // Flush all
         } else {
             let mut min_runlength = 0;
-            let mut largest_required_base;
+            let largest_required_base = 0;
             let mut largest_runlength_base;
-            let mut largest_required_index = 0;
-            let mut largest_runlength_index = 0;
-            let mut new_runlength = 0;
-            let mut new_small_index = 0;
-            let mut iter_runlength = 0;
-            let mut iter_small_index = 0;
-            let mut rle_index_dep = 0;
+            let mut largest_runlength_index;
+            let mut new_runlength;
+            let mut new_small_index;
+            let mut iter_runlength;
+            let mut iter_small_index;
+            let mut rle_index_dep;
 
             didswap = false;
             // Insert the next batch of integers to be encoded into the buffer
@@ -760,9 +729,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
                     }
                 } else {
                     xtc3_context.buffer_large(input, inpdata, natoms, true);
-                    for ienc in 0..3 {
-                        prevcoord[ienc] = input[inpdata + ienc];
-                    }
+                    prevcoord.copy_from_slice(&input[inpdata..(3 + inpdata)]);
                 }
 
                 // We have written a large integer so we have one less atoms to worry about
@@ -796,7 +763,6 @@ pub(crate) fn ptngc_pack_array_xtc3(
             }
             // Now we must decide what base and runlength to do. If we have swapped atoms it will be
             // at least 2. If even the next atom is large, we will not do anything
-            largest_required_base = 0;
 
             // Determine required base
             largest_runlength_base = (0..(min_runlength * 3))
@@ -820,7 +786,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
                 .copied()
                 .unwrap_or(0);
 
-            largest_required_index =
+            let largest_required_index =
                 ptngc_find_magic_index(largest_required_base.try_into().expect("i32 to u32"));
             largest_runlength_index =
                 ptngc_find_magic_index(largest_runlength_base.try_into().expect("i32 to u32"));
@@ -876,9 +842,8 @@ pub(crate) fn ptngc_pack_array_xtc3(
                 // How large encoding do we have to use?
                 largest_runlength_base = (0..iter_runlength * 3)
                     .filter_map(|i| encode_ints.get(i))
-                    .filter(|&&val| val > largest_runlength_base)
-                    .next_back()
                     .copied()
+                    .max()
                     .unwrap_or(0);
                 largest_runlength_index = ptngc_find_magic_index(
                     largest_runlength_base.try_into().expect("u32 from i32"),
@@ -888,7 +853,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
                 }
 
                 // to emulate the do .. while construct in c, we put this if statement at the end
-                if !((new_runlength != iter_runlength) || (new_small_index != iter_small_index)) {
+                if new_runlength == iter_runlength && new_small_index == iter_small_index {
                     break;
                 }
             }
@@ -955,7 +920,8 @@ pub(crate) fn ptngc_pack_array_xtc3(
                 } else if new_runlength != runlength || new_small_index != small_index {
                     let mut change: i32 =
                         i32::try_from(new_small_index - small_index).expect("i32 from usize");
-                    if new_small_index <= 0 {
+                    // c code: had `new_small_index` as an `int` and did a "<=" check
+                    if new_small_index == 0 {
                         change = 0;
                     }
 
@@ -1053,74 +1019,89 @@ pub(crate) fn ptngc_pack_array_xtc3(
     }
 
     // Now it is time to compress all the data in the buffers with the bwlzh or base algo
-    output_int(&mut output, &mut outdata, xtc3_context.ninstr);
-
-    if xtc3_context.ninstr > 0 {
-        let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.ninstr)];
+    output_int(
+        &mut output,
+        &mut outdata,
+        u32::try_from(xtc3_context.instructions.len()).expect("u32 from usize"),
+    );
+    if !xtc3_context.instructions.is_empty() {
+        let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.instructions.len())];
         let bwlzh_buf_len = if *speed >= 5 {
             bwlzh_compress(
                 &xtc3_context.instructions,
-                xtc3_context.ninstr,
+                xtc3_context.instructions.len(),
                 &mut bwlzh_buf,
             )
         } else {
             bwlzh_compress_no_lz77(
                 &xtc3_context.instructions,
-                xtc3_context.ninstr,
+                xtc3_context.instructions.len(),
                 &mut bwlzh_buf,
             )
         };
-        // in c code: output_int
-        output_int(&mut output, &mut outdata, bwlzh_buf_len);
-        output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf);
+        output_int(
+            &mut output,
+            &mut outdata,
+            u32::try_from(bwlzh_buf_len).expect("u32 from usize"),
+        );
+        output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf[..bwlzh_buf_len]);
         outdata += bwlzh_buf_len;
     }
 
-    // in c code: output_int
-    output_int(&mut output, &mut outdata, xtc3_context.nrle);
-
-    if xtc3_context.nrle > 0 {
-        let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nrle)];
+    output_int(
+        &mut output,
+        &mut outdata,
+        u32::try_from(xtc3_context.rle.len()).expect("u32 from usize"),
+    );
+    if !xtc3_context.rle.is_empty() {
+        let mut bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.rle.len())];
         let bwlzh_buf_len = if *speed >= 5 {
-            bwlzh_compress(&xtc3_context.rle, xtc3_context.nrle, &mut bwlzh_buf)
+            bwlzh_compress(&xtc3_context.rle, xtc3_context.rle.len(), &mut bwlzh_buf)
         } else {
-            bwlzh_compress_no_lz77(&xtc3_context.rle, xtc3_context.nrle, &mut bwlzh_buf)
+            bwlzh_compress_no_lz77(&xtc3_context.rle, xtc3_context.rle.len(), &mut bwlzh_buf)
         };
-        output_int(&mut output, &mut outdata, bwlzh_buf_len);
-        output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf);
+        output_int(
+            &mut output,
+            &mut outdata,
+            u32::try_from(bwlzh_buf_len).expect("u32 from usize"),
+        );
+        output[outdata..outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf[..bwlzh_buf_len]);
         outdata += bwlzh_buf_len;
     }
 
-    output_int(&mut output, &mut outdata, xtc3_context.nlargedir);
-
+    output_int(
+        &mut output,
+        &mut outdata,
+        u32::try_from(xtc3_context.large_direct.len()).expect("u32 from usize"),
+    );
     let mut bwlzh_buf;
     let mut bwlzh_buf_len = 0;
-    if xtc3_context.nlargedir > 0 {
+    if !xtc3_context.large_direct.is_empty() {
         if *speed <= 2
             || (*speed <= 5
-                && (!heuristic_bwlzh(&xtc3_context.large_direct, xtc3_context.nlargedir)))
+                && (!heuristic_bwlzh(&xtc3_context.large_direct, xtc3_context.large_direct.len())))
         {
             bwlzh_buf = vec![];
             bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
         } else {
-            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nlargedir)];
+            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.large_direct.len())];
             bwlzh_buf_len = if *speed >= 5 {
                 bwlzh_compress(
                     &xtc3_context.large_direct,
-                    xtc3_context.nlargedir,
+                    xtc3_context.large_direct.len(),
                     &mut bwlzh_buf,
                 )
             } else {
                 bwlzh_compress_no_lz77(
                     &xtc3_context.large_direct,
-                    xtc3_context.nlargedir,
+                    xtc3_context.large_direct.len(),
                     &mut bwlzh_buf,
                 )
             };
         }
         // If this can be written using base compression we should do that
         let (base_buf, base_buf_len) =
-            base_compress(&xtc3_context.large_direct, xtc3_context.nlargedir);
+            base_compress(&xtc3_context.large_direct, xtc3_context.large_direct.len());
         base_or_bwlzh_output(
             &mut outdata,
             &mut output,
@@ -1131,70 +1112,42 @@ pub(crate) fn ptngc_pack_array_xtc3(
         );
     }
 
-    output_int(&mut output, &mut outdata, xtc3_context.nlargeintra);
-    if xtc3_context.nlargeintra > 0 {
+    output_int(
+        &mut output,
+        &mut outdata,
+        u32::try_from(xtc3_context.large_intra_delta.len()).expect("u32 from usize"),
+    );
+    if !xtc3_context.large_intra_delta.is_empty() {
         if (*speed <= 2)
             || ((*speed <= 5)
-                && (!heuristic_bwlzh(&xtc3_context.large_intra_delta, xtc3_context.nlargeintra)))
+                && (!heuristic_bwlzh(
+                    &xtc3_context.large_intra_delta,
+                    xtc3_context.large_intra_delta.len(),
+                )))
         {
             bwlzh_buf = vec![];
             bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
         } else {
-            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nlargedir)];
+            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.large_direct.len())];
             if *speed >= 5 {
                 bwlzh_compress(
                     &xtc3_context.large_intra_delta,
-                    xtc3_context.nlargeintra,
+                    xtc3_context.large_intra_delta.len(),
                     &mut bwlzh_buf,
                 );
             } else {
                 bwlzh_compress_no_lz77(
                     &xtc3_context.large_intra_delta,
-                    xtc3_context.nlargeintra,
+                    xtc3_context.large_intra_delta.len(),
                     &mut bwlzh_buf,
                 );
             }
         }
         // If this can be written smaller using base compression we should do that
-        let (base_buf, base_buf_len) =
-            base_compress(&xtc3_context.large_intra_delta, xtc3_context.nlargeintra);
-        base_or_bwlzh_output(
-            &mut outdata,
-            &mut output,
-            &bwlzh_buf,
-            bwlzh_buf_len,
-            base_buf,
-            base_buf_len,
+        let (base_buf, base_buf_len) = base_compress(
+            &xtc3_context.large_intra_delta,
+            xtc3_context.large_intra_delta.len(),
         );
-    }
-    output_int(&mut output, &mut outdata, xtc3_context.nlargeinter);
-
-    if xtc3_context.nlargeinter > 0 {
-        if (*speed <= 2)
-            || ((*speed <= 5)
-                && (!heuristic_bwlzh(&xtc3_context.large_inter_delta, xtc3_context.nlargeinter)))
-        {
-            bwlzh_buf = vec![];
-            bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
-        } else {
-            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nlargeinter)];
-            if *speed >= 5 {
-                bwlzh_compress(
-                    &xtc3_context.large_inter_delta,
-                    xtc3_context.nlargeinter,
-                    &mut bwlzh_buf,
-                );
-            } else {
-                bwlzh_compress_no_lz77(
-                    &xtc3_context.large_inter_delta,
-                    xtc3_context.nlargeinter,
-                    &mut bwlzh_buf,
-                );
-            }
-        }
-        // If this can be written smaller using base compression we should do that
-        let (base_buf, base_buf_len) =
-            base_compress(&xtc3_context.large_inter_delta, xtc3_context.nlargeinter);
         base_or_bwlzh_output(
             &mut outdata,
             &mut output,
@@ -1205,34 +1158,83 @@ pub(crate) fn ptngc_pack_array_xtc3(
         );
     }
 
-    output_int(&mut output, &mut outdata, xtc3_context.nsmallintra);
-
-    if xtc3_context.nsmallintra > 0 {
+    output_int(
+        &mut output,
+        &mut outdata,
+        u32::try_from(xtc3_context.large_inter_delta.len()).expect("u32 from usize"),
+    );
+    if !xtc3_context.large_inter_delta.is_empty() {
         if (*speed <= 2)
             || ((*speed <= 5)
-                && (!heuristic_bwlzh(&xtc3_context.smallintra, xtc3_context.nsmallintra)))
+                && (!heuristic_bwlzh(
+                    &xtc3_context.large_inter_delta,
+                    xtc3_context.large_inter_delta.len(),
+                )))
         {
             bwlzh_buf = vec![];
             bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
         } else {
-            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.nsmallintra)];
+            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.large_inter_delta.len())];
+            if *speed >= 5 {
+                bwlzh_compress(
+                    &xtc3_context.large_inter_delta,
+                    xtc3_context.large_inter_delta.len(),
+                    &mut bwlzh_buf,
+                );
+            } else {
+                bwlzh_compress_no_lz77(
+                    &xtc3_context.large_inter_delta,
+                    xtc3_context.large_inter_delta.len(),
+                    &mut bwlzh_buf,
+                );
+            }
+        }
+        // If this can be written smaller using base compression we should do that
+        let (base_buf, base_buf_len) = base_compress(
+            &xtc3_context.large_inter_delta,
+            xtc3_context.large_inter_delta.len(),
+        );
+        base_or_bwlzh_output(
+            &mut outdata,
+            &mut output,
+            &bwlzh_buf,
+            bwlzh_buf_len,
+            base_buf,
+            base_buf_len,
+        );
+    }
+
+    output_int(
+        &mut output,
+        &mut outdata,
+        u32::try_from(xtc3_context.smallintra.len()).expect("u32 from usize"),
+    );
+    if !xtc3_context.smallintra.is_empty() {
+        if (*speed <= 2)
+            || ((*speed <= 5)
+                && (!heuristic_bwlzh(&xtc3_context.smallintra, xtc3_context.smallintra.len())))
+        {
+            bwlzh_buf = vec![];
+            bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
+        } else {
+            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.smallintra.len())];
             if *speed >= 5 {
                 bwlzh_compress(
                     &xtc3_context.smallintra,
-                    xtc3_context.nsmallintra,
+                    xtc3_context.smallintra.len(),
                     &mut bwlzh_buf,
                 );
             } else {
                 bwlzh_compress_no_lz77(
                     &xtc3_context.smallintra,
-                    xtc3_context.nsmallintra,
+                    xtc3_context.smallintra.len(),
                     &mut bwlzh_buf,
                 );
             }
         }
         // If this can be written smaller using base compression we should do that
         let (base_buf, base_buf_len) =
-            base_compress(&xtc3_context.smallintra, xtc3_context.nsmallintra);
+            base_compress(&xtc3_context.smallintra, xtc3_context.smallintra.len());
         base_or_bwlzh_output(
             &mut outdata,
             &mut output,
@@ -1248,7 +1250,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
 fn base_or_bwlzh_output(
     outdata: &mut usize,
     output: &mut [u8],
-    bwlzh_buf: &Vec<u8>,
+    bwlzh_buf: &[u8],
     bwlzh_buf_len: usize,
     base_buf: Vec<u8>,
     base_buf_len: usize,
@@ -1256,13 +1258,21 @@ fn base_or_bwlzh_output(
     if base_buf_len < bwlzh_buf_len {
         output[*outdata] = 0;
         *outdata += 1;
-        output_int(output, outdata, base_buf_len);
+        output_int(
+            output,
+            outdata,
+            u32::try_from(base_buf_len).expect("u32 from usize"),
+        );
         output[*outdata..*outdata + base_buf_len].copy_from_slice(&base_buf);
         *outdata += base_buf_len;
     } else {
         output[*outdata] = 1;
         *outdata += 1;
-        output_int(output, outdata, bwlzh_buf_len);
+        output_int(
+            output,
+            outdata,
+            u32::try_from(bwlzh_buf_len).expect("u32 from usize"),
+        );
         output[*outdata..*outdata + bwlzh_buf_len].copy_from_slice(bwlzh_buf);
         *outdata += bwlzh_buf_len;
     }
@@ -1336,6 +1346,167 @@ mod compress_tests {
             [
                 24, 0, 8, 69, 1, 0, 0, 71, 20, 239, 42, 12, 30, 0, 0, 106, 1, 0, 0, 221, 107, 73,
                 51, 235, 89, 8, 0, 34, 1, 0, 0, 157, 213, 218, 200, 159, 7, 0
+            ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod pack_tests {
+    use super::*;
+
+    #[test]
+    fn one_atom() {
+        let mut input = vec![100, 200, 300];
+        let natoms = 1;
+        let mut speed = 1;
+        let mut length = input.len();
+        let (output, output_len) =
+            ptngc_pack_array_xtc3(&mut input, &mut length, natoms, &mut speed);
+        assert_eq!(
+            output[..output_len],
+            [
+                199, 0, 0, 0, 143, 1, 0, 0, 87, 2, 0, 0, 1, 0, 0, 0, 119, 0, 0, 0, 1, 0, 0, 0, 1,
+                0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 26, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1,
+                0, 0, 0, 1, 0, 0, 0, 0, 5, 0, 0, 1, 0, 0, 4, 0, 0, 8, 64, 0, 1, 0, 0, 0, 25, 0, 0,
+                0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 1, 0, 0, 2, 0, 0, 33, 0,
+                1, 0, 0, 0, 25, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 1,
+                0, 0, 2, 0, 0, 33, 0, 0, 0, 0, 3, 0, 0, 0, 0, 18, 0, 0, 0, 24, 0, 8, 2, 0, 0, 0, 0,
+                2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ]
+        );
+    }
+
+    #[test]
+    fn three_atoms() {
+        #[rustfmt::skip]
+        let mut input = vec![
+            100, 200, 300,
+            101, 201, 301,
+            99, 199, 299,
+        ];
+        let natoms = 3;
+        let mut speed = 3;
+        let mut length = input.len();
+        let (output, output_len) =
+            ptngc_pack_array_xtc3(&mut input, &mut length, natoms, &mut speed);
+        assert_eq!(
+            output[..output_len],
+            [
+                197, 0, 0, 0, 141, 1, 0, 0, 85, 2, 0, 0, 5, 0, 0, 0, 127, 0, 0, 0, 5, 0, 0, 0, 5,
+                0, 0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 0, 5, 0, 0, 0, 30, 0, 0, 0, 1, 0, 5, 0, 0, 0, 5,
+                0, 0, 0, 2, 0, 0, 0, 222, 16, 8, 0, 0, 5, 0, 0, 9, 0, 0, 137, 16, 137, 28, 96, 0,
+                3, 0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 152, 6, 0, 0, 3,
+                0, 0, 2, 0, 0, 134, 40, 128, 0, 3, 0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0,
+                0, 1, 0, 0, 0, 152, 6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128, 0, 0, 0, 0, 6, 0, 0,
+                0, 0, 18, 0, 0, 0, 24, 0, 8, 2, 0, 0, 0, 2, 2, 0, 0, 0, 2, 2, 0, 0, 0, 2, 3, 0, 0,
+                0, 0, 18, 0, 0, 0, 24, 0, 8, 2, 0, 0, 0, 1, 2, 0, 0, 0, 1, 2, 0, 0, 0, 1, 0, 0, 0,
+                0, 0, 0, 0, 0
+            ]
+        );
+    }
+
+    #[test]
+    fn sequential_coordinates() {
+        #[rustfmt::skip]
+        let mut input = vec![
+            0,   0,   0,    // atom 0
+            10,  10,  10,   // atom 1
+            20,  20,  20,   // atom 2
+            30,  30,  30,   // atom 3
+            40,  40,  40,   // atom 4
+            50,  50,  50    // atom 5
+        ];
+        let natoms = 6;
+        let mut speed = 4;
+        let mut length = input.len();
+        let (output, output_len) =
+            ptngc_pack_array_xtc3(&mut input, &mut length, natoms, &mut speed);
+        assert_eq!(
+            output[..output_len],
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 127, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0,
+                0, 5, 0, 0, 0, 3, 0, 0, 0, 0, 5, 0, 0, 0, 30, 0, 0, 0, 1, 0, 5, 0, 0, 0, 5, 0, 0,
+                0, 2, 0, 0, 0, 240, 224, 8, 0, 0, 5, 0, 0, 9, 0, 0, 137, 17, 17, 28, 96, 0, 3, 0,
+                0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 152, 6, 0, 0, 3, 0, 0,
+                2, 0, 0, 134, 40, 128, 0, 3, 0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1,
+                0, 0, 0, 152, 6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128, 1, 0, 0, 0, 119, 0, 0, 0, 1,
+                0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 26, 0, 0, 0, 1, 0, 1,
+                0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 5, 0, 0, 1, 0, 0, 5, 0, 0, 4, 32, 0, 1, 0, 0,
+                0, 25, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 1, 0, 0, 2,
+                0, 0, 33, 0, 1, 0, 0, 0, 25, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0,
+                4, 0, 0, 1, 0, 0, 2, 0, 0, 33, 9, 0, 0, 0, 0, 21, 0, 0, 0, 24, 0, 8, 21, 0, 0, 0,
+                230, 0, 21, 0, 0, 0, 230, 0, 21, 0, 0, 0, 230, 0, 9, 0, 0, 0, 0, 21, 0, 0, 0, 24,
+                0, 8, 20, 0, 0, 0, 63, 31, 20, 0, 0, 0, 63, 31, 20, 0, 0, 0, 63, 31, 0, 0, 0, 0, 0,
+                0, 0, 0,
+            ]
+        );
+    }
+
+    #[test]
+    fn speed_variations() {
+        // this gives the same output no matter the speed - not sure if that is expected?
+        #[rustfmt::skip]
+        let mut input = vec![
+            500, 1000, 1500,   // atom 0
+            502, 1002, 1502,   // atom 1
+            498,  998, 1498,   // atom 2
+            504, 1004, 1504    // atom 3
+        ];
+        let natoms = 4;
+        let mut length = input.len();
+        let expected_outputs = [[
+            227, 3, 0, 0, 203, 7, 0, 0, 179, 11, 0, 0, 2, 0, 0, 0, 122, 0, 0, 0, 2, 0, 0, 0, 2, 0,
+            0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 27, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0,
+            1, 0, 0, 0, 128, 6, 0, 0, 2, 0, 0, 7, 0, 0, 4, 40, 64, 0, 2, 0, 0, 0, 26, 0, 0, 0, 1,
+            0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 64, 5, 0, 0, 2, 0, 0, 2, 0, 0, 133, 8, 0, 2, 0,
+            0, 0, 26, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 64, 5, 0, 0, 2, 0, 0, 2,
+            0, 0, 133, 8, 1, 0, 0, 0, 119, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+            0, 1, 0, 0, 0, 26, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 5, 0, 0, 1, 0,
+            0, 5, 0, 0, 4, 32, 0, 1, 0, 0, 0, 25, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+            0, 0, 4, 0, 0, 1, 0, 0, 2, 0, 0, 33, 0, 1, 0, 0, 0, 25, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1,
+            0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 1, 0, 0, 2, 0, 0, 33, 12, 0, 0, 0, 0, 21, 0, 0, 0, 24,
+            0, 8, 7, 0, 0, 0, 120, 3, 7, 0, 0, 0, 120, 3, 7, 0, 0, 0, 120, 3, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+        ]; 6];
+
+        for (speed, expected) in (1..7).zip(expected_outputs) {
+            let mut tmp_speed = speed;
+            let (output, output_len) =
+                ptngc_pack_array_xtc3(&mut input, &mut length, natoms, &mut tmp_speed);
+            assert_eq!(output[..output_len], expected,);
+        }
+    }
+
+    #[test]
+    fn zero_coordinates() {
+        #[rustfmt::skip]
+        let mut input = vec![
+            0,   0,   0,    // atom 0
+            10,  10,  10,   // atom 1
+            0,   0,   0,   // atom 2
+            30,  30,  30,   // atom 3
+        ];
+        let natoms = 4;
+        let mut speed = 6;
+        let mut length = input.len();
+        let (output, output_len) =
+            ptngc_pack_array_xtc3(&mut input, &mut length, natoms, &mut speed);
+        assert_eq!(
+            output[..output_len],
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 122, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0,
+                0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 27, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0,
+                0, 1, 0, 0, 0, 128, 6, 0, 0, 2, 0, 0, 7, 0, 0, 4, 40, 64, 0, 2, 0, 0, 0, 26, 0, 0,
+                0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 64, 5, 0, 0, 2, 0, 0, 2, 0, 0, 133, 8,
+                0, 2, 0, 0, 0, 26, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 64, 5, 0, 0,
+                2, 0, 0, 2, 0, 0, 133, 8, 1, 0, 0, 0, 119, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0,
+                0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 26, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0,
+                0, 0, 0, 5, 0, 0, 1, 0, 0, 5, 0, 0, 4, 32, 0, 1, 0, 0, 0, 25, 0, 0, 0, 1, 0, 1, 0,
+                0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 1, 0, 0, 2, 0, 0, 33, 0, 1, 0, 0, 0, 25,
+                0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 1, 0, 0, 2, 0, 0,
+                33, 12, 0, 0, 0, 0, 24, 0, 0, 0, 24, 0, 8, 31, 0, 0, 0, 168, 37, 0, 31, 0, 0, 0,
+                168, 37, 0, 31, 0, 0, 0, 168, 37, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             ]
         );
     }
