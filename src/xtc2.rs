@@ -39,5 +39,5 @@ pub(crate) fn ptngc_find_magic_index(maxval: u32) -> u32 {
     while MAGIC[i] <= maxval {
         i += 1;
     }
-    return i;
+    i.try_into().expect("u32 from usize")
 }
