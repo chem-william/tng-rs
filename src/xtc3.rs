@@ -430,28 +430,30 @@ fn insert_batch(
     encode_ints: &mut [i32],
     startenc: usize,
 ) -> usize {
-    let mut nencode = startenc * 3;
     let mut tmp_prevcoord = [prevcoord[0], prevcoord[1], prevcoord[2]];
 
-    if startenc > 0 {
-        for i in 0..startenc {
-            tmp_prevcoord[0] += encode_ints[i * 3];
-            tmp_prevcoord[1] += encode_ints[i * 3 + 1];
-            tmp_prevcoord[2] += encode_ints[i * 3 + 2];
-        }
+    for chunk in encode_ints.chunks_exact(3).take(startenc) {
+        tmp_prevcoord[0] += chunk[0];
+        tmp_prevcoord[1] += chunk[1];
+        tmp_prevcoord[2] += chunk[2];
     }
 
-    while (nencode < 3 + MAX_SMALL_RLE * 3) && (nencode < ntriplets_left * 3) {
-        encode_ints[nencode] = input_ptr[nencode] - tmp_prevcoord[0];
-        encode_ints[nencode + 1] = input_ptr[nencode + 1] - tmp_prevcoord[1];
-        encode_ints[nencode + 2] = input_ptr[nencode + 2] - tmp_prevcoord[2];
+    let total_triplets = (1 + MAX_SMALL_RLE).min(ntriplets_left);
+    let start_idx = startenc * 3;
+    let end_idx = total_triplets * 3;
 
-        tmp_prevcoord[0] = input_ptr[nencode];
-        tmp_prevcoord[1] = input_ptr[nencode + 1];
-        tmp_prevcoord[2] = input_ptr[nencode + 2];
-        nencode += 3;
+    for (encode_chunk, input_chunk) in encode_ints[start_idx..end_idx]
+        .chunks_exact_mut(3)
+        .zip(input_ptr[start_idx..].chunks_exact(3))
+    {
+        encode_chunk[0] = input_chunk[0] - tmp_prevcoord[0];
+        encode_chunk[1] = input_chunk[1] - tmp_prevcoord[1];
+        encode_chunk[2] = input_chunk[2] - tmp_prevcoord[2];
+
+        tmp_prevcoord = [input_chunk[0], input_chunk[1], input_chunk[2]];
     }
-    nencode
+
+    end_idx
 }
 
 // It is "large" if we have to increase the small index quite a
