@@ -166,23 +166,12 @@ impl Xtc3Context {
     }
 
     fn write_three_large(&mut self, i: usize) {
-        match self.current_large_type {
-            0 => {
-                for m in 0..3 {
-                    self.large_direct.push(self.has_large_ints[i * 3 + m]);
-                }
-            }
-            1 => {
-                for m in 0..3 {
-                    self.large_intra_delta.push(self.has_large_ints[i * 3 + m]);
-                }
-            }
-            _ => {
-                for m in 0..3 {
-                    self.large_inter_delta.push(self.has_large_ints[i * 3 + m]);
-                }
-            }
-        }
+        let target = match self.current_large_type {
+            0 => &mut self.large_direct,
+            1 => &mut self.large_intra_delta,
+            _ => &mut self.large_inter_delta,
+        };
+        target.extend_from_slice(&self.has_large_ints[i * 3..i * 3 + 3]);
     }
 
     fn large_instruction_change(&mut self, i: usize) {
