@@ -286,24 +286,13 @@ impl Xtc3Context {
         }
         // in c code: #endif
         self.has_large_type[self.has_large] = best_type;
-        match best_type {
-            0 => {
-                self.has_large_ints[self.has_large * 3] = direct[0];
-                self.has_large_ints[self.has_large * 3 + 1] = direct[1];
-                self.has_large_ints[self.has_large * 3 + 2] = direct[2];
-            }
-            1 => {
-                self.has_large_ints[self.has_large * 3] = intradelta[0];
-                self.has_large_ints[self.has_large * 3 + 1] = intradelta[1];
-                self.has_large_ints[self.has_large * 3 + 2] = intradelta[2];
-            }
-            2 => {
-                self.has_large_ints[self.has_large * 3] = interdelta[0];
-                self.has_large_ints[self.has_large * 3 + 1] = interdelta[1];
-                self.has_large_ints[self.has_large * 3 + 2] = interdelta[2];
-            }
-            _ => panic!("unknown best_type: {best_type}"),
-        }
+        let src = match best_type {
+            0 => &direct,
+            1 => &intradelta,
+            2 => &interdelta,
+            _ => unreachable!(),
+        };
+        self.has_large_ints[self.has_large * 3..self.has_large * 3 + 3].copy_from_slice(src);
         self.has_large += 1;
     }
 }
