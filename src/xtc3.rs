@@ -441,15 +441,8 @@ pub(crate) fn unpositive_int(val: i32) -> i32 {
 }
 
 fn compute_intlen(ints: &[u32]) -> f64 {
-    /* The largest value. */
-    let mut m = ints[0];
-    if ints[1] > m {
-        m = ints[1];
-    }
-    if ints[2] > m {
-        m = ints[2];
-    }
-    m.into()
+    // /* The largest value. */
+    ints.iter().copied().max().unwrap_or_default().into()
 }
 
 fn insert_batch(
