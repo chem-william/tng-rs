@@ -2,6 +2,7 @@ use crate::{
     bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_get_buflen},
     compress::{TNG_COMPRESS_ALGO_BWLZH1, TNG_COMPRESS_ALGO_BWLZH2, TNG_COMPRESS_ALGO_POS_XTC3},
     fix_point::FixT,
+    xtc3::ptngc_pack_array_xtc3,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
