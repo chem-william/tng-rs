@@ -38,8 +38,8 @@ const THRESHOLD_INTER_INTRA: f64 = 5.0;
 // if everything works fine, large can often be smaller than small, or
 // at least not as large as is large in magic.c. This is a key idea of
 // xtc3.
-const QUITE_LARGE: usize = 3;
-const IS_LARGE: usize = 6;
+const QUITE_LARGE: u32 = 3;
+const IS_LARGE: u32 = 6;
 
 // The base_compress routine first compresses all x coordinates, then
 // y and finally z. The bases used for each can be different. The
@@ -424,7 +424,7 @@ fn base_compress(data: &[u32], len: usize) -> (Vec<u8>, usize) {
     (output, output_len)
 }
 
-fn positive_int(item: i32) -> u32 {
+pub(crate) fn positive_int(item: i32) -> u32 {
     match item {
         i if i > 0 => 1 + (u32::try_from(i).expect("u32 from i32") - 1) * 2,
         i if i < 0 => 2 + (u32::try_from(-i).expect("u32 from i32") - 1) * 2,
@@ -432,7 +432,7 @@ fn positive_int(item: i32) -> u32 {
     }
 }
 
-fn unpositive_int(val: i32) -> i32 {
+pub(crate) fn unpositive_int(val: i32) -> i32 {
     let mut s = (val + 1) / 2;
     if val % 2 == 0 {
         s = -s;
@@ -441,15 +441,8 @@ fn unpositive_int(val: i32) -> i32 {
 }
 
 fn compute_intlen(ints: &[u32]) -> f64 {
-    /* The largest value. */
-    let mut m = ints[0];
-    if ints[1] > m {
-        m = ints[1];
-    }
-    if ints[2] > m {
-        m = ints[2];
-    }
-    m.into()
+    // /* The largest value. */
+    ints.iter().copied().max().unwrap_or_default().into()
 }
 
 fn insert_batch(
@@ -486,13 +479,15 @@ fn insert_batch(
 // It is "large" if we have to increase the small index quite a
 // bit. Not so much to be rejected by the not very large check
 // later.
-fn is_quite_large(input: &[i32], small_index: usize, max_large_index: usize) -> bool {
+fn is_quite_large(input: &[i32], small_index: u32, max_large_index: u32) -> bool {
     let mut is = false;
     if small_index + QUITE_LARGE >= max_large_index {
         is = true
     } else {
         for inp in input.iter().take(3) {
-            if positive_int(*inp) > ptngc_magic(small_index + QUITE_LARGE) {
+            if positive_int(*inp)
+                > ptngc_magic(usize::try_from(small_index + QUITE_LARGE).expect("usize from u32"))
+            {
                 is = true;
                 break;
             }
@@ -580,7 +575,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
     let mut small_index = max_large_index / 2;
 
     // Find the largest value that is not large. Not large is half index of large
-    let max_small = ptngc_magic(small_index);
+    let max_small = ptngc_magic(usize::try_from(small_index).expect("usize from u32"));
     let mut intmax = 0;
     for item in &input[..*length] {
         let s = positive_int(*item);
@@ -918,8 +913,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
                         ntriplets_left -= new_runlength;
                     }
                 } else if new_runlength != runlength || new_small_index != small_index {
-                    let mut change: i32 =
-                        i32::try_from(new_small_index - small_index).expect("i32 from usize");
+                    let mut change: u32 = new_small_index - small_index;
                     // c code: had `new_small_index` as an `int` and did a "<=" check
                     if new_small_index == 0 {
                         change = 0;
@@ -937,10 +931,14 @@ pub(crate) fn ptngc_pack_array_xtc3(
                                 }
                                 rejected = false;
 
-                                let change_usize = usize::try_from(change).expect("usize from i32");
                                 if isum
-                                    > f64::from(ptngc_magic(small_index + change_usize))
-                                        * f64::from(ptngc_magic(small_index + change_usize))
+                                    > f64::from(ptngc_magic(
+                                        usize::try_from(small_index + change)
+                                            .expect("usize from u32"),
+                                    )) * f64::from(ptngc_magic(
+                                        usize::try_from(small_index + change)
+                                            .expect("usize from u32"),
+                                    ))
                                 {
                                     rejected = true;
                                     change += 1;

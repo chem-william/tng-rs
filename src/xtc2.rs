@@ -23,7 +23,7 @@ pub(crate) const fn ptngc_magic(i: usize) -> u32 {
     MAGIC[i]
 }
 
-pub(crate) fn ptngc_find_magic_index(maxval: u32) -> usize {
+pub(crate) fn ptngc_find_magic_index(maxval: u32) -> u32 {
     let mut i;
 
     if maxval > MAGIC[MAX_MAGIC / 4] {
