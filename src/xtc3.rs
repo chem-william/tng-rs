@@ -452,7 +452,7 @@ fn insert_batch(
 
         tmp_prevcoord = [input_chunk[0], input_chunk[1], input_chunk[2]];
     }
-
+    dbg!(end_idx);
     end_idx
 }
 

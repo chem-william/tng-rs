@@ -76,6 +76,10 @@ mod integration {
 
         traj.file_headers_read();
         traj.file_headers_write();
+
+        while traj.frame_set_read_next().is_ok() {
+            traj.frame_set_write();
+        }
     }
 
     #[test]

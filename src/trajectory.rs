@@ -1783,6 +1783,411 @@ impl Trajectory {
         // TODO; HASH
     }
 
+    fn tng_compress(
+        &self,
+        block: &GenBlock,
+        n_frames: i64,
+        n_particles: i64,
+        data_type: &DataType,
+        data: &[u8],
+    ) -> Result<(), ()> {
+        if block.id != BlockID::TrajPositions || block.id != BlockID::TrajVelocities {
+            eprintln!("Can only compress positions and velocities with the TNG method");
+            return Err(());
+        }
+
+        if *data_type != DataType::Float || *data_type != DataType::Double {
+            eprintln!("Data type not supported");
+            return Err(());
+        }
+
+        if n_frames <= 0 || n_particles <= 0 {
+            eprintln!("Missing frames or particles. Cannot compress data with the TNG method");
+            return Err(());
+        }
+
+        let f_precision: f32 = 1.0 / (self.compression_precision as f32);
+        let d_precision: f64 = 1.0 / self.compression_precision;
+
+        if block.id == BlockID::TrajPositions {
+            // If there is only one frame in this frame set and there might be more
+            // do not store the algorithm as the compression algorithm, but find
+            // the best one without storing it
+            if n_frames == 1 && self.frame_set_n_frames > 1 {
+                let nalgo = usize::try_from(tng_compress_algo()).expect("usize from u64");
+                let mut alt_algo =
+                    vec![
+                        0;
+                        usize::try_from(nalgo * size_of_val(&self.compress_algo_pos))
+                            .expect("usize from u64")
+                    ];
+
+                // If we have already determined the initial coding and
+                // initial coding parameter do not determine them again
+                if !self.compress_algo_pos.is_empty() {
+                    alt_algo[0] = self.compress_algo_pos[0];
+                    alt_algo[1] = self.compress_algo_pos[1];
+                    alt_algo[2] = self.compress_algo_pos[2];
+                    alt_algo[3] = self.compress_algo_pos[3];
+                } else {
+                    alt_algo = vec![-1; 4];
+                }
+
+                // If the initial coding and initial coding parameter are -1
+                // they will be determined in tng_compress_pos/_float/
+                let dest = if *data_type == DataType::Float {
+                    debug_assert!(
+                        data.len() % 4 == 0,
+                        "Float‐branch: data_bytes.len() must be exactly count * 4"
+                    );
+
+                    // TODO: somehow pre-allocate this vec
+                    let mut floats = Vec::new();
+                    for chunk in data.chunks_exact(4) {
+                        let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
+                        floats.push(f32::from_le_bytes(arr));
+                    }
+
+                    let data = self.tng_compress_pos_float(
+                        &floats,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(n_frames).expect("usize from i64"),
+                        f_precision,
+                        0,
+                        &alt_algo,
+                    );
+                } else {
+                    // self.tng_compress_pos();
+                };
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Write a data block (particle or non-particle data)
+    fn data_block_write(
+        &mut self,
+        block: &mut GenBlock,
+        is_particle_data: bool,
+        block_index: usize,
+        mapping: ParticleMapping,
+    ) {
+        // If we have already started writing frame sets it is too late to write
+        // non-trajectory data blocks
+        let mut stride_length = 0;
+        let mut data = &mut Data::default();
+        let is_trajectory_block = self.current_trajectory_frame_set_output_file_pos > 0;
+
+        self.output_file_init();
+
+        if is_particle_data {
+            if is_trajectory_block {
+                data = &mut self.current_trajectory_frame_set.tr_particle_data[block_index];
+
+                // If this data block has not had any data added in this frame set
+                // do not write it
+                if data.first_frame_with_data < self.current_trajectory_frame_set.first_frame {
+                    return;
+                }
+
+                stride_length = max(1, data.stride_length);
+            } else {
+                data = &mut self.non_tr_particle_data[block_index];
+                stride_length = 1;
+            }
+        } else if is_trajectory_block {
+            data = &mut self.current_trajectory_frame_set.tr_data[block_index];
+
+            // If this data block has not had any data added in this frame set
+            // do not write it
+            if data.first_frame_with_data < self.current_trajectory_frame_set.first_frame {
+                return;
+            }
+
+            stride_length = max(1, data.stride_length);
+        } else {
+            data = &mut self.non_tr_data[block_index];
+            stride_length = 1;
+        }
+
+        let size = data.data_type.get_size();
+        block.name = Some(data.block_name.clone());
+        block.id = data.block_id;
+
+        // If writing frame independent data data->n_frames is 0, but n_frames
+        // is used for the loop writing the data (and reserving memory) and needs
+        // to be at least 1
+        let mut n_frames = max(1, data.n_frames);
+
+        if is_trajectory_block {
+            // If the frame is finished before writing the full number of frames
+            // make sure the data block is not longer than the frame set
+            n_frames = min(n_frames, self.current_trajectory_frame_set.n_frames);
+            n_frames -= data.first_frame_with_data - self.current_trajectory_frame_set.first_frame;
+        }
+
+        let mut frame_step = (n_frames - 1) / stride_length + 1;
+
+        match data.codec_id {
+            Compression::XTC => unimplemented!("XTC compression is not yet implemented"),
+            // TNG compression will use compression precision to get integers from
+            // floating point data. The compression multiplier stores that information
+            // to be able to return the precision of the compressed data
+            Compression::TNG => {
+                data.compression_multiplier = self.compression_precision;
+            }
+            // Uncompressed data blocks do not use compression multipliers at all.
+            // GZip compression does not need it either
+            Compression::Uncompressed | Compression::GZip => {
+                data.compression_multiplier = 1.0;
+            }
+        }
+
+        let mut n_particles = -1;
+        let mut num_first_particle = -1;
+        if data.dependency & PARTICLE_DEPENDENT != 0 {
+            if mapping.n_particles != 0 {
+                n_particles = mapping.n_particles;
+                num_first_particle = mapping.num_first_particle;
+            } else {
+                num_first_particle = 0;
+                if self.var_num_atoms {
+                    n_particles = self.current_trajectory_frame_set.n_particles;
+                } else {
+                    n_particles = self.n_particles;
+                }
+            }
+        }
+
+        let mut cloned_data = data.clone();
+        if data.dependency & PARTICLE_DEPENDENT != 0 {
+            block.block_contents_size = self.data_block_len_calculate(
+                &cloned_data,
+                true,
+                u64::try_from(n_frames).expect("(u64 from i64)"),
+                u64::try_from(frame_step).expect("(u64 from i64)"),
+                u64::try_from(stride_length).expect("(u64 from i64)"),
+                u64::try_from(num_first_particle).expect("u64 from i64"),
+                u64::try_from(n_particles).expect("u64 to i64"),
+            );
+        } else {
+            block.block_contents_size = self.data_block_len_calculate(
+                &cloned_data,
+                false,
+                u64::try_from(n_frames).expect("(u64 from i64)"),
+                u64::try_from(frame_step).expect("(u64 from i64)"),
+                u64::try_from(stride_length).expect("(u64 from i64)"),
+                0,
+                1,
+            );
+        }
+
+        let header_file_pos = self.get_output_file_position();
+
+        self.block_header_write(block);
+
+        // TODO: hash mode
+
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        utils::write_u8(out_file, cloned_data.data_type as u8);
+        utils::write_u8(out_file, cloned_data.dependency as u8);
+
+        if cloned_data.dependency & FRAME_DEPENDENT != 0 {
+            let temp = if stride_length > 1 { 1 } else { 0 };
+            utils::write_u8(out_file, temp);
+        }
+
+        utils::write_i64(
+            out_file,
+            cloned_data.n_values_per_frame,
+            self.endianness64,
+            self.output_swap64,
+        );
+        utils::write_u64(
+            out_file,
+            cloned_data.codec_id as u64,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        if cloned_data.codec_id != Compression::Uncompressed {
+            utils::write_f64(
+                out_file,
+                cloned_data.compression_multiplier,
+                self.endianness64,
+                self.output_swap64,
+            );
+        }
+
+        if cloned_data.n_frames > 0 && stride_length > 1 {
+            // FIXME(from c): first_frame_with_data is not reliably set
+            if cloned_data.first_frame_with_data == 0 {
+                cloned_data.first_frame_with_data = self.current_trajectory_frame_set.first_frame;
+            }
+            utils::write_i64(
+                out_file,
+                cloned_data.first_frame_with_data,
+                self.endianness64,
+                self.output_swap64,
+            );
+            utils::write_i64(
+                out_file,
+                stride_length,
+                self.endianness64,
+                self.output_swap64,
+            );
+        }
+
+        if cloned_data.dependency & PARTICLE_DEPENDENT != 0 {
+            utils::write_i64(
+                out_file,
+                num_first_particle,
+                self.endianness64,
+                self.output_swap64,
+            );
+            utils::write_i64(out_file, n_particles, self.endianness64, self.output_swap64);
+        }
+
+        if cloned_data.data_type == DataType::Char {
+            if let Some(strings_3d) = cloned_data.strings {
+                if cloned_data.dependency & PARTICLE_DEPENDENT != 0 {
+                    for i in 0..frame_step {
+                        let first_dim_values = &strings_3d[i as usize];
+                        for j in num_first_particle..num_first_particle + n_particles {
+                            let second_dim_values = &first_dim_values[j as usize];
+                            for k in 0..cloned_data.n_values_per_frame {
+                                utils::fwrite_str(out_file, &second_dim_values[k as usize]);
+                            }
+                        }
+                    }
+                } else {
+                    for i in 0..frame_step {
+                        for j in 0..cloned_data.n_values_per_frame {
+                            utils::fwrite_str(out_file, &strings_3d[0][i as usize][j as usize]);
+                        }
+                    }
+                }
+            }
+        } else {
+            let mut full_data_len = size
+                * usize::try_from(frame_step * cloned_data.n_values_per_frame)
+                    .expect("usize from i64");
+            if cloned_data.dependency & PARTICLE_DEPENDENT != 0 {
+                full_data_len *= usize::try_from(n_particles).expect("usize from i64");
+            }
+
+            let mut contents = vec![0; full_data_len];
+            if let Some(values) = cloned_data.values {
+                contents = values.clone();
+
+                // If writing TNG compressed data the endianness is taken into account by
+                // the compression routines. TNG compressed data is always written as little endian
+                if cloned_data.codec_id != Compression::Uncompressed {
+                    match cloned_data.data_type {
+                        DataType::Float => match cloned_data.codec_id {
+                            Compression::Uncompressed | Compression::GZip => {
+                                if let Some(output_swap32) = self.output_swap32 {
+                                    debug_assert!(full_data_len % 4 == 0);
+
+                                    for chunk in contents.chunks_exact_mut(size) {
+                                        let mut val = u32::from_ne_bytes(chunk.try_into().unwrap());
+                                        output_swap32(self.endianness32, &mut val);
+
+                                        chunk.copy_from_slice(&val.to_ne_bytes());
+                                    }
+                                }
+                            }
+                            Compression::XTC | Compression::TNG => {
+                                let multiplier = cloned_data.compression_multiplier;
+                                if (multiplier - 1.0).abs() > 0.00001
+                                    || self.output_swap32.is_some()
+                                {
+                                    for chunk in contents.chunks_exact_mut(size) {
+                                        let orig_bits =
+                                            u32::from_ne_bytes(chunk.try_into().unwrap());
+                                        let mut val = f32::from_bits(orig_bits);
+                                        val *= multiplier as f32;
+
+                                        let mut new_bits = val.to_bits();
+                                        if let Some(output_swap32) = self.output_swap32 {
+                                            output_swap32(self.endianness32, &mut new_bits)
+                                        }
+                                        chunk.copy_from_slice(&new_bits.to_ne_bytes());
+                                    }
+                                }
+                            }
+                        },
+                        DataType::Int => {
+                            if let Some(output_swap64) = self.output_swap64 {
+                                debug_assert!(full_data_len % 8 == 0);
+
+                                for chunk in contents.chunks_exact_mut(size) {
+                                    let mut val = u64::from_ne_bytes(chunk.try_into().unwrap());
+                                    output_swap64(self.endianness64, &mut val);
+
+                                    chunk.copy_from_slice(&val.to_ne_bytes());
+                                }
+                            }
+                        }
+                        DataType::Double => match cloned_data.codec_id {
+                            Compression::Uncompressed | Compression::GZip => {
+                                if let Some(output_swap64) = self.output_swap64 {
+                                    debug_assert!(full_data_len % 8 == 0);
+
+                                    for chunk in contents.chunks_exact_mut(size) {
+                                        let mut val = u64::from_ne_bytes(chunk.try_into().unwrap());
+                                        output_swap64(self.endianness64, &mut val);
+
+                                        chunk.copy_from_slice(&val.to_ne_bytes());
+                                    }
+                                }
+                            }
+                            Compression::XTC | Compression::TNG => {
+                                let multiplier = cloned_data.compression_multiplier;
+                                if (multiplier - 1.0).abs() > 0.00001
+                                    || self.output_swap64.is_some()
+                                {
+                                    for chunk in contents.chunks_exact_mut(size) {
+                                        let orig_bits =
+                                            u64::from_ne_bytes(chunk.try_into().unwrap());
+                                        let mut val = f64::from_bits(orig_bits);
+                                        val *= multiplier as f64;
+
+                                        let mut new_bits = val.to_bits();
+                                        if let Some(output_swap64) = self.output_swap64 {
+                                            output_swap64(self.endianness64, &mut new_bits)
+                                        }
+                                        chunk.copy_from_slice(&new_bits.to_ne_bytes());
+                                    }
+                                }
+                            }
+                        },
+                        DataType::Char => {}
+                    }
+                }
+            } else {
+                // the c code fills `contents` with 0, but we've already done that
+            }
+
+            let block_data_len = full_data_len;
+
+            match cloned_data.codec_id {
+                Compression::XTC => {
+                    warn!("XTC Compression not implemented yet");
+                    cloned_data.codec_id = Compression::Uncompressed;
+                }
+                Compression::TNG => {
+                    todo!();
+                    // self.tng_compress();
+                }
+                Compression::Uncompressed => todo!(),
+                Compression::GZip => todo!(),
+            }
+            todo!("src/lib/tng_io.c, line 5798");
+        }
+    }
+
     pub fn file_headers_write(&mut self) {
         let mut total_len = 0;
         self.output_file_init();
@@ -1836,6 +2241,16 @@ impl Trajectory {
         self.general_info_block_write();
 
         self.molecules_block_write();
+
+        // FIXME(from c): Currently writing non-trajectory data blocks here.
+        // Should perhaps be moved
+        let mut block = GenBlock::new();
+
+        for i in 0..self.n_data_blocks {
+            block.id = self.non_tr_data[i].block_id;
+            todo!()
+            // self.data_block_write()
+        }
     }
 
     fn file_pos_of_subsequent_trajectory_block_get(&mut self) -> i64 {
