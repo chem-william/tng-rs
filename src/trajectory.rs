@@ -1,11 +1,15 @@
 use log::warn;
-use std::cmp::max;
+use std::cmp::{max, min};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::atom::Atom;
 use crate::bond::Bond;
 use crate::chain::Chain;
+use crate::compress::{
+    precision, quant_inter_differences, quant_intra_differences, quantize_float,
+};
 use crate::data::{Compression, Data, DataType};
+use crate::fix_point::{FixT, f64_to_fixt_pair};
 use crate::gen_block::{BlockID, GenBlock};
 use crate::molecule::Molecule;
 use crate::particle_mapping::ParticleMapping;
