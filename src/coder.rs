@@ -7,10 +7,10 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Coder {
-    pack_temporary: u32,
-    pack_temporary_bits: i32,
-    stat_overflow: i32,
-    stat_numval: i32,
+    pub(crate) pack_temporary: u32,
+    pub(crate) pack_temporary_bits: i32,
+    pub(crate) stat_overflow: i32,
+    pub(crate) stat_numval: i32,
 }
 
 impl Coder {
