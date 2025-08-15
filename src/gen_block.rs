@@ -2,7 +2,7 @@ use crate::{API_VERSION, MAX_STR_LEN, MD5_HASH_LEN};
 
 /// Standard non-trajectory blocks
 /// Block IDs of standard non-trajectory blocks
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 #[repr(u64)]
 pub(crate) enum BlockID {
     // === Standard non-trajectory blocks ===
@@ -108,13 +108,8 @@ pub(crate) enum BlockID {
     GmxAtomSelectionGroup = 0x1000_0000_1000_0080,
 
     // === Fallback ===
+    #[default]
     Unknown,
-}
-
-impl Default for BlockID {
-    fn default() -> Self {
-        BlockID::Unknown
-    }
 }
 
 impl BlockID {

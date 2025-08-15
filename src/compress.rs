@@ -43,8 +43,8 @@ pub(crate) fn quantize_float(
     n_frames: usize,
     precision: f32,
 ) -> Result<Vec<i32>, ()> {
-    let total = (n_atoms as usize)
-        .checked_mul(n_frames as usize)
+    let total = n_atoms
+        .checked_mul(n_frames)
         .and_then(|v| v.checked_mul(3))
         .expect("overflow computing quant length");
     let mut quant: Vec<i32> = Vec::with_capacity(total);
