@@ -138,9 +138,7 @@ fn compute_magic_bits(index: [u32; 3]) -> usize {
                 &mut largeint_tmp,
                 4,
             );
-            for j in 0..4 {
-                largeint[j] = largeint_tmp[j];
-            }
+            largeint[..4].copy_from_slice(&largeint_tmp[..4]);
         }
         ptngc_largeint_add(
             MAGIC[usize::try_from(index[i]).expect("usize from u32")] - 1,

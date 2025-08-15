@@ -552,9 +552,7 @@ impl Trajectory {
         self.input_file
             .as_mut()
             .expect("init input_file")
-            .seek(SeekFrom::Start(
-                start_pos + u64::try_from(block.block_contents_size).expect("u64 from i64"),
-            ))
+            .seek(SeekFrom::Start(start_pos + block.block_contents_size))
             .expect("no error handling");
 
         // If the output file and the input files are the same the number of
@@ -2152,7 +2150,7 @@ impl Trajectory {
                                         let orig_bits =
                                             u64::from_ne_bytes(chunk.try_into().unwrap());
                                         let mut val = f64::from_bits(orig_bits);
-                                        val *= multiplier as f64;
+                                        val *= multiplier;
 
                                         let mut new_bits = val.to_bits();
                                         if let Some(output_swap64) = self.output_swap64 {
@@ -2683,9 +2681,7 @@ impl Trajectory {
         self.input_file
             .as_mut()
             .expect("init input_file")
-            .seek(SeekFrom::Start(
-                u64::try_from(orig_file_pos).expect("u64 from i64"),
-            ))
+            .seek(SeekFrom::Start(orig_file_pos))
             .expect("no error handling");
     }
 
@@ -2919,8 +2915,8 @@ impl Trajectory {
             return None;
         }
 
-        let mut from_atoms = Vec::with_capacity(n_bonds as usize);
-        let mut to_atoms = Vec::with_capacity(n_bonds as usize);
+        let mut from_atoms = Vec::with_capacity(n_bonds);
+        let mut to_atoms = Vec::with_capacity(n_bonds);
 
         let atom_count = 0;
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
@@ -3921,9 +3917,7 @@ impl Trajectory {
         let first_frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
         let n_frames = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
         inp_file
-            .seek(SeekFrom::Start(
-                u64::try_from(file_pos).expect("u64 from i64"),
-            ))
+            .seek(SeekFrom::Start(file_pos))
             .expect("no error handling");
 
         Some(first_frame + n_frames)
@@ -3967,10 +3961,10 @@ impl Trajectory {
         let medium_stride_length = self.medium_stride_length;
 
         let temp_frame = self.first_frame_nr_of_next_frame_set_get();
-        if let Some(frame) = temp_frame {
-            if frame - first_frame > n_frames_per_frame_set {
-                n_frames_per_frame_set = frame - first_frame;
-            }
+        if let Some(frame) = temp_frame
+            && frame - first_frame > n_frames_per_frame_set
+        {
+            n_frames_per_frame_set = frame - first_frame;
         }
 
         let n_frames = self.num_frames_get().expect("able to get n_frames");
@@ -4310,12 +4304,12 @@ impl Trajectory {
                 let mut stat = self.data_find(match_block_id);
                 if stat.is_none() {
                     stat = self.particle_data_find(match_block_id);
-                    if stat.is_none() {
+                    if let Some(stat) = stat {
+                        data = stat;
+                        is_particle_data = true;
+                    } else {
                         self.reread_frame_set_at_file_pos(orig_file_pos);
                         return Err(());
-                    } else {
-                        data = stat.unwrap();
-                        is_particle_data = true;
                     }
                 } else {
                     data = stat.unwrap();

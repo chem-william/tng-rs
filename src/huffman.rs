@@ -285,19 +285,19 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
     for i in 0..codelength[ndict - 1].dict + 1 {
         // Do I have this value?
         let mut ihave = false;
-        for j in 0..ndict {
-            if codelength[j].dict == i {
+        for cl in codelength.iter().take(ndict) {
+            if cl.dict == i {
                 ihave = true;
                 writebits(1, 1, huffman_dict, &mut huffman_dict_index, &mut bitptr);
                 writebits(
-                    u32::try_from(codelength[j].length).expect("u32 from usize"),
+                    u32::try_from(cl.length).expect("u32 from usize"),
                     5,
                     huffman_dict,
                     &mut huffman_dict_index,
                     &mut bitptr,
                 );
                 huffman_dict_unpacked[usize::try_from(3 + i).expect("usize from u32")] =
-                    u32::try_from(codelength[j].length).expect("u32 from usize");
+                    u32::try_from(cl.length).expect("u32 from usize");
                 break;
             }
         }
