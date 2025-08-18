@@ -4,7 +4,7 @@ use crate::{
     xtc2::{ptngc_find_magic_index, ptngc_magic},
 };
 
-const IFLIPGAINCHECK: f64 = 0.890_898_718_140_339_27; /*  1./(2**(1./6)) */
+pub(crate) const IFLIPGAINCHECK: f64 = 0.890_898_718_140_339_27; /*  1./(2**(1./6)) */
 
 // Maximum number of large atoms for large RLE
 const MAX_LARGE_RLE: usize = 1024;
@@ -93,13 +93,13 @@ impl Default for Xtc3Context {
 }
 
 // Modifies three integer values for better compression of water
-fn swap_ints(input: &[i32], output: &mut [i32]) {
+pub(crate) fn swap_ints(input: &[i32], output: &mut [i32]) {
     output[0] = input[0] + input[1];
     output[1] = -input[1];
     output[2] = input[1] + input[2];
 }
 
-fn swap_is_better(input: &[i32], minint: &[i32; 3]) -> (u32, u32) {
+pub(crate) fn swap_is_better(input: &[i32], minint: &[i32; 3]) -> (u32, u32) {
     let mut normal_max = 0;
     let mut swapped_max = 0;
     let mut normal = [0; 3];
@@ -458,7 +458,7 @@ fn insert_batch(
 // It is "large" if we have to increase the small index quite a
 // bit. Not so much to be rejected by the not very large check
 // later.
-fn is_quite_large(input: &[i32], small_index: u32, max_large_index: u32) -> bool {
+pub(crate) fn is_quite_large(input: &[i32], small_index: u32, max_large_index: u32) -> bool {
     let mut is = false;
     if small_index + QUITE_LARGE >= max_large_index {
         is = true
