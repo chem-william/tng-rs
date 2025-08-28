@@ -27,6 +27,7 @@ pub(crate) const TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE: i32 = 3;
 pub(crate) const TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER: i32 = 6;
 pub(crate) const TNG_COMPRESS_ALGO_VEL_BWLZH_INTER: i32 = TNG_COMPRESS_ALGO_BWLZH1;
 pub(crate) const TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE: i32 = TNG_COMPRESS_ALGO_BWLZH2;
+pub(crate) const TNG_COMPRESS_ALGO_MAX: i32 = 11;
 
 // This becomes TNGP for positions (little endian) and TNGV for velocities. In ASCII
 const MAGIC_INT_POS: u32 = 0x50474E54;

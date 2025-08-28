@@ -1,3 +1,15 @@
+use crate::{
+    bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_get_buflen},
+    compress::{
+        TNG_COMPRESS_ALGO_BWLZH1, TNG_COMPRESS_ALGO_BWLZH2, TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA,
+        TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE, TNG_COMPRESS_ALGO_POS_XTC2,
+        TNG_COMPRESS_ALGO_POS_XTC3, TNG_COMPRESS_ALGO_TRIPLET,
+    },
+    fix_point::FixT,
+    xtc2::ptngc_pack_array_xtc2,
+    xtc3::{positive_int, ptngc_pack_array_xtc3},
+};
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Coder {
     pub(crate) pack_temporary: u32,
@@ -35,89 +47,133 @@ impl Coder {
     pub(crate) fn ptngc_write_many_bits(
         &mut self,
         value: &[u8],
-        nbits: &mut u32,
+        mut nbits: u32,
         output: &mut Vec<u8>,
     ) {
         let mut vptr = 0;
-        while *nbits >= 24 {
+        while nbits >= 24 {
             let v = ((u32::from(value[vptr])) << 16)
                 | ((u32::from(value[vptr + 1])) << 8)
                 | (u32::from(value[vptr + 2]));
             self.ptngc_writebits(v, 24, output);
             vptr += 3;
-            *nbits -= 24;
+            nbits -= 24;
         }
 
-        while *nbits >= 8 {
+        while nbits >= 8 {
             self.ptngc_writebits(u32::from(value[vptr]), 8, output);
             vptr += 1;
-            *nbits -= 8;
+            nbits -= 8;
         }
 
-        if *nbits > 0 {
-            self.ptngc_writebits(u32::from(value[vptr]), *nbits, output);
+        if nbits > 0 {
+            self.ptngc_writebits(u32::from(value[vptr]), nbits, output);
         }
     }
 
     // c version: Ptngc_pack_array
     pub(crate) fn pack_array(
         &mut self,
-        input: &[i32],
+        input: &mut [i32],
         length: &mut usize,
         coding: i32,
         coding_parameter: i32,
         n_atoms: usize,
-        speed: usize,
+        speed: &mut usize,
     ) -> (Vec<u8>, usize) {
-        unimplemented!();
-        // match coding {
-        //     TNG_COMPRESS_ALGO_BWLZH1 | TNG_COMPRESS_ALGO_BWLZH2 => {
-        //         let mut output = vec![0; 4 + bwlzh_get_buflen(*length)];
-        //         let i = *length;
-        //         let j = *length;
-        //         let k = *length;
-        //         let n = *length;
-        //         let n_frames = n / n_atoms / 3;
-        //         let mut cnt = 0;
-        //         let mut pval: Vec<u32> = vec![0; n];
+        match coding {
+            TNG_COMPRESS_ALGO_BWLZH1 | TNG_COMPRESS_ALGO_BWLZH2 => {
+                let mut output = vec![0; 4 + bwlzh_get_buflen(*length)];
+                let i = *length;
+                let j = *length;
+                let k = *length;
+                let n = *length;
+                let n_frames = n / n_atoms / 3;
+                let mut cnt = 0;
+                let mut pval: Vec<u32> = vec![0; n];
 
-        //         let mut most_negative = FixT::MAX31BIT as i32;
-        //         for i in 0..n {
-        //             if input[i] < most_negative {
-        //                 most_negative = input[i];
-        //             }
-        //         }
-        //         most_negative = -most_negative;
-        //         let bytes = (most_negative as u32).to_le_bytes();
-        //         output[0..4].copy_from_slice(&bytes);
+                let mut most_negative = FixT::MAX31BIT as i32;
+                for i in 0..n {
+                    if input[i] < most_negative {
+                        most_negative = input[i];
+                    }
+                }
+                most_negative = -most_negative;
+                let bytes = (most_negative as u32).to_le_bytes();
+                output[0..4].copy_from_slice(&bytes);
 
-        //         for i in 0..n_atoms {
-        //             for j in 0..3 {
-        //                 for k in 0..n_frames {
-        //                     let item = input[k * 3 * n_atoms + i * 3 + j];
-        //                     pval[cnt] = u32::try_from(item + most_negative).expect("u32 from i32");
-        //                     cnt += 1;
-        //                 }
-        //             }
-        //         }
+                for i in 0..n_atoms {
+                    for j in 0..3 {
+                        for k in 0..n_frames {
+                            let item = input[k * 3 * n_atoms + i * 3 + j];
+                            pval[cnt] = u32::try_from(item + most_negative).expect("u32 from i32");
+                            cnt += 1;
+                        }
+                    }
+                }
 
-        //         if speed >= 5 {
-        //             let output_len = bwlzh_compress(&pval, n, &mut output[4..]);
-        //         } else {
-        //             let output_len = bwlzh_compress_no_lz77(&pval, n, &mut output[4..]);
-        //         }
-        //         *length += 4;
+                let mut output_len = 0;
+                if speed >= 5 {
+                    output_len = bwlzh_compress(&pval, n, &mut output[4..]);
+                } else {
+                    output_len = bwlzh_compress_no_lz77(&pval, n, &mut output[4..]);
+                }
+                *length += 4;
 
-        //         return output;
-        //     }
-        //     TNG_COMPRESS_ALGO_POS_XTC3 => {
-        //         return ptngc_pack_array_xtc3(&mut input, &mut length, n_atoms, &mut speed);
-        //     }
-        //     TNG_COMPRESS_ALGO_POS_XTC2 => {
-        //         return ptngc_pack_array_xtc2();
-        //     }
-        //     _ => {}
-        // }
+                return (output, output_len);
+            }
+            TNG_COMPRESS_ALGO_POS_XTC3 => {
+                return ptngc_pack_array_xtc3(input, length, n_atoms, speed);
+            }
+            TNG_COMPRESS_ALGO_POS_XTC2 => {
+                return ptngc_pack_array_xtc2(self, input, length);
+            }
+            _ => {
+                // Allocate enough memory for output
+                let mut output = vec![0; 8 * *length];
+                let output_ptr = 0;
+
+                self.stat_numval = 0;
+                self.stat_overflow = 0;
+                match coding {
+                    TNG_COMPRESS_ALGO_TRIPLET
+                    | TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA
+                    | TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE => {
+                        // Pack triplets
+                        let ntriplets = *length / 3;
+                        // Determine max base and maxbits
+                        let max_base = 1 << coding_parameter;
+                        let maxbits = coding_parameter;
+                        let intmax = 0;
+                        for item in input.iter().take(*length) {
+                            let s = positive_int(*item);
+                            if s > intmax {
+                                intmax = s;
+                            }
+                        }
+                        // Store intmax
+                        self.pack_temporary_bits = 32;
+                        self.pack_temporary = intmax;
+                        self.out8bits(&mut output);
+                        while intmax >= max_base {
+                            max_base *= 2;
+                            maxbits += 1;
+                        }
+                        for i in 0..ntriplets {
+                            let mut s = [0; 3];
+                            for (j, &s_j) in s.iter().enumerate() {
+                                let item = input[i * 3 + j];
+                                // Find this symbol in table
+                                s_j = positive_int(item);
+                            }
+                            if self.pack_triplet() {}
+                        }
+                    }
+                }
+
+                (vec![], 0)
+            }
+        }
     }
 
     fn ptngc_write_pattern(&mut self, pattern: i32, nbits: i32, output: &mut Vec<u8>) {
@@ -135,5 +191,50 @@ impl Coder {
             mask2 >>= 1;
         }
         self.out8bits(output);
+    }
+
+    fn pack_triplet(
+        &self,
+        s: &[u32],
+        output: &mut Vec<u8>,
+        coding_parameter: i32,
+        max_base: u32,
+        maxbits: i32,
+    ) -> bool {
+        // Determine base for this triplet
+        let min_base = 1 << coding_parameter;
+        let mut this_base = min_base;
+        let mut jbase: u32 = 0;
+        let mut bits_per_value;
+        for i in 0..3 {
+            while s[i] >= this_base {
+                this_base *= 2;
+                jbase += 1;
+            }
+        }
+        bits_per_value = u32::try_from(coding_parameter).expect("u32 from i32") + jbase;
+        if jbase >= 3 {
+            if this_base > max_base {
+                return true;
+            }
+            bits_per_value = u32::try_from(maxbits).expect("u32 from i32");
+            jbase = 3;
+        }
+
+        // 2 bits selects the base
+        self.pack_temporary <<= 2;
+        self.pack_temporary_bits += 2;
+        self.pack_temporary |= jbase;
+        self.out8bits(output);
+        for i in 0..3 {
+            self.write32bits();
+        }
+
+        false
+    }
+
+    fn write32bits(&self) -> _ {
+        unimplemented!("line 110 coder.c")
+        todo!()
     }
 }
