@@ -5,7 +5,6 @@ use crate::{
         TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE, TNG_COMPRESS_ALGO_POS_XTC2,
         TNG_COMPRESS_ALGO_POS_XTC3, TNG_COMPRESS_ALGO_TRIPLET,
     },
-    fix_point::FixT,
     xtc2::ptngc_pack_array_xtc2,
     xtc3::{positive_int, ptngc_pack_array_xtc3},
 };
@@ -80,24 +79,22 @@ impl Coder {
         coding_parameter: i32,
         n_atoms: usize,
         speed: &mut usize,
-    ) -> (Vec<u8>, usize) {
+    ) -> Option<(Vec<u8>, usize)> {
         match coding {
             TNG_COMPRESS_ALGO_BWLZH1 | TNG_COMPRESS_ALGO_BWLZH2 => {
                 let mut output = vec![0; 4 + bwlzh_get_buflen(*length)];
-                let i = *length;
-                let j = *length;
-                let k = *length;
                 let n = *length;
                 let n_frames = n / n_atoms / 3;
                 let mut cnt = 0;
                 let mut pval: Vec<u32> = vec![0; n];
 
-                let mut most_negative = FixT::MAX31BIT as i32;
-                for i in 0..n {
-                    if input[i] < most_negative {
-                        most_negative = input[i];
-                    }
-                }
+                // let mut most_negative = FixT::MAX31BIT as i32;
+                let mut most_negative = input
+                    .iter()
+                    .take(n)
+                    .copied()
+                    .min()
+                    .expect("a negative number");
                 most_negative = -most_negative;
                 let bytes = (most_negative as u32).to_le_bytes();
                 output[0..4].copy_from_slice(&bytes);
@@ -112,26 +109,22 @@ impl Coder {
                     }
                 }
 
-                let mut output_len = 0;
-                if speed >= 5 {
-                    output_len = bwlzh_compress(&pval, n, &mut output[4..]);
+                let mut output_len = if *speed >= 5 {
+                    bwlzh_compress(&pval, n, &mut output[4..])
                 } else {
-                    output_len = bwlzh_compress_no_lz77(&pval, n, &mut output[4..]);
-                }
-                *length += 4;
+                    bwlzh_compress_no_lz77(&pval, n, &mut output[4..])
+                };
+                output_len += 4;
 
-                return (output, output_len);
+                Some((output, output_len))
             }
             TNG_COMPRESS_ALGO_POS_XTC3 => {
-                return ptngc_pack_array_xtc3(input, length, n_atoms, speed);
+                Some(ptngc_pack_array_xtc3(input, length, n_atoms, speed))
             }
-            TNG_COMPRESS_ALGO_POS_XTC2 => {
-                return ptngc_pack_array_xtc2(self, input, length);
-            }
+            TNG_COMPRESS_ALGO_POS_XTC2 => Some(ptngc_pack_array_xtc2(self, input, length)),
             _ => {
                 // Allocate enough memory for output
-                let mut output = vec![0; 8 * *length];
-                let output_ptr = 0;
+                let mut output = Vec::with_capacity(8 * *length);
 
                 self.stat_numval = 0;
                 self.stat_overflow = 0;
@@ -142,9 +135,9 @@ impl Coder {
                         // Pack triplets
                         let ntriplets = *length / 3;
                         // Determine max base and maxbits
-                        let max_base = 1 << coding_parameter;
-                        let maxbits = coding_parameter;
-                        let intmax = 0;
+                        let mut max_base = 1 << coding_parameter;
+                        let mut maxbits = coding_parameter;
+                        let mut intmax = 0;
                         for item in input.iter().take(*length) {
                             let s = positive_int(*item);
                             if s > intmax {
@@ -161,17 +154,34 @@ impl Coder {
                         }
                         for i in 0..ntriplets {
                             let mut s = [0; 3];
-                            for (j, &s_j) in s.iter().enumerate() {
+                            for (j, s_j) in s.iter_mut().enumerate() {
                                 let item = input[i * 3 + j];
                                 // Find this symbol in table
-                                s_j = positive_int(item);
+                                *s_j = positive_int(item);
                             }
-                            if self.pack_triplet() {}
+                            if self.pack_triplet(
+                                &s,
+                                &mut output,
+                                coding_parameter,
+                                max_base,
+                                maxbits,
+                            ) {
+                                return None;
+                            }
+                        }
+                    }
+                    _ => {
+                        for &item in input.iter().take(3) {
+                            if self.pack_stopbits_item(item, &mut output, coding_parameter) {
+                                return None;
+                            }
                         }
                     }
                 }
+                self.ptngc_pack_flush(&mut output);
+                let output_length = output.len();
 
-                (vec![], 0)
+                Some((output, output_length))
             }
         }
     }
@@ -194,7 +204,7 @@ impl Coder {
     }
 
     fn pack_triplet(
-        &self,
+        &mut self,
         s: &[u32],
         output: &mut Vec<u8>,
         coding_parameter: i32,
@@ -206,8 +216,8 @@ impl Coder {
         let mut this_base = min_base;
         let mut jbase: u32 = 0;
         let mut bits_per_value;
-        for i in 0..3 {
-            while s[i] >= this_base {
+        for &s_i in s.iter().take(3) {
+            while s_i >= this_base {
                 this_base *= 2;
                 jbase += 1;
             }
@@ -226,15 +236,181 @@ impl Coder {
         self.pack_temporary_bits += 2;
         self.pack_temporary |= jbase;
         self.out8bits(output);
-        for i in 0..3 {
-            self.write32bits();
+        for &s_i in s.iter().take(3) {
+            self.ptngc_write32bits(s_i, bits_per_value, output);
         }
 
         false
     }
 
-    fn write32bits(&self) -> _ {
-        unimplemented!("line 110 coder.c")
-        todo!()
+    /// Write up to 32 bits
+    fn ptngc_write32bits(&mut self, value: u32, mut nbits: u32, output: &mut Vec<u8>) {
+        let mut mask = if nbits >= 8 {
+            0xFF << (nbits - 8)
+        } else {
+            0xFF >> (8 - nbits)
+        };
+
+        while nbits > 8 {
+            // Make room for the bits
+            nbits -= 8;
+            self.pack_temporary <<= 8;
+            self.pack_temporary_bits += 8;
+            self.pack_temporary |= (value & mask) >> nbits;
+            self.out8bits(output);
+            mask >>= 8;
+        }
+
+        if nbits > 0 {
+            self.ptngc_writebits(value & mask, nbits, output);
+        }
+    }
+
+    fn pack_stopbits_item(
+        &mut self,
+        item: i32,
+        output: &mut Vec<u8>,
+        coding_parameter: i32,
+    ) -> bool {
+        // Find this symbol in table
+        let s = positive_int(item);
+
+        self.write_stop_bit_code(s, coding_parameter, output)
+    }
+
+    fn write_stop_bit_code(
+        &mut self,
+        mut s: u32,
+        mut coding_parameter: i32,
+        output: &mut Vec<u8>,
+    ) -> bool {
+        loop {
+            let extract = !(0xffffffffu32 << coding_parameter);
+            let mut this = (s & extract) << 1;
+            s >>= coding_parameter;
+            if s > 0 {
+                this |= 1;
+                self.stat_overflow += 1;
+            }
+            self.pack_temporary <<= coding_parameter + 1;
+            self.pack_temporary_bits += coding_parameter + 1;
+            self.pack_temporary |= this;
+            self.out8bits(output);
+            if s > 0 {
+                coding_parameter >>= 1;
+                if coding_parameter < 1 {
+                    coding_parameter = 1;
+                }
+            }
+            if s == 0 {
+                break;
+            }
+        }
+        self.stat_numval += 1;
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_pack(input: &[i32], algo: i32, natoms: usize) -> (Vec<u8>, usize) {
+        let mut coder = Coder::default();
+        let mut input = input.to_vec();
+        let mut length = input.len();
+        let mut speed = 9;
+        let coding_param = 0;
+        coder
+            .pack_array(
+                &mut input,
+                &mut length,
+                algo,
+                coding_param,
+                natoms,
+                &mut speed,
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn bwlzh1() {
+        let input = vec![5, -10, 42, -7, 0, -999];
+
+        let (output, output_length) = run_pack(&input, TNG_COMPRESS_ALGO_BWLZH1, 2);
+
+        assert_eq!(
+            output[..output_length],
+            [
+                231, 3, 0, 0, 6, 0, 0, 0, 6, 0, 0, 0, 6, 0, 0, 0, 4, 0, 0, 0, 0, 6, 0, 0, 0, 59, 0,
+                0, 0, 1, 0, 6, 0, 0, 0, 6, 0, 0, 0, 2, 0, 0, 0, 221, 164, 37, 0, 0, 6, 0, 0, 238,
+                0, 0, 2, 32, 0, 34, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 8, 209, 132, 97, 24, 0, 6, 0, 0, 0, 29, 0, 0, 0, 1, 0, 6, 0, 0, 0, 6,
+                0, 0, 0, 2, 0, 0, 0, 199, 100, 7, 0, 0, 5, 0, 0, 6, 0, 0, 34, 138, 40, 227, 0, 3,
+                0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 88, 6, 0, 0, 3, 0,
+                0, 2, 0, 0, 134, 40, 128
+            ]
+        );
+    }
+
+    #[test]
+    fn bwlzh2() {
+        let input = vec![-1, -2, -3, 10, 20, 30];
+        let (output, output_length) = run_pack(&input, TNG_COMPRESS_ALGO_BWLZH2, 1);
+
+        assert_eq!(
+            output[..output_length],
+            [
+                3, 0, 0, 0, 6, 0, 0, 0, 6, 0, 0, 0, 6, 0, 0, 0, 2, 0, 0, 0, 0, 5, 0, 0, 0, 33, 0,
+                0, 0, 1, 0, 5, 0, 0, 0, 5, 0, 0, 0, 2, 0, 0, 0, 215, 16, 11, 0, 0, 5, 0, 0, 35, 0,
+                0, 68, 8, 128, 34, 0, 140, 1, 24, 0, 3, 0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3,
+                0, 0, 0, 1, 0, 0, 0, 88, 6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128, 0, 3, 0, 0, 0,
+                27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 88, 6, 0, 0, 3, 0, 0, 2, 0,
+                0, 134, 40, 128
+            ]
+        );
+    }
+
+    #[test]
+    fn xtc2() {
+        let input = vec![-1, -2, -3, 10, 20, 30];
+        let (output, output_length) = run_pack(&input, TNG_COMPRESS_ALGO_POS_XTC2, 1);
+
+        assert_eq!(
+            output[..output_length],
+            [
+                0, 0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 6, 8, 10, 12, 5, 64, 0, 18, 38, 224
+            ]
+        );
+    }
+
+    #[test]
+    fn xtc3() {
+        let input = vec![-1, -2, -3, 10, 20, 30];
+        let (output, output_length) = run_pack(&input, TNG_COMPRESS_ALGO_POS_XTC3, 1);
+
+        assert_eq!(
+            output[..output_length],
+            [
+                2, 0, 0, 0, 4, 0, 0, 0, 6, 0, 0, 0, 2, 0, 0, 0, 121, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0,
+                0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 26, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0,
+                0, 1, 0, 0, 0, 128, 5, 0, 0, 2, 0, 0, 4, 0, 0, 33, 66, 0, 2, 0, 0, 0, 26, 0, 0, 0,
+                1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 64, 5, 0, 0, 2, 0, 0, 2, 0, 0, 133, 8, 0,
+                2, 0, 0, 0, 26, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 64, 5, 0, 0, 2,
+                0, 0, 2, 0, 0, 133, 8, 0, 0, 0, 0, 6, 0, 0, 0, 0, 20, 0, 0, 0, 24, 0, 8, 12, 0, 0,
+                0, 11, 23, 0, 0, 0, 22, 0, 34, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ]
+        );
+    }
+
+    #[test]
+    fn triplet() {
+        let input = vec![-1, -2, -3, 10, 20, 30];
+        let (output, output_length) = run_pack(&input, TNG_COMPRESS_ALGO_TRIPLET, 1);
+
+        assert_eq!(
+            output[..output_length],
+            [0, 0, 0, 59, 194, 16, 109, 57, 251]
+        );
     }
 }
