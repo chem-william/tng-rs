@@ -128,8 +128,8 @@ pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: u
 }
 
 pub(crate) fn determine_best_pos_initial_coding(
-    quant: &[i32],
-    quant_intra: &[i32],
+    quant: &mut [i32],
+    quant_intra: &mut [i32],
     n_atoms: usize,
     speed: usize,
     prec_hi: FixT,
@@ -149,21 +149,22 @@ pub(crate) fn determine_best_pos_initial_coding(
         // Start with XTC2, it should always work
         current_coding = TNG_COMPRESS_ALGO_POS_XTC2;
         current_coding_parameter = 0;
-        // let nitems = compress_quantized_pos(
-        //     quant,
-        //     None,
-        //     Some(quant_intra),
-        //     n_atoms,
-        //     1,
-        //     speed,
-        //     current_coding,
-        //     current_coding_parameter,
-        //     0,
-        //     0,
-        //     prec_hi,
-        //     prec_lo,
-        //     None,
-        // );
+        let nitems = compress_quantized_pos(
+            quant,
+            None,
+            Some(quant_intra),
+            n_atoms.try_into().expect("usize from u32"),
+            1,
+            speed,
+            current_coding,
+            current_coding_parameter,
+            0,
+            0,
+            prec_hi,
+            prec_lo,
+            &mut None,
+        );
+        best_coding = current_coding;
     }
     (0, 0)
 }
@@ -189,13 +190,14 @@ fn bufferfix(buf: &mut [u8], v: FixT, num: usize) {
     }
 }
 
+/// Perform position compression from the quantized data
 fn compress_quantized_pos(
-    quant: &[i32],
-    quant_inter: Option<&[i32]>,
-    quant_intra: Option<&[i32]>,
+    quant: &mut [i32],
+    quant_inter: Option<&mut [i32]>,
+    mut quant_intra: Option<&mut [i32]>,
     n_atoms: u32,
     n_frames: u32,
-    speed: usize,
+    mut speed: usize,
     initial_coding: i32,
     initial_coding_parameter: i32,
     coding: i32,
@@ -204,6 +206,8 @@ fn compress_quantized_pos(
     prec_lo: FixT,
     data: &mut Option<&mut [u8]>,
 ) -> usize {
+    let datablock;
+
     let mut bufloc = 0;
     // Information needed for decompression
     if let Some(mut_data) = data.as_mut() {
@@ -274,20 +278,125 @@ fn compress_quantized_pos(
     bufloc += 4;
 
     // The initial frame
+    let output_length;
+    let length = n_atoms * 3;
     match initial_coding {
         TNG_COMPRESS_ALGO_POS_XTC2
         | TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE
         | TNG_COMPRESS_ALGO_POS_XTC3 => {
-            let coder = Coder::default();
-            let length = n_atoms * 3;
-            // let datablock =
-            //     coder.pack_array(quant, length, coding, coding_parameter, n_atoms, speed);
+            let mut coder = Coder::default();
+            (datablock, output_length) = coder
+                .pack_array(
+                    quant,
+                    &mut length.try_into().expect("usize from u32"),
+                    initial_coding,
+                    initial_coding_parameter,
+                    n_atoms.try_into().expect("usize from u32"),
+                    &mut speed,
+                )
+                .expect("packed array");
         }
-        TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {}
-        _ => {}
+        TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
+            let mut coder = Coder::default();
+            (datablock, output_length) = coder
+                .pack_array(
+                    quant_intra.as_mut().expect("quant_intra to be Some"),
+                    &mut length.try_into().expect("usize from u32"),
+                    initial_coding,
+                    initial_coding_parameter,
+                    n_atoms.try_into().expect("usize from u32"),
+                    &mut speed,
+                )
+                .expect("packed array");
+        }
+        _ => {
+            unreachable!()
+        }
     }
+    // Block length
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(output_length).expect("u32 from usize")),
+            4,
+        );
+    }
+    bufloc += 4;
+    // The actual data block
+    if let Some(mut_data) = data.as_mut() {
+        mut_data[bufloc..].copy_from_slice(&datablock[..output_length]);
+    }
+    bufloc += output_length;
 
-    0
+    // The remaining frames
+    if n_frames > 1 {
+        let us_natoms = usize::try_from(n_atoms).expect("usize from u32");
+        let fallback_len: usize = us_natoms
+            .checked_mul(3)
+            .and_then(|v| v.checked_mul(usize::try_from(n_frames).expect("usize from u32")))
+            .expect("fallback_len overflow");
+        let result = match coding {
+            // Inter-frame compression
+            TNG_COMPRESS_ALGO_POS_STOPBIT_INTER
+            | TNG_COMPRESS_ALGO_POS_TRIPLET_INTER
+            | TNG_COMPRESS_ALGO_POS_BWLZH_INTER => {
+                let mut coder = Coder::default();
+                coder.pack_array(
+                    &mut quant_inter.expect("quant_inter to be Some")[us_natoms * 3..],
+                    &mut fallback_len.try_into().expect("usize from u32"),
+                    coding,
+                    coding_parameter,
+                    us_natoms,
+                    &mut speed,
+                )
+            }
+            // One-to-one compression?
+            TNG_COMPRESS_ALGO_POS_XTC2
+            | TNG_COMPRESS_ALGO_POS_XTC3
+            | TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE => {
+                let mut coder = Coder::default();
+                coder.pack_array(
+                    &mut quant[us_natoms * 3..],
+                    &mut fallback_len.try_into().expect("usize from u32"),
+                    coding,
+                    coding_parameter,
+                    us_natoms,
+                    &mut speed,
+                )
+            }
+            // Intra-frame compression?
+            TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
+                let mut coder = Coder::default();
+                coder.pack_array(
+                    &mut quant_intra.expect("quant_intra to be Some")[us_natoms * 3..],
+                    &mut fallback_len.try_into().expect("usize from u32"),
+                    coding,
+                    coding_parameter,
+                    us_natoms,
+                    &mut speed,
+                )
+            }
+            _ => None,
+        };
+        // Always have a length and a data slice to write
+        let (datablock, output_length) = result.unwrap_or_else(|| (Vec::new(), fallback_len));
+        // Block length
+        if let Some(mut_data) = data.as_mut() {
+            bufferfix(
+                &mut mut_data[bufloc..],
+                FixT::from(u32::try_from(output_length).expect("u32 from usize")),
+                4,
+            );
+        }
+        bufloc += 4;
+        if !datablock.is_empty() {
+            if let Some(mut_data) = data.as_mut() {
+                mut_data[bufloc..].copy_from_slice(&datablock[..output_length]);
+            }
+        }
+        bufloc += output_length;
+    }
+    bufloc
 }
 
 #[cfg(test)]
