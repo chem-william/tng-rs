@@ -88,7 +88,7 @@ mod tests {
         assert_eq!(hist[3], 2);
         assert_eq!(hist[7], 1);
         // the rest remain zero
-        for (i, &c) in hist.iter().enumerate() {
+        for (i, _) in hist.iter().enumerate() {
             if i == 1 || i == 3 || i == 7 {
                 continue;
             }
