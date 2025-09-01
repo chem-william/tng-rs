@@ -324,16 +324,16 @@ fn compress_quantized_pos(
     bufloc += 4;
     // The actual data block
     if let Some(mut_data) = data.as_mut() {
-        mut_data[bufloc..].copy_from_slice(&datablock[..output_length]);
+        mut_data[bufloc..bufloc + output_length].copy_from_slice(&datablock[..output_length]);
     }
     bufloc += output_length;
 
     // The remaining frames
     if n_frames > 1 {
         let us_natoms = usize::try_from(n_atoms).expect("usize from u32");
-        let fallback_len: usize = us_natoms
+        let mut fallback_len = us_natoms
             .checked_mul(3)
-            .and_then(|v| v.checked_mul(usize::try_from(n_frames).expect("usize from u32")))
+            .and_then(|v| v.checked_mul(usize::try_from(n_frames - 1).expect("usize from u32")))
             .expect("fallback_len overflow");
         let result = match coding {
             // Inter-frame compression
@@ -343,7 +343,7 @@ fn compress_quantized_pos(
                 let mut coder = Coder::default();
                 coder.pack_array(
                     &mut quant_inter.expect("quant_inter to be Some")[us_natoms * 3..],
-                    &mut fallback_len.try_into().expect("usize from u32"),
+                    &mut fallback_len,
                     coding,
                     coding_parameter,
                     us_natoms,
@@ -357,7 +357,7 @@ fn compress_quantized_pos(
                 let mut coder = Coder::default();
                 coder.pack_array(
                     &mut quant[us_natoms * 3..],
-                    &mut fallback_len.try_into().expect("usize from u32"),
+                    &mut fallback_len,
                     coding,
                     coding_parameter,
                     us_natoms,
@@ -369,7 +369,7 @@ fn compress_quantized_pos(
                 let mut coder = Coder::default();
                 coder.pack_array(
                     &mut quant_intra.expect("quant_intra to be Some")[us_natoms * 3..],
-                    &mut fallback_len.try_into().expect("usize from u32"),
+                    &mut fallback_len,
                     coding,
                     coding_parameter,
                     us_natoms,
@@ -389,10 +389,10 @@ fn compress_quantized_pos(
             );
         }
         bufloc += 4;
-        if !datablock.is_empty() {
-            if let Some(mut_data) = data.as_mut() {
-                mut_data[bufloc..].copy_from_slice(&datablock[..output_length]);
-            }
+        if !datablock.is_empty()
+            && let Some(mut_data) = data.as_mut()
+        {
+            mut_data[bufloc..bufloc + output_length].copy_from_slice(&datablock[..output_length]);
         }
         bufloc += output_length;
     }
@@ -483,5 +483,181 @@ mod buffer {
         assert_eq!(buf[1], 0xFF);
         assert_eq!(buf[2], 0xFF);
         assert_eq!(buf[3], 0x7F);
+    }
+}
+
+#[cfg(test)]
+mod compress_quantized_pos_tests {
+    use super::*;
+
+    fn u32le(b: &[u8]) -> u32 {
+        u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+    }
+
+    #[test]
+    fn xtc2_then_xtc3() {
+        let mut quant = [-1, -2, -3, 10, 20, 30, 5, -10, 42, -7, 0, -999];
+        let mut quant_inter = [0; 6];
+        let mut quant_intra = [0; 6];
+        let mut data = [0; 1024];
+        let n_atoms = 2;
+        let n_frames = 2;
+        let speed = 6;
+        let initial_coding = TNG_COMPRESS_ALGO_POS_XTC2;
+        let initial_coding_parameter = 0;
+        let coding = TNG_COMPRESS_ALGO_POS_XTC3;
+        let coding_parameter = 0;
+        let prec_hi = FixT::from(123);
+        let prec_lo = FixT::from(456);
+        let nitems = compress_quantized_pos(
+            &mut quant,
+            Some(&mut quant_inter),
+            Some(&mut quant_intra),
+            n_atoms,
+            n_frames,
+            speed,
+            initial_coding,
+            initial_coding_parameter,
+            coding,
+            coding_parameter,
+            prec_hi,
+            prec_lo,
+            &mut Some(&mut data),
+        );
+        let expected = [
+            84, 78, 71, 80, 2, 0, 0, 0, 2, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0,
+            0, 200, 1, 0, 0, 123, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 6, 8, 10,
+            12, 5, 64, 0, 18, 38, 224, 186, 0, 0, 0, 14, 0, 0, 0, 20, 0, 0, 0, 206, 7, 0, 0, 2, 0,
+            0, 0, 121, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 26,
+            0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 128, 5, 0, 0, 2, 0, 0, 4, 0, 0, 33,
+            66, 0, 2, 0, 0, 0, 26, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 64, 5, 0, 0,
+            2, 0, 0, 2, 0, 0, 133, 8, 0, 2, 0, 0, 0, 26, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1,
+            0, 0, 0, 64, 5, 0, 0, 2, 0, 0, 2, 0, 0, 133, 8, 0, 0, 0, 0, 6, 0, 0, 0, 0, 20, 0, 0, 0,
+            24, 0, 8, 13, 0, 0, 0, 156, 11, 0, 0, 0, 10, 18, 4, 0, 0, 50, 141, 16, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert_eq!(nitems, expected.len(), "nitems must match expected length");
+        assert_eq!(&data[..nitems], expected, "bytewise equality");
+
+        assert_eq!(u32le(&data[0..4]), MAGIC_INT_POS);
+        assert_eq!(u32le(&data[4..8]), n_atoms);
+        assert_eq!(u32le(&data[8..12]), n_frames);
+        assert_eq!(u32le(&data[12..16]), initial_coding as u32);
+        assert_eq!(u32le(&data[16..20]), initial_coding_parameter as u32);
+        assert_eq!(u32le(&data[20..24]), coding as u32);
+        assert_eq!(u32le(&data[24..28]), coding_parameter as u32);
+        assert_eq!(u32le(&data[28..32]), prec_lo.into());
+        assert_eq!(u32le(&data[32..36]), prec_hi.into());
+    }
+
+    #[test]
+    fn xtc3_then_onetoone_remaining_xtc2() {
+        let mut quant = [7, -7, 14, -14, 21, -21, -1, -2, -3, 10, 20, 30];
+        let mut quant_inter = [0; 6]; // Unused
+        let mut quant_intra = [0; 6]; // Unused
+        let mut data = [0; 1024];
+        let n_atoms = 2;
+        let n_frames = 2;
+        let speed = 6;
+        let initial_coding = TNG_COMPRESS_ALGO_POS_XTC3;
+        let initial_coding_parameter = 0;
+        let coding = TNG_COMPRESS_ALGO_POS_XTC2;
+        let coding_parameter = 0;
+        let prec_hi = FixT::from(0);
+        let prec_lo = FixT::from(0);
+        let nitems = compress_quantized_pos(
+            &mut quant,
+            Some(&mut quant_inter),
+            Some(&mut quant_intra),
+            n_atoms,
+            n_frames,
+            speed,
+            initial_coding,
+            initial_coding_parameter,
+            coding,
+            coding_parameter,
+            prec_hi,
+            prec_lo,
+            &mut Some(&mut data),
+        );
+
+        assert_eq!(u32le(&data[0..4]), MAGIC_INT_POS);
+        assert_eq!(u32le(&data[4..8]), n_atoms);
+        assert_eq!(u32le(&data[8..12]), n_frames);
+        assert_eq!(u32le(&data[12..16]), initial_coding as u32);
+        assert_eq!(u32le(&data[16..20]), initial_coding_parameter as u32);
+        assert_eq!(u32le(&data[20..24]), coding as u32);
+        assert_eq!(u32le(&data[24..28]), coding_parameter as u32);
+        assert_eq!(u32le(&data[28..32]), prec_lo.into());
+        assert_eq!(u32le(&data[32..36]), prec_hi.into());
+
+        let expected = [
+            84, 78, 71, 80, 2, 0, 0, 0, 2, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 187, 0, 0, 0, 28, 0, 0, 0, 14, 0, 0, 0, 42, 0, 0, 0, 2, 0,
+            0, 0, 121, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 26,
+            0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 128, 5, 0, 0, 2, 0, 0, 4, 0, 0, 33,
+            66, 0, 2, 0, 0, 0, 26, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 64, 5, 0, 0,
+            2, 0, 0, 2, 0, 0, 133, 8, 0, 2, 0, 0, 0, 26, 0, 0, 0, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1,
+            0, 0, 0, 64, 5, 0, 0, 2, 0, 0, 2, 0, 0, 133, 8, 0, 0, 0, 0, 6, 0, 0, 0, 0, 21, 0, 0, 0,
+            24, 0, 8, 22, 0, 0, 0, 206, 1, 29, 0, 0, 0, 28, 0, 36, 0, 0, 0, 236, 4, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 6, 8, 10, 12, 5, 64,
+            0, 18, 38, 224,
+        ];
+        assert_eq!(nitems, expected.len(), "nitems must match expected length");
+        assert_eq!(&data[..nitems], expected, "bytewise equality");
+    }
+
+    #[test]
+    fn bwlzh_intra_then_intra_remaining() {
+        let mut quant = [1, 2, 3, 4, 5, 6, -6, -5, -4, -3, -2, -1];
+        let mut quant_inter = [0; 6]; // Unused
+        let mut quant_intra = quant;
+        let mut data = [0; 1024];
+        let n_atoms = 2;
+        let n_frames = 2;
+        let speed = 9;
+        let initial_coding = TNG_COMPRESS_ALGO_POS_BWLZH_INTRA;
+        let initial_coding_parameter = 0;
+        let coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA;
+        let coding_parameter = 0;
+        let prec_hi = FixT::from(42);
+        let prec_lo = FixT::from(24);
+        let nitems = compress_quantized_pos(
+            &mut quant,
+            Some(&mut quant_inter),
+            Some(&mut quant_intra),
+            n_atoms,
+            n_frames,
+            speed,
+            initial_coding,
+            initial_coding_parameter,
+            coding,
+            coding_parameter,
+            prec_hi,
+            prec_lo,
+            &mut Some(&mut data),
+        );
+
+        assert_eq!(u32le(&data[0..4]), MAGIC_INT_POS);
+        assert_eq!(u32le(&data[4..8]), n_atoms);
+        assert_eq!(u32le(&data[8..12]), n_frames);
+        assert_eq!(u32le(&data[12..16]), initial_coding as u32);
+        assert_eq!(u32le(&data[16..20]), initial_coding_parameter as u32);
+        assert_eq!(u32le(&data[20..24]), coding as u32);
+        assert_eq!(u32le(&data[24..28]), coding_parameter as u32);
+        assert_eq!(u32le(&data[28..32]), prec_lo.into());
+        assert_eq!(u32le(&data[32..36]), prec_hi.into());
+
+        let expected = [
+            84, 78, 71, 80, 2, 0, 0, 0, 2, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0,
+            24, 0, 0, 0, 42, 0, 0, 0, 131, 0, 0, 0, 255, 255, 255, 255, 6, 0, 0, 0, 6, 0, 0, 0, 6,
+            0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 30, 0, 0, 0, 1, 0, 6, 0, 0, 0, 6, 0, 0, 0, 2, 0, 0,
+            0, 135, 120, 8, 0, 0, 5, 0, 0, 7, 0, 0, 17, 69, 28, 113, 0, 0, 3, 0, 0, 0, 27, 0, 0, 0,
+            1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 88, 6, 0, 0, 3, 0, 0, 2, 0, 0, 134, 40, 128,
+            0, 3, 0, 0, 0, 27, 0, 0, 0, 1, 0, 3, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 88, 6, 0, 0, 3,
+            0, 0, 2, 0, 0, 134, 40, 128, 8, 0, 0, 0, 0, 0, 0, 12, 242, 163, 100, 32,
+        ];
+        assert_eq!(nitems, expected.len(), "nitems must match expected length");
+        assert_eq!(&data[..nitems], expected, "bytewise equality");
     }
 }
