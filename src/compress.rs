@@ -138,18 +138,18 @@ pub(crate) fn determine_best_pos_initial_coding(
     initial_coding_parameter: i32,
 ) -> (i32, i32) {
     if initial_coding == -1 {
-        let mut best_coding = 0;
-        let mut best_coding_parameter = 0;
-        let mut best_coding_size = 0;
-        let mut current_coding: i32 = 0;
-        let mut current_coding_parameter = 0;
-        let mut current_coding_size = 0;
-        let mut coder = Coder::default();
+        let mut best_coding;
+        let mut best_coding_parameter;
+        let mut best_code_size;
+        let mut current_coding;
+        let mut current_coding_parameter;
+        let mut current_code_size;
+        let mut coder;
 
         // Start with XTC2, it should always work
         current_coding = TNG_COMPRESS_ALGO_POS_XTC2;
         current_coding_parameter = 0;
-        let nitems = compress_quantized_pos(
+        current_code_size = compress_quantized_pos(
             quant,
             None,
             Some(quant_intra),
@@ -165,8 +165,126 @@ pub(crate) fn determine_best_pos_initial_coding(
             &mut None,
         );
         best_coding = current_coding;
+        best_coding_parameter = current_coding_parameter;
+        best_code_size = current_code_size;
+
+        // Determine best parameter for triplet intra.
+        current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA;
+        coder = Coder::default();
+        current_code_size = n_atoms * 3;
+        current_coding_parameter = 0;
+        if !coder.determine_best_coding_triple(
+            quant_intra,
+            &mut current_code_size,
+            &mut current_coding_parameter,
+            n_atoms,
+        ) && current_code_size < best_code_size
+        {
+            best_coding = current_coding;
+            best_coding_parameter = current_coding_parameter;
+            best_code_size = current_code_size;
+        }
+
+        // Determine best parameter for triplet one-to-one
+        current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE;
+        coder = Coder::default();
+        current_code_size = n_atoms * 3;
+        current_coding_parameter = 0;
+        if !coder.determine_best_coding_triple(
+            quant,
+            &mut current_code_size,
+            &mut current_coding_parameter,
+            n_atoms,
+        ) && current_code_size < best_code_size
+        {
+            best_coding = current_coding;
+            best_coding_parameter = current_coding_parameter;
+            best_code_size = current_code_size;
+        }
+
+        if speed >= 2 {
+            current_coding = TNG_COMPRESS_ALGO_POS_XTC3;
+            current_coding_parameter = 0;
+            current_code_size = compress_quantized_pos(
+                quant,
+                None,
+                Some(quant_intra),
+                n_atoms.try_into().expect("usize from u32"),
+                1,
+                speed,
+                current_coding,
+                current_coding_parameter,
+                0,
+                0,
+                prec_hi,
+                prec_lo,
+                &mut None,
+            );
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
+        }
+
+        // Test BWLZH intra
+        if speed >= 6 {
+            current_coding = TNG_COMPRESS_ALGO_POS_BWLZH_INTRA;
+            current_coding_parameter = 0;
+            current_code_size = compress_quantized_pos(
+                quant,
+                None,
+                Some(quant_intra),
+                n_atoms.try_into().expect("usize from u32"),
+                1,
+                speed,
+                current_coding,
+                current_coding_parameter,
+                0,
+                0,
+                prec_hi,
+                prec_lo,
+                &mut None,
+            );
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+            }
+        }
+        (best_coding, best_coding_parameter)
+    } else if initial_coding_parameter == -1 {
+        match initial_coding {
+            TNG_COMPRESS_ALGO_POS_XTC2
+            | TNG_COMPRESS_ALGO_POS_XTC3
+            | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => (initial_coding, 0),
+            TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA => {
+                let mut coder = Coder::default();
+                let mut current_code_size = n_atoms * 3;
+                let mut resulting_coding_parameter = initial_coding_parameter;
+                coder.determine_best_coding_triple(
+                    quant_intra,
+                    &mut current_code_size,
+                    &mut resulting_coding_parameter,
+                    n_atoms,
+                );
+                (initial_coding, resulting_coding_parameter)
+            }
+            _ => {
+                let mut coder = Coder::default();
+                let mut current_code_size = n_atoms * 3;
+                let mut resulting_coding_parameter = initial_coding_parameter;
+                coder.determine_best_coding_triple(
+                    quant,
+                    &mut current_code_size,
+                    &mut resulting_coding_parameter,
+                    n_atoms,
+                );
+                (initial_coding, resulting_coding_parameter)
+            }
+        }
+    } else {
+        unreachable!("initial_coding != -1, but initial_coding_parameter != -1")
     }
-    (0, 0)
 }
 
 /// Buffer `num` 8 bit bytes into buffer location `buf`
@@ -497,8 +615,6 @@ mod compress_quantized_pos_tests {
     #[test]
     fn xtc2_then_xtc3() {
         let mut quant = [-1, -2, -3, 10, 20, 30, 5, -10, 42, -7, 0, -999];
-        let mut quant_inter = [0; 6];
-        let mut quant_intra = [0; 6];
         let mut data = [0; 1024];
         let n_atoms = 2;
         let n_frames = 2;
@@ -511,8 +627,8 @@ mod compress_quantized_pos_tests {
         let prec_lo = FixT::from(456);
         let nitems = compress_quantized_pos(
             &mut quant,
-            Some(&mut quant_inter),
-            Some(&mut quant_intra),
+            None,
+            None,
             n_atoms,
             n_frames,
             speed,
@@ -553,8 +669,6 @@ mod compress_quantized_pos_tests {
     #[test]
     fn xtc3_then_onetoone_remaining_xtc2() {
         let mut quant = [7, -7, 14, -14, 21, -21, -1, -2, -3, 10, 20, 30];
-        let mut quant_inter = [0; 6]; // Unused
-        let mut quant_intra = [0; 6]; // Unused
         let mut data = [0; 1024];
         let n_atoms = 2;
         let n_frames = 2;
@@ -567,8 +681,8 @@ mod compress_quantized_pos_tests {
         let prec_lo = FixT::from(0);
         let nitems = compress_quantized_pos(
             &mut quant,
-            Some(&mut quant_inter),
-            Some(&mut quant_intra),
+            None,
+            None,
             n_atoms,
             n_frames,
             speed,
@@ -610,7 +724,6 @@ mod compress_quantized_pos_tests {
     #[test]
     fn bwlzh_intra_then_intra_remaining() {
         let mut quant = [1, 2, 3, 4, 5, 6, -6, -5, -4, -3, -2, -1];
-        let mut quant_inter = [0; 6]; // Unused
         let mut quant_intra = quant;
         let mut data = [0; 1024];
         let n_atoms = 2;
@@ -624,7 +737,7 @@ mod compress_quantized_pos_tests {
         let prec_lo = FixT::from(24);
         let nitems = compress_quantized_pos(
             &mut quant,
-            Some(&mut quant_inter),
+            None,
             Some(&mut quant_intra),
             n_atoms,
             n_frames,
