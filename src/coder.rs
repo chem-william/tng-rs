@@ -3,7 +3,7 @@ use crate::{
     compress::{
         TNG_COMPRESS_ALGO_BWLZH1, TNG_COMPRESS_ALGO_BWLZH2, TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA,
         TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE, TNG_COMPRESS_ALGO_POS_XTC2,
-        TNG_COMPRESS_ALGO_POS_XTC3, TNG_COMPRESS_ALGO_TRIPLET,
+        TNG_COMPRESS_ALGO_POS_XTC3, TNG_COMPRESS_ALGO_STOPBIT, TNG_COMPRESS_ALGO_TRIPLET,
     },
     xtc2::ptngc_pack_array_xtc2,
     xtc3::{positive_int, ptngc_pack_array_xtc3},
@@ -308,6 +308,81 @@ impl Coder {
         }
         self.stat_numval += 1;
         false
+    }
+
+    pub(crate) fn determine_best_coding_triple(
+        &mut self,
+        input: &mut [i32],
+        length: &mut usize,
+        coding_parameter: &mut i32,
+        n_atoms: usize,
+    ) -> bool {
+        let mut new_parameter = -1;
+        let mut best_length = 0;
+        for bits in 1..20 {
+            let io_length = *length;
+            let result = self.pack_array(
+                input,
+                length,
+                TNG_COMPRESS_ALGO_TRIPLET,
+                bits,
+                n_atoms,
+                &mut 0,
+            );
+            if let Some((_, packed)) = result
+                && packed > 0
+                && (new_parameter == -1 || io_length < best_length)
+            {
+                new_parameter = bits;
+                best_length = io_length;
+            }
+        }
+
+        if new_parameter == -1 {
+            true
+        } else {
+            *coding_parameter = new_parameter;
+            *length = best_length;
+            false
+        }
+    }
+
+    pub(crate) fn determine_best_coding_stop_bits(
+        &mut self,
+        input: &mut [i32],
+        length: &mut usize,
+        coding_parameter: &mut i32,
+        n_atoms: usize,
+    ) -> bool {
+        let mut new_parameter = -1;
+        let mut best_length = 0;
+        for bits in 1..20 {
+            let io_length = *length;
+
+            let result = self.pack_array(
+                input,
+                length,
+                TNG_COMPRESS_ALGO_STOPBIT,
+                bits,
+                n_atoms,
+                &mut 0,
+            );
+            if let Some((_, packed)) = result
+                && packed > 0
+                && (new_parameter == -1 || io_length < best_length)
+            {
+                new_parameter = bits;
+                best_length = io_length;
+            }
+        }
+
+        if new_parameter == -1 {
+            true
+        } else {
+            *coding_parameter = new_parameter;
+            *length = best_length;
+            false
+        }
     }
 }
 

@@ -84,6 +84,49 @@ fn verify_input_data_float(
     Ok(())
 }
 
+pub(crate) fn quantize(
+    x: &[f64],
+    n_atoms: usize,
+    n_frames: usize,
+    precision: f64,
+) -> Result<Vec<i32>, ()> {
+    let total = n_atoms
+        .checked_mul(n_frames)
+        .and_then(|v| v.checked_mul(3))
+        .expect("overflow computing quant length");
+    let mut quant: Vec<i32> = Vec::with_capacity(total);
+
+    for iframe in 0..n_frames {
+        for i in 0..n_atoms {
+            for j in 0..3 {
+                quant[iframe * n_atoms * 3 + i * 3 + j] =
+                    ((x[iframe * n_atoms * 3 + i * 3 + j] / precision) + 0.5).floor() as i32;
+            }
+        }
+    }
+
+    if verify_input_data(x, n_atoms, n_frames, precision).is_ok() {
+        Ok(quant)
+    } else {
+        Err(())
+    }
+}
+
+fn verify_input_data(x: &[f64], n_atoms: usize, n_frames: usize, precision: f64) -> Result<(), ()> {
+    for iframe in 0..n_frames {
+        for i in 0..n_atoms {
+            for j in 0..3 {
+                if (x[iframe * n_atoms * 3 + i * 3 + j] / precision + 0.5).abs()
+                    >= f64::from(MAX_FVAL)
+                {
+                    return Err(());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn quant_inter_differences(quant: &[i32], n_atoms: usize, n_frames: usize) -> Vec<i32> {
     let mut quant_inter = vec![0; n_atoms * n_frames * 3];
     // The first frame is used for absolute positions.
@@ -209,7 +252,7 @@ pub(crate) fn determine_best_pos_initial_coding(
                 quant,
                 None,
                 Some(quant_intra),
-                n_atoms.try_into().expect("usize from u32"),
+                n_atoms.try_into().expect("u32 from usize"),
                 1,
                 speed,
                 current_coding,
@@ -235,7 +278,7 @@ pub(crate) fn determine_best_pos_initial_coding(
                 quant,
                 None,
                 Some(quant_intra),
-                n_atoms.try_into().expect("usize from u32"),
+                n_atoms.try_into().expect("u32 from usize"),
                 1,
                 speed,
                 current_coding,
@@ -309,7 +352,7 @@ fn bufferfix(buf: &mut [u8], v: FixT, num: usize) {
 }
 
 /// Perform position compression from the quantized data
-fn compress_quantized_pos(
+pub(crate) fn compress_quantized_pos(
     quant: &mut [i32],
     quant_inter: Option<&mut [i32]>,
     mut quant_intra: Option<&mut [i32]>,
@@ -515,6 +558,257 @@ fn compress_quantized_pos(
         bufloc += output_length;
     }
     bufloc
+}
+
+pub(crate) fn determine_best_pos_coding(
+    quant: &mut [i32],
+    quant_inter: &mut Option<&mut [i32]>,
+    quant_intra: &mut Option<&mut [i32]>,
+    n_atoms: u32,
+    n_frames: u32,
+    speed: usize,
+    prec_hi: FixT,
+    prec_lo: FixT,
+    coding: &mut i32,
+    coding_parameter: &mut i32,
+) {
+    if *coding == -1 {
+        // Determine all parameters automatically
+        let mut best_coding: i32;
+        let mut best_coding_parameter: i32;
+        let mut current_coding: i32;
+        let mut current_coding_parameter: i32;
+        let mut current_code_size: i32;
+
+        // Always use XTC2 for the initial coding
+        let initial_code_size = i32::try_from(compress_quantized_pos(
+            quant,
+            quant_inter.as_deref_mut(),
+            quant_intra.as_deref_mut(),
+            n_atoms,
+            1,
+            speed,
+            TNG_COMPRESS_ALGO_POS_XTC2,
+            0,
+            0,
+            0,
+            prec_hi,
+            prec_lo,
+            &mut None,
+        ))
+        .expect("i32 from usize");
+        // Start with XTC2, it should always work
+        current_coding = TNG_COMPRESS_ALGO_POS_XTC2;
+        current_coding_parameter = 0;
+        let mut best_code_size = i32::try_from(compress_quantized_pos(
+            quant,
+            quant_inter.as_deref_mut(),
+            quant_intra.as_deref_mut(),
+            n_atoms,
+            n_frames,
+            speed,
+            TNG_COMPRESS_ALGO_POS_XTC2,
+            0,
+            current_coding,
+            current_coding_parameter,
+            prec_hi,
+            prec_lo,
+            &mut None,
+        ))
+        .expect("i32 from usize");
+        best_coding = current_coding;
+        best_coding_parameter = current_coding_parameter;
+        best_code_size -= initial_code_size; // Correcet for the use of XTC2 for the first frame
+        let mut best_code_size = i32::try_from(best_code_size).expect("i32 from u32");
+
+        // Determine best parameter for stopbit interframe coding
+        current_coding = TNG_COMPRESS_ALGO_POS_STOPBIT_INTER;
+        let mut coder = Coder::default();
+        current_code_size = i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+        if !coder.determine_best_coding_stop_bits(
+            &mut quant_inter.as_mut().expect("quant_inter to be Some")
+                [(n_atoms * 3).try_into().expect("u32 to usize")..],
+            &mut current_code_size.try_into().expect("into u32"),
+            &mut current_coding_parameter,
+            n_atoms.try_into().expect("usize from u32"),
+        ) {
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
+        }
+
+        //Determine best parameter for triplet interframe coding
+        current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTER;
+        coder = Coder::default();
+        current_code_size = i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+        current_coding_parameter = 0;
+        if !coder.determine_best_coding_triple(
+            &mut quant_inter.as_mut().expect("quant_inter to be Some")
+                [(n_atoms * 3).try_into().expect("u32 to usize")..],
+            &mut current_code_size.try_into().expect("usize from u32"),
+            &mut current_coding_parameter,
+            n_atoms.try_into().expect("usize from u32"),
+        ) {
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
+        }
+
+        // Determine best parameter for triplet intraframe coding
+        current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA;
+        coder = Coder::default();
+        current_code_size = i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+        current_coding_parameter = 0;
+        if !coder.determine_best_coding_triple(
+            &mut quant_inter.as_mut().expect("quant_inter to be Some")
+                [(n_atoms * 3).try_into().expect("u32 to usize")..],
+            &mut current_code_size.try_into().expect("usize from u32"),
+            &mut current_coding_parameter,
+            n_atoms.try_into().expect("usize from u32"),
+        ) {
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
+        }
+
+        // Determine best parameter for triplet one-to-one coding
+        current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE;
+        coder = Coder::default();
+        current_code_size = i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+        current_coding_parameter = 0;
+        if !coder.determine_best_coding_triple(
+            &mut quant_inter.as_mut().expect("quant_inter to be Some")
+                [(n_atoms * 3).try_into().expect("u32 to usize")..],
+            &mut current_code_size.try_into().expect("usize from u32"),
+            &mut current_coding_parameter,
+            n_atoms.try_into().expect("usize from u32"),
+        ) {
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
+        }
+
+        // Test BWLZH inter
+        if speed >= 4 {
+            current_coding = TNG_COMPRESS_ALGO_POS_BWLZH_INTER;
+            current_coding_parameter = 0;
+            current_code_size = i32::try_from(compress_quantized_pos(
+                quant,
+                quant_inter.as_deref_mut(),
+                quant_intra.as_deref_mut(),
+                n_atoms,
+                n_frames,
+                speed,
+                TNG_COMPRESS_ALGO_POS_XTC2,
+                0,
+                current_coding,
+                current_coding_parameter,
+                prec_hi,
+                prec_lo,
+                &mut None,
+            ))
+            .expect("i32 from usize");
+            current_code_size -= initial_code_size; // Correct for the use of XTC2 for the first time
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
+        }
+
+        // Test BWLZH intra
+        if speed >= 6 {
+            current_coding = TNG_COMPRESS_ALGO_POS_BWLZH_INTRA;
+            current_coding_parameter = 0;
+            current_code_size = i32::try_from(compress_quantized_pos(
+                quant,
+                quant_inter.as_deref_mut(),
+                quant_intra.as_deref_mut(),
+                n_atoms,
+                n_frames,
+                speed,
+                TNG_COMPRESS_ALGO_POS_XTC2,
+                0,
+                current_coding,
+                current_coding_parameter,
+                prec_hi,
+                prec_lo,
+                &mut None,
+            ))
+            .expect("i32 from usize");
+            current_code_size -= initial_code_size; // Correct for the use of XTC2 for the first time
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+            }
+        }
+        *coding = best_coding;
+        *coding_parameter = best_coding_parameter;
+    } else if *coding_parameter == -1 {
+        let unpacked_quant_inter = quant_inter.as_mut().expect("quant_inter to be Some");
+        match *coding {
+            TNG_COMPRESS_ALGO_POS_XTC2
+            | TNG_COMPRESS_ALGO_POS_XTC3
+            | TNG_COMPRESS_ALGO_POS_BWLZH_INTER
+            | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
+                *coding_parameter = 0;
+            }
+            TNG_COMPRESS_ALGO_POS_STOPBIT_INTER => {
+                let mut coder = Coder::default();
+                let current_code_size =
+                    i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+                coder.determine_best_coding_stop_bits(
+                    &mut unpacked_quant_inter[(n_atoms * 3).try_into().expect("u32 to usize")..],
+                    &mut current_code_size.try_into().expect("into u32"),
+                    coding_parameter,
+                    n_atoms.try_into().expect("usize from u32"),
+                );
+            }
+            TNG_COMPRESS_ALGO_POS_TRIPLET_INTER => {
+                let mut coder = Coder::default();
+                let current_code_size =
+                    i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+                coder.determine_best_coding_triple(
+                    &mut unpacked_quant_inter[(n_atoms * 3).try_into().expect("u32 to usize")..],
+                    &mut current_code_size.try_into().expect("into u32"),
+                    coding_parameter,
+                    n_atoms.try_into().expect("usize from u32"),
+                );
+            }
+            TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA => {
+                let mut coder = Coder::default();
+                let current_code_size =
+                    i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+                coder.determine_best_coding_triple(
+                    &mut quant_intra.as_mut().expect("quant_intra to be Some")
+                        [(n_atoms * 3).try_into().expect("u32 to usize")..],
+                    &mut current_code_size.try_into().expect("into u32"),
+                    coding_parameter,
+                    n_atoms.try_into().expect("usize from u32"),
+                );
+            }
+            TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE => {
+                let mut coder = Coder::default();
+                let current_code_size =
+                    i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+                coder.determine_best_coding_triple(
+                    &mut quant[(n_atoms * 3).try_into().expect("u32 to usize")..],
+                    &mut current_code_size.try_into().expect("into u32"),
+                    coding_parameter,
+                    n_atoms.try_into().expect("usize from u32"),
+                );
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
