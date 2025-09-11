@@ -170,6 +170,57 @@ pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: u
     quant_intra
 }
 
+#[cfg(test)]
+mod quant_tests {
+    use super::*;
+
+    #[test]
+    fn one_atom_two_frames() {
+        let quant = vec![1, 2, 3, 4, 5, 6];
+        let quant_inter = quant_inter_differences(&quant, 1, 2);
+        let quant_intra = quant_intra_differences(&quant, 1, 2);
+
+        let expected_inter = [1, 2, 3, 3, 3, 3];
+        assert_eq!(quant_inter, expected_inter);
+
+        let expected_intra = [1, 2, 3, 4, 5, 6];
+        assert_eq!(quant_intra, expected_intra);
+    }
+
+    #[test]
+    fn two_atom_two_frames() {
+        let quant = vec![
+            1, 2, 3, 7, 8, 9, // frame 0
+            2, 4, 6, 10, 12, 14, // frame 1
+        ];
+        let quant_inter = quant_inter_differences(&quant, 2, 2);
+        let quant_intra = quant_intra_differences(&quant, 2, 2);
+
+        let expected_inter = [1, 2, 3, 7, 8, 9, 1, 2, 3, 3, 4, 5];
+        assert_eq!(quant_inter, expected_inter);
+
+        let expected_intra = [1, 2, 3, 6, 6, 6, 2, 4, 6, 8, 8, 8];
+        assert_eq!(quant_intra, expected_intra);
+    }
+
+    #[test]
+    fn two_atom_three_frames() {
+        let quant = vec![
+            0, 0, 0, 1, 1, 1, // frame 0
+            1, 2, 3, 2, 3, 4, // frame 1
+            3, 5, 7, 4, 6, 8, // frame 2
+        ];
+        let quant_inter = quant_inter_differences(&quant, 2, 3);
+        let quant_intra = quant_intra_differences(&quant, 2, 3);
+
+        let expected_inter = [0, 0, 0, 1, 1, 1, 1, 2, 3, 1, 2, 3, 2, 3, 4, 2, 3, 4];
+        assert_eq!(quant_inter, expected_inter);
+
+        let expected_intra = [0, 0, 0, 1, 1, 1, 1, 2, 3, 1, 1, 1, 3, 5, 7, 1, 1, 1];
+        assert_eq!(quant_intra, expected_intra);
+    }
+}
+
 pub(crate) fn determine_best_pos_initial_coding(
     quant: &mut [i32],
     quant_intra: &mut [i32],
