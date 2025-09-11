@@ -48,7 +48,7 @@ pub(crate) fn quantize_float(
         .checked_mul(n_frames)
         .and_then(|v| v.checked_mul(3))
         .expect("overflow computing quant length");
-    let mut quant: Vec<i32> = Vec::with_capacity(total);
+    let mut quant = vec![0; total];
 
     for iframe in 0..n_frames {
         for i in 0..n_atoms {
@@ -94,7 +94,7 @@ pub(crate) fn quantize(
         .checked_mul(n_frames)
         .and_then(|v| v.checked_mul(3))
         .expect("overflow computing quant length");
-    let mut quant: Vec<i32> = Vec::with_capacity(total);
+    let mut quant = vec![0; total];
 
     for iframe in 0..n_frames {
         for i in 0..n_atoms {
@@ -168,6 +168,45 @@ pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: u
         }
     }
     quant_intra
+}
+
+#[cfg(test)]
+mod quantize_tests {
+    use super::*;
+
+    #[test]
+    fn one_atom() {
+        let x = vec![0.1, 0.2, 0.3];
+        let quant = quantize(&x, 1, 1, 0.1).unwrap();
+        let expected = [1, 2, 3];
+        assert_eq!(quant, expected);
+    }
+
+    #[test]
+    fn one_atom_two_frames() {
+        let x = vec![0.05, 0.25, 0.55, 0.95, 1.25, 1.55];
+        let quant = quantize(&x, 1, 2, 0.1).unwrap();
+        let expected = [1, 3, 6, 9, 13, 16];
+        assert_eq!(quant, expected);
+    }
+
+    #[test]
+    fn two_atom_one_frame() {
+        let x = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let quant = quantize(&x, 2, 1, 0.5).unwrap();
+        let expected = [0, 2, 4, 6, 8, 10];
+        assert_eq!(quant, expected);
+    }
+
+    #[test]
+    fn two_atom_two_frames() {
+        let x = vec![
+            0.0, 0.25, 0.49, 1.0, 1.25, 1.49, 2.0, 2.25, 2.49, 3.0, 3.25, 3.49,
+        ];
+        let quant = quantize(&x, 2, 2, 0.5).unwrap();
+        let expected = [0, 1, 1, 2, 3, 3, 4, 5, 5, 6, 7, 7];
+        assert_eq!(quant, expected);
+    }
 }
 
 #[cfg(test)]
