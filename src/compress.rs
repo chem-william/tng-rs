@@ -1,6 +1,6 @@
 use crate::{
     coder::Coder,
-    fix_point::{FixT, fixt_pair_to_f64},
+    fix_point::{FixT, f64_to_fixt_pair, fixt_pair_to_f64},
 };
 
 const MAX_FVAL: f32 = 2147483647.0;
@@ -32,6 +32,10 @@ pub(crate) const TNG_COMPRESS_ALGO_MAX: i32 = 11;
 // This becomes TNGP for positions (little endian) and TNGV for velocities. In ASCII
 const MAGIC_INT_POS: u32 = 0x50474E54;
 const MAGIC_INT_VEL: u32 = 0x56474E54;
+
+/// Default to relatively fast compression. For very good compression it makes sense
+/// to choose speed = 4 or speed = 5.
+const SPEED_DEFAULT: usize = 2;
 
 #[inline]
 pub fn precision(hi: FixT, lo: FixT) -> f64 {
@@ -257,6 +261,189 @@ mod quant_tests {
 
         let expected_intra = [0, 0, 0, 1, 1, 1, 1, 2, 3, 1, 1, 1, 3, 5, 7, 1, 1, 1];
         assert_eq!(quant_intra, expected_intra);
+    }
+}
+
+pub(crate) fn tng_compress_pos(
+    pos: &[f64],
+    n_atoms: usize,
+    n_frames: usize,
+    desired_precision: f64,
+    speed: usize,
+    algo: &mut [i32],
+) -> Option<Vec<u8>> {
+    let (prec_hi, prec_lo) = f64_to_fixt_pair(desired_precision);
+    let quant = quantize(pos, n_atoms, n_frames, precision(prec_hi, prec_lo));
+    if let Ok(mut ok_quant) = quant {
+        Some(tng_compress_pos_int(
+            &mut ok_quant,
+            u32::try_from(n_atoms).expect("usize from u32"),
+            u32::try_from(n_frames).expect("usize from u32"),
+            prec_hi,
+            prec_lo,
+            speed,
+            algo,
+        ))
+    } else {
+        None
+    }
+}
+pub(crate) fn tng_compress_pos_int(
+    pos: &mut [i32],
+    n_atoms: u32,
+    n_frames: u32,
+    prec_hi: FixT,
+    prec_lo: FixT,
+    speed: usize,
+    algo: &mut [i32],
+) -> Vec<u8> {
+    // 12 bytes are required to store 4 32 bit integers
+    // This is 17% extra. The final 11*4 is to store information needed for decompression
+    let mut data =
+        vec![0u8; usize::try_from(n_atoms * n_frames).expect("usize from u32") * 14 + 11 * 4];
+    let quant = pos; // Already quantized positions
+    let mut inner_speed = if speed == 0 { SPEED_DEFAULT } else { speed };
+
+    // Boundaries of `speed`
+    inner_speed = inner_speed.clamp(1, 6);
+
+    let mut initial_coding = algo[0];
+    let mut initial_coding_parameter = algo[1];
+    let mut coding = algo[2];
+    let mut coding_parameter = algo[3];
+
+    let mut quant_inter = quant_inter_differences(
+        quant,
+        usize::try_from(n_atoms).expect("usize from u32"),
+        usize::try_from(n_frames).expect("usize from u32"),
+    );
+    let mut quant_intra = quant_intra_differences(
+        quant,
+        usize::try_from(n_atoms).expect("usize from u32"),
+        usize::try_from(n_frames).expect("usize from u32"),
+    );
+
+    // If any of the above codings / coding parameters are == -1, the optimal parameters must be found
+    if initial_coding == -1 {
+        initial_coding_parameter = -1;
+
+        (initial_coding, initial_coding_parameter) = determine_best_pos_initial_coding(
+            quant,
+            &mut quant_intra,
+            usize::try_from(n_atoms).expect("usize from u32"),
+            inner_speed,
+            prec_hi,
+            prec_lo,
+            initial_coding,
+            initial_coding_parameter,
+        );
+    } else if initial_coding_parameter == -1 {
+        (initial_coding, initial_coding_parameter) = determine_best_pos_initial_coding(
+            quant,
+            &mut quant_intra,
+            usize::try_from(n_atoms).expect("usize from u32"),
+            inner_speed,
+            prec_hi,
+            prec_lo,
+            initial_coding,
+            initial_coding_parameter,
+        );
+    }
+
+    if n_frames == 1 {
+        coding = 0;
+        coding_parameter = 0;
+    }
+
+    if n_frames > 1 {
+        if coding == -1 {
+            coding_parameter = -1;
+            determine_best_pos_coding(
+                quant,
+                &mut Some(&mut quant_inter),
+                &mut Some(&mut quant_intra),
+                n_atoms,
+                n_frames,
+                inner_speed,
+                prec_hi,
+                prec_lo,
+                &mut coding,
+                &mut coding_parameter,
+            );
+        } else if coding_parameter == -1 {
+            determine_best_pos_coding(
+                quant,
+                &mut Some(&mut quant_inter),
+                &mut Some(&mut quant_intra),
+                n_atoms,
+                n_frames,
+                inner_speed,
+                prec_hi,
+                prec_lo,
+                &mut coding,
+                &mut coding_parameter,
+            );
+        }
+    }
+
+    compress_quantized_pos(
+        quant,
+        Some(&mut quant_inter),
+        Some(&mut quant_intra),
+        n_atoms,
+        n_frames,
+        inner_speed,
+        initial_coding,
+        initial_coding_parameter,
+        coding,
+        coding_parameter,
+        prec_hi,
+        prec_lo,
+        &mut Some(&mut data),
+    );
+
+    if algo[0] == -1 {
+        algo[0] = initial_coding;
+    }
+
+    if algo[1] == -1 {
+        algo[1] = initial_coding_parameter;
+    }
+
+    if algo[2] == -1 {
+        algo[2] = coding;
+    }
+
+    if algo[3] == -1 {
+        algo[3] = coding_parameter;
+    }
+
+    data
+}
+
+pub(crate) fn tng_compress_pos_float(
+    pos: &[f32],
+    n_atoms: usize,
+    n_frames: usize,
+    desired_precision: f32,
+    speed: usize,
+    algo: &mut [i32],
+) -> Option<Vec<u8>> {
+    let (prec_hi, prec_lo) = f64_to_fixt_pair(f64::from(desired_precision));
+    let quant = quantize_float(pos, n_atoms, n_frames, precision(prec_hi, prec_lo) as f32);
+
+    if let Ok(mut ok_quant) = quant {
+        Some(tng_compress_pos_int(
+            &mut ok_quant,
+            u32::try_from(n_atoms).expect("usize from u32"),
+            u32::try_from(n_frames).expect("usize from u32"),
+            prec_hi,
+            prec_lo,
+            speed,
+            algo,
+        ))
+    } else {
+        None
     }
 }
 

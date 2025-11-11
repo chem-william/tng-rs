@@ -6,8 +6,10 @@ use crate::atom::Atom;
 use crate::bond::Bond;
 use crate::chain::Chain;
 use crate::compress::{
-    compress_quantized_pos, determine_best_pos_coding, determine_best_pos_initial_coding,
-    precision, quant_inter_differences, quant_intra_differences, quantize, quantize_float,
+    TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE, compress_quantized_pos, determine_best_pos_coding,
+    determine_best_pos_initial_coding, precision, quant_inter_differences, quant_intra_differences,
+    quantize, quantize_float, tng_compress_pos, tng_compress_pos_float, tng_compress_pos_int,
+    tng_compress_vel, tng_compress_vel_float,
 };
 use crate::data::{Compression, Data, DataType};
 use crate::fix_point::{FixT, f64_to_fixt_pair};
@@ -25,10 +27,6 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use flate2::read::ZlibDecoder;
-
-/// Default to relatively fast compression. For very good compression it makes sense
-/// to choose speed = 4 or speed = 5.
-const SPEED_DEFAULT: usize = 2;
 
 fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
     let meta1 = file1.metadata()?;
@@ -4337,176 +4335,5 @@ impl Trajectory {
         self.reread_frame_set_at_file_pos(orig_file_pos);
 
         Err(())
-    }
-
-    fn tng_compress_pos_float(
-        &self,
-        pos: &[f32],
-        n_atoms: usize,
-        n_frames: usize,
-        desired_precision: f32,
-        speed: usize,
-        algo: &[i32],
-    ) -> Option<()> {
-        let (prec_hi, prec_lo) = f64_to_fixt_pair(f64::from(desired_precision));
-        let quant = quantize_float(pos, n_atoms, n_frames, precision(prec_hi, prec_lo) as f32);
-
-        if let Ok(mut ok_quant) = quant {
-            self.tng_compress_pos_int(
-                &mut ok_quant,
-                u32::try_from(n_atoms).expect("usize from u32"),
-                u32::try_from(n_frames).expect("usize from u32"),
-                prec_hi,
-                prec_lo,
-                speed,
-                algo,
-            );
-            Some(data)
-        } else {
-            None
-        }
-    }
-
-    fn tng_compress_pos_int(
-        &self,
-        pos: &mut [i32],
-        n_atoms: u32,
-        n_frames: u32,
-        prec_hi: FixT,
-        prec_lo: FixT,
-        speed: usize,
-        algo: &[i32],
-    ) {
-        // 12 bytes are required to store 4 32 bit integers
-        // This is 17% extra. The final 11*4 is to store information needed for decompression
-        let mut data =
-            vec![0u8; usize::try_from(n_atoms * n_frames).expect("usize from u32") * 14 + 11 * 4];
-        let quant = pos; // Already quantized positions
-        let mut inner_speed = if speed == 0 { SPEED_DEFAULT } else { speed };
-
-        // Boundaries of `speed`
-        inner_speed = inner_speed.clamp(1, 6);
-
-        let mut initial_coding = algo[0];
-        let mut initial_coding_parameter = algo[1];
-        let mut coding = algo[2];
-        let mut coding_parameter = algo[3];
-
-        let mut quant_inter = quant_inter_differences(
-            quant,
-            usize::try_from(n_atoms).expect("usize from u32"),
-            usize::try_from(n_frames).expect("usize from u32"),
-        );
-        let mut quant_intra = quant_intra_differences(
-            quant,
-            usize::try_from(n_atoms).expect("usize from u32"),
-            usize::try_from(n_frames).expect("usize from u32"),
-        );
-
-        // If any of the above codings / coding parameters are == -1, the optimal parameters must be found
-        if initial_coding == -1 {
-            initial_coding_parameter = -1;
-
-            (initial_coding, initial_coding_parameter) = determine_best_pos_initial_coding(
-                quant,
-                &mut quant_intra,
-                usize::try_from(n_atoms).expect("usize from u32"),
-                inner_speed,
-                prec_hi,
-                prec_lo,
-                initial_coding,
-                initial_coding_parameter,
-            );
-        } else if initial_coding_parameter == -1 {
-            (initial_coding, initial_coding_parameter) = determine_best_pos_initial_coding(
-                quant,
-                &mut quant_intra,
-                usize::try_from(n_atoms).expect("usize from u32"),
-                inner_speed,
-                prec_hi,
-                prec_lo,
-                initial_coding,
-                initial_coding_parameter,
-            );
-        }
-
-        if n_frames == 1 {
-            coding = 0;
-            coding_parameter = 0;
-        }
-
-        if n_frames > 1 {
-            if coding == -1 {
-                coding_parameter = -1;
-                determine_best_pos_coding(
-                    quant,
-                    &mut Some(&mut quant_inter),
-                    &mut Some(&mut quant_intra),
-                    n_atoms,
-                    n_frames,
-                    inner_speed,
-                    prec_hi,
-                    prec_lo,
-                    &mut coding,
-                    &mut coding_parameter,
-                );
-            } else if coding_parameter == -1 {
-                determine_best_pos_coding(
-                    quant,
-                    &mut Some(&mut quant_inter),
-                    &mut Some(&mut quant_intra),
-                    n_atoms,
-                    n_frames,
-                    inner_speed,
-                    prec_hi,
-                    prec_lo,
-                    &mut coding,
-                    &mut coding_parameter,
-                );
-            }
-        }
-
-        compress_quantized_pos(
-            quant,
-            Some(&mut quant_inter),
-            Some(&mut quant_intra),
-            n_atoms,
-            n_frames,
-            inner_speed,
-            initial_coding,
-            initial_coding_parameter,
-            coding,
-            coding_parameter,
-            prec_hi,
-            prec_lo,
-            &mut Some(&mut data),
-        );
-    }
-
-    fn tng_compress_pos(
-        &self,
-        pos: &[f64],
-        n_atoms: usize,
-        n_frames: usize,
-        desired_precision: f32,
-        speed: usize,
-        algo: &[i32],
-    ) -> Option<()> {
-        let (prec_hi, prec_lo) = f64_to_fixt_pair(f64::from(desired_precision));
-        let quant = quantize(pos, n_atoms, n_frames, precision(prec_hi, prec_lo));
-        if let Ok(mut ok_quant) = quant {
-            self.tng_compress_pos_int(
-                &mut ok_quant,
-                u32::try_from(n_atoms).expect("usize from u32"),
-                u32::try_from(n_frames).expect("usize from u32"),
-                prec_hi,
-                prec_lo,
-                speed,
-                algo,
-            );
-            Some(data)
-        } else {
-            None
-        }
     }
 }
