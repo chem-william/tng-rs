@@ -916,7 +916,7 @@ pub(crate) fn determine_best_pos_coding(
             }
         }
 
-        //Determine best parameter for triplet interframe coding
+        // Determine best parameter for triplet interframe coding
         current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTER;
         coder = Coder::default();
         current_code_size = i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
