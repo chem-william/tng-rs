@@ -1088,6 +1088,690 @@ pub(crate) fn determine_best_pos_coding(
     }
 }
 
+pub(crate) fn tng_compress_vel(
+    vel: &[f64],
+    n_atoms: usize,
+    n_frames: usize,
+    desired_precision: f64,
+    speed: usize,
+    algo: &mut [i32],
+) -> Option<Vec<u8>> {
+    let (prec_hi, prec_lo) = f64_to_fixt_pair(desired_precision);
+    let quant = quantize(vel, n_atoms, n_frames, precision(prec_hi, prec_lo));
+    if let Ok(mut ok_quant) = quant {
+        Some(tng_compress_vel_int(
+            &mut ok_quant,
+            n_atoms,
+            n_frames,
+            prec_hi,
+            prec_lo,
+            speed,
+            algo,
+        ))
+    } else {
+        None
+    }
+}
+
+pub(crate) fn tng_compress_vel_float(
+    vel: &[f32],
+    n_atoms: usize,
+    n_frames: usize,
+    desired_precision: f32,
+    speed: usize,
+    algo: &mut [i32],
+) -> Option<Vec<u8>> {
+    let (prec_hi, prec_lo) = f64_to_fixt_pair(f64::from(desired_precision));
+    let quant = quantize_float(vel, n_atoms, n_frames, precision(prec_hi, prec_lo) as f32);
+
+    if let Ok(mut ok_quant) = quant {
+        Some(tng_compress_vel_int(
+            &mut ok_quant,
+            n_atoms,
+            n_frames,
+            prec_hi,
+            prec_lo,
+            speed,
+            algo,
+        ))
+    } else {
+        None
+    }
+}
+
+pub(crate) fn tng_compress_vel_int(
+    vel: &mut [i32],
+    n_atoms: usize,
+    n_frames: usize,
+    prec_hi: FixT,
+    prec_lo: FixT,
+    speed: usize,
+    algo: &mut [i32],
+) -> Vec<u8> {
+    // 12 bytes are required to store 4 32 bit integers
+    // This is 17% extra. The final 11*4 is to store information needed for decompression
+    let mut data =
+        vec![0u8; usize::try_from(n_atoms * n_frames).expect("usize from u32") * 14 + 11 * 4];
+    let quant = vel;
+    let mut inner_speed = if speed == 0 { SPEED_DEFAULT } else { speed };
+
+    // Boundaries of `speed`
+    inner_speed = inner_speed.clamp(1, 6);
+
+    let mut initial_coding = algo[0];
+    let mut initial_coding_parameter = algo[1];
+    let mut coding = algo[2];
+    let mut coding_parameter = algo[3];
+
+    let mut quant_inter = quant_inter_differences(
+        quant,
+        usize::try_from(n_atoms).expect("usize from u32"),
+        usize::try_from(n_frames).expect("usize from u32"),
+    );
+
+    // If any of the above codings / coding parameters are == -1, the optimal parameters must be found
+    if initial_coding == -1 {
+        initial_coding_parameter = -1;
+
+        (initial_coding, initial_coding_parameter) = determine_best_vel_initial_coding(
+            quant,
+            usize::try_from(n_atoms).expect("usize from u32"),
+            inner_speed,
+            prec_hi,
+            prec_lo,
+            initial_coding,
+            initial_coding_parameter,
+        );
+    } else if initial_coding_parameter == -1 {
+        (initial_coding, initial_coding_parameter) = determine_best_vel_initial_coding(
+            quant,
+            usize::try_from(n_atoms).expect("usize from u32"),
+            inner_speed,
+            prec_hi,
+            prec_lo,
+            initial_coding,
+            initial_coding_parameter,
+        );
+    }
+
+    if n_frames == 1 {
+        coding = 0;
+        coding_parameter = 0;
+    }
+
+    if n_frames > 1 {
+        if coding == -1 {
+            coding_parameter = -1;
+            determine_best_vel_coding(
+                quant,
+                &mut Some(&mut quant_inter),
+                n_atoms,
+                n_frames,
+                inner_speed,
+                prec_hi,
+                prec_lo,
+                &mut coding,
+                &mut coding_parameter,
+            );
+        } else if coding_parameter == -1 {
+            determine_best_vel_coding(
+                quant,
+                &mut Some(&mut quant_inter),
+                n_atoms,
+                n_frames,
+                inner_speed,
+                prec_hi,
+                prec_lo,
+                &mut coding,
+                &mut coding_parameter,
+            );
+        }
+    }
+    compress_quantized_vel(
+        quant,
+        Some(&mut quant_inter),
+        n_atoms,
+        n_frames,
+        inner_speed,
+        initial_coding,
+        initial_coding_parameter,
+        coding,
+        coding_parameter,
+        prec_hi,
+        prec_lo,
+        &mut Some(&mut data),
+    );
+
+    if algo[0] == -1 {
+        algo[0] = initial_coding;
+    }
+
+    if algo[1] == -1 {
+        algo[1] = initial_coding_parameter;
+    }
+
+    if algo[2] == -1 {
+        algo[2] = coding;
+    }
+
+    if algo[3] == -1 {
+        algo[3] = coding_parameter;
+    }
+
+    data
+}
+
+fn determine_best_vel_coding(
+    quant: &mut [i32],
+    quant_inter: &mut Option<&mut [i32]>,
+    n_atoms: usize,
+    n_frames: usize,
+    speed: usize,
+    prec_hi: FixT,
+    prec_lo: FixT,
+    coding: i32,
+    coding_parameter: i32,
+) {
+    let mut resulting_coding = coding;
+    let mut resulting_coding_parameter = coding_parameter;
+
+    if coding == -1 {
+        //Determine all parameters automatically
+        let mut best_coding;
+        let mut best_coding_parameter;
+        let mut best_code_size;
+        let mut current_coding;
+        let mut current_coding_parameter;
+        let mut current_code_size;
+        let initial_numbits = 5;
+
+        // Use stopbits one-to-one coding for the initial coding.
+        let initial_code_size = compress_quantized_vel(
+            quant,
+            quant_inter.as_deref_mut(),
+            n_atoms,
+            1,
+            speed,
+            TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE,
+            initial_numbits,
+            0,
+            0,
+            prec_hi,
+            prec_lo,
+            &mut None,
+        );
+
+        // Test stopbit one-to-one
+        current_coding = TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE;
+        current_code_size = n_atoms * 3 * (n_frames - 1);
+        current_coding_parameter = 00;
+        let mut coder = Coder::default();
+        coder.determine_best_coding_stop_bits(
+            &mut quant[n_atoms * 3..],
+            &mut current_code_size,
+            &mut current_coding_parameter,
+            n_atoms,
+        );
+        best_coding = current_coding;
+        best_code_size = current_code_size;
+        best_coding_parameter = current_coding_parameter;
+
+        // Test triplet interframe
+        current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTER;
+        current_code_size = n_atoms * 3 * (n_frames - 1);
+        current_coding_parameter = 0;
+        coder = Coder::default();
+        if !coder.determine_best_coding_triple(
+            &mut quant_inter.as_mut().expect("quant_inter to be Some")[n_atoms * 3..],
+            &mut current_code_size,
+            &mut current_coding_parameter,
+            n_atoms,
+        ) {
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
+        }
+
+        // Test triplet one-to-one
+        current_coding = TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE;
+        current_code_size = n_atoms * 3 * (n_frames - 1);
+        current_coding_parameter = 0;
+        coder = Coder::default();
+        if !coder.determine_best_coding_triple(
+            &mut quant[n_atoms * 3..],
+            &mut current_code_size,
+            &mut current_coding_parameter,
+            n_atoms,
+        ) {
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_code_size = current_code_size;
+                best_coding_parameter = current_coding_parameter;
+            }
+        }
+
+        // Test stopbit interframe
+        current_coding = TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER;
+        current_code_size = n_atoms * 3 * (n_frames - 1);
+        current_coding_parameter = 0;
+        coder = Coder::default();
+        if !coder.determine_best_coding_stop_bits(
+            &mut quant_inter.as_mut().expect("quant_inter to be Some")[n_atoms * 3..],
+            &mut current_code_size,
+            &mut current_coding_parameter,
+            n_atoms,
+        ) {
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_code_size = current_code_size;
+                best_coding_parameter = current_coding_parameter;
+            }
+        }
+
+        if speed >= 4 {
+            // Test BWLZH inter
+            current_coding = TNG_COMPRESS_ALGO_VEL_BWLZH_INTER;
+            current_coding_parameter = 0;
+            current_code_size = compress_quantized_vel(
+                quant,
+                quant_inter.as_deref_mut(),
+                n_atoms,
+                n_frames,
+                speed,
+                TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE,
+                initial_numbits,
+                current_coding,
+                current_coding_parameter,
+                prec_hi,
+                prec_lo,
+                &mut None,
+            );
+            current_code_size -= initial_code_size; // Correct for the initial frame
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_code_size = current_code_size;
+                best_coding_parameter = current_coding_parameter;
+            }
+
+            // Test BWLZH one-to-one
+            current_coding = TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE;
+            current_coding_parameter = 0;
+            current_code_size = compress_quantized_vel(
+                quant,
+                quant_inter.as_deref_mut(),
+                n_atoms,
+                n_frames,
+                speed,
+                TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE,
+                initial_numbits,
+                current_coding,
+                current_coding_parameter,
+                prec_hi,
+                prec_lo,
+                &mut None,
+            );
+            current_code_size -= initial_code_size; // Correct for the initial frame
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+            }
+        }
+        resulting_coding = best_coding;
+        resulting_coding_parameter = best_coding_parameter;
+    } else if coding_parameter == -1 {
+        if coding == TNG_COMPRESS_ALGO_VEL_BWLZH_INTER
+            || coding == TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE
+        {
+            resulting_coding_parameter = 0;
+        } else if coding == TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE {
+            let mut coder = Coder::default();
+            let mut current_code_size = n_atoms * 3 * (n_frames - 1);
+            coder.determine_best_coding_stop_bits(
+                &mut quant[n_atoms * 3..],
+                &mut current_code_size,
+                &mut resulting_coding_parameter,
+                n_atoms,
+            );
+        } else if coding == TNG_COMPRESS_ALGO_VEL_TRIPLET_INTER {
+            let mut coder = Coder::default();
+            let mut current_code_size = n_atoms * 3 * (n_frames - 1);
+            coder.determine_best_coding_triple(
+                &mut quant_inter.as_deref_mut().expect("quant_inter to be Some")[n_atoms * 3..],
+                &mut current_code_size,
+                &mut resulting_coding_parameter,
+                n_atoms,
+            );
+        } else if coding == TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE {
+            let mut coder = Coder::default();
+            let mut current_code_size = n_atoms * 3 * (n_frames - 1);
+            coder.determine_best_coding_triple(
+                &mut quant[n_atoms * 3..],
+                &mut current_code_size,
+                &mut resulting_coding_parameter,
+                n_atoms,
+            );
+        } else if coding == TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER {
+            let mut coder = Coder::default();
+            let mut current_code_size = n_atoms * 3 * (n_frames - 1);
+            coder.determine_best_coding_stop_bits(
+                &mut quant_inter.as_deref_mut().expect("quant_inter to be Some")[n_atoms * 3..],
+                &mut current_code_size,
+                &mut resulting_coding_parameter,
+                n_atoms,
+            );
+        }
+    }
+}
+
+/// Perform velocity compression from vel into the data block
+fn compress_quantized_vel(
+    quant: &mut [i32],
+    quant_inter: Option<&mut [i32]>,
+    n_atoms: usize,
+    n_frames: usize,
+    mut speed: usize,
+    initial_coding: i32,
+    initial_coding_parameter: i32,
+    coding: i32,
+    coding_parameter: i32,
+    prec_hi: FixT,
+    prec_lo: FixT,
+    data: &mut Option<&mut [u8]>,
+) -> usize {
+    let mut datablock = None;
+
+    let mut bufloc = 0;
+    // Information needed for decompression
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(&mut mut_data[bufloc..], FixT::from(MAGIC_INT_VEL), 4);
+    }
+    bufloc += 4;
+
+    // Number of atoms
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(n_atoms).expect("u32 from usize")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Number of frames
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(n_frames).expect("u32 from usize")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Initial coding
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(initial_coding).expect("u32 from i32")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Initial coding parameter
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(initial_coding_parameter).expect("u32 from i32")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Coding
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(coding).expect("u32 from i32")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Coding parameter
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(coding_parameter).expect("u32 from i32")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // Precision
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(&mut mut_data[bufloc..], prec_lo, 4);
+    }
+    bufloc += 4;
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(&mut mut_data[bufloc..], prec_hi, 4);
+    }
+    bufloc += 4;
+
+    // The initial frame
+    let output_length;
+    let length = n_atoms * 3;
+    match initial_coding {
+        TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE
+        | TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE
+        | TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE => {
+            let mut coder = Coder::default();
+            let out_datablock;
+            (out_datablock, output_length) = coder
+                .pack_array(
+                    quant,
+                    &mut length.try_into().expect("usize from u32"),
+                    initial_coding,
+                    initial_coding_parameter,
+                    n_atoms.try_into().expect("usize from u32"),
+                    &mut speed,
+                )
+                .expect("packed array");
+            datablock = Some(out_datablock);
+        }
+        _ => unreachable!(),
+    }
+    // Block length
+    if let Some(mut_data) = data.as_mut() {
+        bufferfix(
+            &mut mut_data[bufloc..],
+            FixT::from(u32::try_from(output_length).expect("u32 from usize")),
+            4,
+        );
+    }
+    bufloc += 4;
+
+    // The actual data block
+    if let Some(mut_data) = data.as_mut() {
+        if let Some(db) = datablock {
+            mut_data[bufloc..bufloc + output_length].copy_from_slice(&db[..output_length]);
+            bufloc += output_length;
+        }
+    }
+
+    if n_frames > 1 {
+        datablock = None;
+        let us_natoms = usize::try_from(n_atoms).expect("usize from u32");
+        let mut fallback_len = us_natoms
+            .checked_mul(3)
+            .and_then(|v| v.checked_mul(usize::try_from(n_frames - 1).expect("usize from u32")))
+            .expect("fallback_len overflow");
+        let result = match coding {
+            // Inter-frame compression?
+            TNG_COMPRESS_ALGO_VEL_TRIPLET_INTER
+            | TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER
+            | TNG_COMPRESS_ALGO_VEL_BWLZH_INTER => {
+                let mut coder = Coder::default();
+                coder.pack_array(
+                    &mut quant_inter.expect("quant_inter to be Some")[us_natoms * 3..],
+                    &mut fallback_len,
+                    coding,
+                    coding_parameter,
+                    us_natoms,
+                    &mut speed,
+                )
+            }
+            // One-to-one compression?
+            TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE
+            | TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE
+            | TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE => {
+                let mut coder = Coder::default();
+                coder.pack_array(
+                    &mut quant_inter.expect("quant_inter to be Some")[us_natoms * 3..],
+                    &mut fallback_len,
+                    coding,
+                    coding_parameter,
+                    us_natoms,
+                    &mut speed,
+                )
+            }
+            _ => None,
+        };
+        // Always have a length and a data slice to write
+        let (datablock, output_length) = result.unwrap_or_else(|| (Vec::new(), fallback_len));
+        // Block length
+        if let Some(mut_data) = data.as_mut() {
+            bufferfix(
+                &mut mut_data[bufloc..],
+                FixT::from(u32::try_from(output_length).expect("u32 from usize")),
+                4,
+            );
+        }
+        bufloc += 4;
+        if !datablock.is_empty()
+            && let Some(mut_data) = data.as_mut()
+        {
+            mut_data[bufloc..bufloc + output_length].copy_from_slice(&datablock[..output_length]);
+        }
+        bufloc += output_length;
+    }
+
+    bufloc
+}
+
+pub(crate) fn determine_best_vel_initial_coding(
+    quant: &mut [i32],
+    n_atoms: usize,
+    speed: usize,
+    prec_hi: FixT,
+    prec_lo: FixT,
+    initial_coding: i32,
+    initial_coding_parameter: i32,
+) -> (i32, i32) {
+    let mut resulting_coding = initial_coding;
+    let mut resulting_coding_parameter = initial_coding_parameter;
+    if initial_coding == -1 {
+        let mut best_coding = -1;
+        let mut best_coding_parameter = -1;
+        let mut best_code_size = -1;
+        let mut current_coding;
+        let mut current_coding_parameter;
+        let mut current_code_size;
+        let mut coder;
+        // Start to determine best parameter for stopbit one-to-one
+        current_coding = TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE;
+        current_code_size = n_atoms * 3;
+        current_coding_parameter = 0;
+        coder = Coder::default();
+
+        if !coder.determine_best_coding_stop_bits(
+            quant,
+            &mut current_code_size,
+            &mut current_coding_parameter,
+            n_atoms,
+        ) {
+            best_coding = current_coding;
+            best_coding_parameter = current_coding_parameter;
+            best_code_size = i32::try_from(current_code_size).expect("i32 from usize");
+        }
+
+        //Determine best parameter for triplet one-to-one
+        current_coding = TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE;
+        coder = Coder::default();
+        current_code_size = n_atoms * 3;
+        current_coding_parameter = 0;
+        if !coder.determine_best_coding_triple(
+            quant,
+            &mut current_code_size,
+            &mut current_coding_parameter,
+            n_atoms,
+        ) {
+            if best_coding == -1
+                || (i32::try_from(current_code_size).expect("i32 from usize") < best_code_size)
+            {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = i32::try_from(current_code_size).expect("i32 from usize");
+            }
+        }
+
+        // Test BWLZH one-to-one
+        if speed >= 4 {
+            current_coding = TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE;
+            current_coding_parameter = 0;
+            current_code_size = compress_quantized_vel(
+                quant,
+                None,
+                n_atoms,
+                1,
+                speed,
+                current_coding,
+                current_coding_parameter,
+                0,
+                0,
+                prec_hi,
+                prec_lo,
+                &mut None,
+            );
+            if (best_coding == -1)
+                || (i32::try_from(current_code_size).expect("i32 from usize") < best_code_size)
+            {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+            }
+        }
+        resulting_coding = best_coding;
+        resulting_coding_parameter = best_coding_parameter;
+    } else if initial_coding_parameter == -1 {
+        if initial_coding == TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE {
+            resulting_coding_parameter = 0;
+        } else if initial_coding == TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE {
+            let mut coder = Coder::default();
+            let mut current_code_size = n_atoms * 3;
+            coder.determine_best_coding_triple(
+                quant,
+                &mut current_code_size,
+                &mut resulting_coding_parameter,
+                n_atoms,
+            );
+        } else if initial_coding == TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE {
+            let mut coder = Coder::default();
+            let mut current_code_size = n_atoms * 3;
+            coder.determine_best_coding_triple(
+                quant,
+                &mut current_code_size,
+                &mut resulting_coding_parameter,
+                n_atoms,
+            );
+        } else {
+            unreachable!("initial_coding != -1, but initial_coding_parameter != -1")
+        }
+    };
+
+    (resulting_coding, resulting_coding_parameter)
+}
+
 #[cfg(test)]
 mod buffer {
     use super::*;

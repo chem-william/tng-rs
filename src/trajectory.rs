@@ -37,7 +37,7 @@ fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
 
 /// This returns the number of integers required for the storage of the algorithm with
 /// the best compression ratio
-fn tng_compress_algo() -> u64 {
+fn tng_compress_nalgo() -> u64 {
     // There are currently four parameters required
     // 1) The compression algorithm for the first frame (initial_coding).
     // 2) One parameter to the algorithm for the first frame (the initial coding parameter).
@@ -1781,13 +1781,14 @@ impl Trajectory {
     }
 
     fn tng_compress(
-        &self,
+        &mut self,
         block: &GenBlock,
         n_frames: i64,
         n_particles: i64,
         data_type: &DataType,
         data: &[u8],
     ) -> Result<(), ()> {
+        let mut algo_find_n_frames = -1;
         if block.id != BlockID::TrajPositions || block.id != BlockID::TrajVelocities {
             eprintln!("Can only compress positions and velocities with the TNG method");
             return Err(());
@@ -1811,13 +1812,8 @@ impl Trajectory {
             // do not store the algorithm as the compression algorithm, but find
             // the best one without storing it
             if n_frames == 1 && self.frame_set_n_frames > 1 {
-                let nalgo = usize::try_from(tng_compress_algo()).expect("usize from u64");
-                let mut alt_algo =
-                    vec![
-                        0;
-                        usize::try_from(nalgo * size_of_val(&self.compress_algo_pos))
-                            .expect("usize from u64")
-                    ];
+                let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
+                let mut alt_algo = vec![0; nalgo * size_of_val(&self.compress_algo_pos)];
 
                 // If we have already determined the initial coding and
                 // initial coding parameter do not determine them again
@@ -1838,24 +1834,285 @@ impl Trajectory {
                         "Float‐branch: data_bytes.len() must be exactly count * 4"
                     );
 
-                    // TODO: somehow pre-allocate this vec
+                    // TODO: maybe just re-interpret these bytes
                     let mut floats = Vec::new();
                     for chunk in data.chunks_exact(4) {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
                         floats.push(f32::from_le_bytes(arr));
                     }
 
-                    let data = self.tng_compress_pos_float(
+                    tng_compress_pos_float(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         f_precision,
                         0,
-                        &alt_algo,
-                    );
+                        &mut alt_algo,
+                    )
                 } else {
-                    self.tng_compress_pos();
+                    let mut doubles = Vec::new();
+                    for chunk in data.chunks_exact(8) {
+                        let arr = [
+                            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                            chunk[7],
+                        ];
+                        doubles.push(f64::from_le_bytes(arr));
+                    }
+                    tng_compress_pos(
+                        &doubles,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(n_frames).expect("usize from i64"),
+                        d_precision,
+                        0,
+                        &mut alt_algo,
+                    )
                 };
+
+                // If there had been no algorithm determined before keep the initial coding
+                // and initial coding parameter so that they won't have to be determined again.
+                if !self.compress_algo_pos.is_empty() {
+                    let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
+                    self.compress_algo_pos = vec![0; nalgo * size_of_val(&self.compress_algo_pos)];
+                    self.compress_algo_pos[0] = alt_algo[0];
+                    self.compress_algo_pos[1] = alt_algo[1];
+                    self.compress_algo_pos[2] = -1;
+                    self.compress_algo_pos[3] = -1;
+                }
+            // TODO: is it a bug in the original code that it checks twice for the compress_algo_pos?
+            } else if !self.compress_algo_pos.is_empty()
+                || self.compress_algo_pos[2] == -1
+                || self.compress_algo_pos[2] == -1
+            {
+                algo_find_n_frames = if n_frames > 6 { 5 } else { n_frames };
+
+                // If the algorithm parameters are -1 they will be determined during the compression.
+                if !self.compress_algo_pos.is_empty() {
+                    let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
+                    self.compress_algo_pos = vec![0; nalgo * size_of_val(&self.compress_algo_pos)];
+                    self.compress_algo_pos[0] = -1;
+                    self.compress_algo_pos[1] = -1;
+                    self.compress_algo_pos[2] = -1;
+                    self.compress_algo_pos[3] = -1;
+                }
+
+                let dest = if *data_type == DataType::Float {
+                    debug_assert!(
+                        data.len() % 4 == 0,
+                        "Float‐branch: data_bytes.len() must be exactly count * 4"
+                    );
+
+                    // TODO: maybe just re-interpret these bytes
+                    let mut floats = Vec::new();
+                    for chunk in data.chunks_exact(4) {
+                        let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
+                        floats.push(f32::from_le_bytes(arr));
+                    }
+
+                    // to avoid overlapping mut borrows, we take the self.compress_algo_pos and put it back afterwards
+                    let mut tmp_algo = std::mem::take(&mut self.compress_algo_pos);
+                    let mut dest = tng_compress_pos_float(
+                        &floats,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(algo_find_n_frames).expect("usize from i64"),
+                        f_precision,
+                        0,
+                        &mut tmp_algo,
+                    );
+                    self.compress_algo_pos = tmp_algo;
+                    if algo_find_n_frames < n_frames {
+                        let mut tmp_algo = std::mem::take(&mut self.compress_algo_pos);
+                        dest = tng_compress_pos_float(
+                            &floats,
+                            usize::try_from(n_particles).expect("usize from i64"),
+                            usize::try_from(n_frames).expect("usize from i64"),
+                            f_precision,
+                            0,
+                            &mut tmp_algo,
+                        );
+                        self.compress_algo_pos = tmp_algo;
+                    }
+                    dest
+                } else {
+                    let mut doubles = Vec::new();
+                    for chunk in data.chunks_exact(8) {
+                        let arr = [
+                            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                            chunk[7],
+                        ];
+                        doubles.push(f64::from_le_bytes(arr));
+                    }
+                    let mut tmp_algo = std::mem::take(&mut self.compress_algo_pos);
+                    let mut dest = tng_compress_pos(
+                        &doubles,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(algo_find_n_frames).expect("usize from i64"),
+                        d_precision,
+                        0,
+                        &mut tmp_algo,
+                    );
+                    self.compress_algo_pos = tmp_algo;
+
+                    if algo_find_n_frames < n_frames {
+                        let mut tmp_algo = std::mem::take(&mut self.compress_algo_pos);
+                        dest = tng_compress_pos(
+                            &doubles,
+                            usize::try_from(n_particles).expect("usize from i64"),
+                            usize::try_from(n_frames).expect("usize from i64"),
+                            d_precision,
+                            0,
+                            &mut tmp_algo,
+                        );
+                        self.compress_algo_pos = tmp_algo;
+                    }
+                    dest
+                };
+            }
+        } else if block.id == BlockID::TrajVelocities {
+            // If there is only one frame in this frame set and there might be more
+            // do not store the algorithm as the compression algorithm, but find
+            // the best one without storing it
+            if n_frames == 1 && self.frame_set_n_frames > 1 {
+                let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
+                let mut alt_algo = vec![0; nalgo * size_of_val(&self.compress_algo_vel)];
+
+                // If we have already determined the initial coding and
+                // initial coding parameter do not determine them again
+                if !self.compress_algo_vel.is_empty() {
+                    alt_algo[0] = self.compress_algo_vel[0];
+                    alt_algo[1] = self.compress_algo_vel[1];
+                    alt_algo[2] = self.compress_algo_vel[2];
+                    alt_algo[3] = self.compress_algo_vel[3];
+                } else {
+                    alt_algo = vec![-1; 4];
+                }
+
+                // If the initial coding and initial coding parameter are -1
+                // they will be determined in tng_compress_pos/_float/.
+                let dest = if *data_type == DataType::Float {
+                    // TODO: maybe just re-interpret these bytes
+                    let mut floats = Vec::new();
+                    for chunk in data.chunks_exact(4) {
+                        let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
+                        floats.push(f32::from_le_bytes(arr));
+                    }
+                    // to avoid overlapping mut borrows, we take the self.compress_algo_pos and put it back afterwards
+                    let dest = tng_compress_vel_float(
+                        &floats,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(n_frames).expect("usize from i64"),
+                        f_precision,
+                        0,
+                        &mut alt_algo,
+                    );
+                    dest
+                } else {
+                    let mut doubles = Vec::new();
+                    for chunk in data.chunks_exact(8) {
+                        let arr = [
+                            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                            chunk[7],
+                        ];
+                        doubles.push(f64::from_le_bytes(arr));
+                    }
+                    let dest = tng_compress_vel(
+                        &doubles,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(algo_find_n_frames).expect("usize from i64"),
+                        d_precision,
+                        0,
+                        &mut alt_algo,
+                    );
+                    dest
+                };
+                // If there had been no algorithm determined before keep the initial coding
+                // and initial coding parameter so that they won't have to be determined again
+                if self.compress_algo_vel.is_empty() {
+                    let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
+                    self.compress_algo_vel = vec![0; nalgo * size_of_val(&self.compress_algo_vel)];
+                    self.compress_algo_vel[0] = alt_algo[0];
+                    self.compress_algo_vel[1] = alt_algo[1];
+                    self.compress_algo_vel[2] = -1;
+                    self.compress_algo_vel[3] = -1;
+                }
+            // TODO: is it a bug in the original code that it checks twice for the compress_algo_vel?
+            } else if self.compress_algo_vel.is_empty()
+                || self.compress_algo_vel[2] == -1
+                || self.compress_algo_vel[2] == -1
+            {
+                algo_find_n_frames = if n_frames > 6 { 5 } else { n_frames };
+
+                // If the algorithm parameters are -1 they will be determined during the compression
+                if self.compress_algo_vel.is_empty() {
+                    let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
+                    self.compress_algo_vel = vec![-1; nalgo * size_of_val(&self.compress_algo_vel)];
+                }
+
+                let dest = if *data_type == DataType::Float {
+                    // TODO: maybe just re-interpret these bytes
+                    let mut floats = Vec::new();
+                    for chunk in data.chunks_exact(4) {
+                        let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
+                        floats.push(f32::from_le_bytes(arr));
+                    }
+                    // to avoid overlapping mut borrows, we take the self.compress_algo_pos and put it back afterwards
+                    let mut tmp_algo = std::mem::take(&mut self.compress_algo_vel);
+                    let dest = tng_compress_vel_float(
+                        &floats,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(algo_find_n_frames).expect("usize from i64"),
+                        f_precision,
+                        0,
+                        &mut tmp_algo,
+                    );
+                    self.compress_algo_vel = tmp_algo;
+                    if algo_find_n_frames < n_frames {
+                        let mut tmp_algo = std::mem::take(&mut self.compress_algo_vel);
+                        dest = tng_compress_vel_float(
+                            &floats,
+                            usize::try_from(n_particles).expect("usize from i64"),
+                            usize::try_from(n_frames).expect("usize from i64"),
+                            f_precision,
+                            0,
+                            &mut tmp_algo,
+                        );
+                        self.compress_algo_vel = tmp_algo;
+                    }
+                    dest
+                } else {
+                    let mut doubles = Vec::new();
+                    for chunk in data.chunks_exact(8) {
+                        let arr = [
+                            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                            chunk[7],
+                        ];
+                        doubles.push(f64::from_le_bytes(arr));
+                    }
+                    let mut tmp_algo = std::mem::take(&mut self.compress_algo_vel);
+                    let dest = tng_compress_vel(
+                        &doubles,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(algo_find_n_frames).expect("usize from i64"),
+                        d_precision,
+                        0,
+                        &mut tmp_algo,
+                    );
+                    self.compress_algo_vel = tmp_algo;
+                    if algo_find_n_frames < n_frames {
+                        let mut tmp_algo = std::mem::take(&mut self.compress_algo_vel);
+                        let dest = tng_compress_vel(
+                            &doubles,
+                            usize::try_from(n_particles).expect("usize from i64"),
+                            usize::try_from(n_frames).expect("usize from i64"),
+                            d_precision,
+                            0,
+                            &mut tmp_algo,
+                        );
+                        self.compress_algo_vel = tmp_algo;
+                    }
+                    dest
+                };
+            } else {
+                unimplemented!("lib/tng_io.c line 4292");
             }
         }
 
