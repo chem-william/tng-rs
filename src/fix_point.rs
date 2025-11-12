@@ -76,6 +76,12 @@ impl From<FixT> for u32 {
     }
 }
 
+impl std::fmt::Display for FixT {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Convert a floating point variable to two 32 bit integers with range
 /// -2.1e9 to 2.1e9 and precision somewhere around 1e-9
 ///
