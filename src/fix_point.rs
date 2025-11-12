@@ -110,7 +110,7 @@ pub(crate) fn f64_to_fixt_pair(d: f64) -> (FixT, FixT) {
         hi |= FixT::SIGN32BIT;
     }
 
-    let lo = FixT::from_f64_signed(frac, 1.0);
+    let lo = FixT::from_f64_unsigned(frac, 1.0);
 
     (FixT(hi), lo)
 }
