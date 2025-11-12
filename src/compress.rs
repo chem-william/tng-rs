@@ -1210,8 +1210,8 @@ pub(crate) fn tng_compress_vel_int(
                 inner_speed,
                 prec_hi,
                 prec_lo,
-                &mut coding,
-                &mut coding_parameter,
+                coding,
+                coding_parameter,
             );
         } else if coding_parameter == -1 {
             determine_best_vel_coding(
@@ -1222,8 +1222,8 @@ pub(crate) fn tng_compress_vel_int(
                 inner_speed,
                 prec_hi,
                 prec_lo,
-                &mut coding,
-                &mut coding_parameter,
+                coding,
+                coding_parameter,
             );
         }
     }
@@ -1271,7 +1271,7 @@ fn determine_best_vel_coding(
     prec_lo: FixT,
     coding: i32,
     coding_parameter: i32,
-) {
+) -> (i32, i32) {
     let mut resulting_coding = coding;
     let mut resulting_coding_parameter = coding_parameter;
 
@@ -1463,6 +1463,7 @@ fn determine_best_vel_coding(
             );
         }
     }
+    (resulting_coding, resulting_coding_parameter)
 }
 
 /// Perform velocity compression from vel into the data block

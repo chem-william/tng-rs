@@ -6,13 +6,9 @@ use crate::atom::Atom;
 use crate::bond::Bond;
 use crate::chain::Chain;
 use crate::compress::{
-    TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE, compress_quantized_pos, determine_best_pos_coding,
-    determine_best_pos_initial_coding, precision, quant_inter_differences, quant_intra_differences,
-    quantize, quantize_float, tng_compress_pos, tng_compress_pos_float, tng_compress_pos_int,
-    tng_compress_vel, tng_compress_vel_float,
+    tng_compress_pos, tng_compress_pos_float, tng_compress_vel, tng_compress_vel_float,
 };
 use crate::data::{Compression, Data, DataType};
-use crate::fix_point::{FixT, f64_to_fixt_pair};
 use crate::gen_block::{BlockID, GenBlock};
 use crate::molecule::Molecule;
 use crate::particle_mapping::ParticleMapping;
@@ -2056,7 +2052,7 @@ impl Trajectory {
                     }
                     // to avoid overlapping mut borrows, we take the self.compress_algo_pos and put it back afterwards
                     let mut tmp_algo = std::mem::take(&mut self.compress_algo_vel);
-                    let dest = tng_compress_vel_float(
+                    let mut dest = tng_compress_vel_float(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
