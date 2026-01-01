@@ -5,6 +5,7 @@
 pub struct FixT(u32);
 
 impl FixT {
+    pub(crate) const MAX32BIT: u32 = 4294967295; // (1 << 32) - 1
     pub(crate) const MAX31BIT: u32 = 2147483647; // (1 << 31) - 1
     pub(crate) const SIGN32BIT: u32 = 2147483648; // 1 << 31
 
@@ -53,13 +54,7 @@ impl FixT {
     ///
     /// c version: Ptngc_fix_t_to_d
     pub(crate) fn to_f64_signed(self, max: f64) -> f64 {
-        // Extract sign bit
-        let negative = (self.0 & Self::SIGN32BIT) != 0;
-        // Mask off the sign bit to get the magnitude in [0..MAX31BIT]
-        let magnitude = (self.0 & Self::MAX31BIT) as f64;
-        // Scale that magnitude into [0..max]
-        let scaled = magnitude * (max / (Self::MAX31BIT as f64));
-        if negative { -scaled } else { scaled }
+        self.0 as f64 * (max / (Self::MAX32BIT as f64))
     }
 }
 
@@ -122,9 +117,13 @@ pub(crate) fn f64_to_fixt_pair(d: f64) -> (FixT, FixT) {
 pub(crate) fn fixt_pair_to_f64(hi: FixT, lo: FixT) -> f64 {
     let negative = (u32::from(hi) & FixT::SIGN32BIT) != 0;
     // Mask away the sign bit to get the absolute integer part
-    let magnitude_hi = (u32::from(hi) & FixT::MAX31BIT) as f64;
+    let magnitude_hi = if negative {
+        u32::from(hi) & FixT::MAX31BIT
+    } else {
+        u32::from(hi)
+    };
 
-    let ent = magnitude_hi;
+    let ent = magnitude_hi as f64;
     let frac = lo.to_f64_signed(1.0);
     let val = ent + frac;
 
