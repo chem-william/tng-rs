@@ -1,4 +1,4 @@
-use log::warn;
+use log::{error, warn};
 use std::cmp::{max, min};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,6 +23,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
 
 fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
     let meta1 = file1.metadata()?;
@@ -175,6 +176,14 @@ pub struct Trajectory {
     pub compression_precision: f64,
 }
 
+#[derive(Copy, Clone, Debug)]
+enum Slot {
+    NonTr,
+    NonTrParticle,
+    Tr,
+    TrParticle,
+}
+
 impl Trajectory {
     /// Detect the host’s native 32‐ and 64‐bit endianness and store the corresponding enum values.
     ///
@@ -273,7 +282,7 @@ impl Trajectory {
         }
     }
 
-    fn get_input_file_position(&mut self) -> u64 {
+    fn get_input_file_position(&self) -> u64 {
         self.input_file
             .as_ref()
             .expect("init input_file")
@@ -281,7 +290,7 @@ impl Trajectory {
             .expect("no error handling")
     }
 
-    fn get_output_file_position(&mut self) -> u64 {
+    fn get_output_file_position(&self) -> u64 {
         self.output_file
             .as_ref()
             .expect("init output_file")
@@ -972,6 +981,16 @@ impl Trajectory {
         }
     }
 
+    // We don't bother to estimate the max bound of the compression as Rust has dynamic arrays (Vec)
+    // which C doesn't thus needing to pre-allocate the maximum amount.
+    fn gzip_compress(data: &[u8], len: usize) -> usize {
+        let mut encoder = ZlibEncoder::new(Vec::with_capacity(len), flate2::Compression::default());
+        encoder.write_all(data);
+
+        let compressed = encoder.finish().expect("compression successful");
+        compressed.len()
+    }
+
     fn gzip_uncompress(
         data: &[u8],
         compressed_len: u64,
@@ -1458,7 +1477,6 @@ impl Trajectory {
     }
 
     pub fn data_block_len_calculate(
-        &self,
         data: &Data,
         is_particle_data: bool,
         n_frames: u64,
@@ -1777,13 +1795,17 @@ impl Trajectory {
     }
 
     fn tng_compress(
-        &mut self,
+        &self,
+        compress_algo_pos: &mut Vec<i32>,
+        compress_algo_vel: &mut Vec<i32>,
         block: &GenBlock,
         n_frames: i64,
         n_particles: i64,
         data_type: &DataType,
         data: &[u8],
-    ) -> Result<(), ()> {
+    ) -> Result<i64, ()> {
+        let dest;
+
         let mut algo_find_n_frames = -1;
         if block.id != BlockID::TrajPositions || block.id != BlockID::TrajVelocities {
             eprintln!("Can only compress positions and velocities with the TNG method");
@@ -1809,22 +1831,22 @@ impl Trajectory {
             // the best one without storing it
             if n_frames == 1 && self.frame_set_n_frames > 1 {
                 let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                let mut alt_algo = vec![0; nalgo * size_of_val(&self.compress_algo_pos)];
+                let mut alt_algo = vec![0; nalgo * size_of_val(&compress_algo_pos)];
 
                 // If we have already determined the initial coding and
                 // initial coding parameter do not determine them again
-                if !self.compress_algo_pos.is_empty() {
-                    alt_algo[0] = self.compress_algo_pos[0];
-                    alt_algo[1] = self.compress_algo_pos[1];
-                    alt_algo[2] = self.compress_algo_pos[2];
-                    alt_algo[3] = self.compress_algo_pos[3];
+                if !compress_algo_pos.is_empty() {
+                    alt_algo[0] = compress_algo_pos[0];
+                    alt_algo[1] = compress_algo_pos[1];
+                    alt_algo[2] = compress_algo_pos[2];
+                    alt_algo[3] = compress_algo_pos[3];
                 } else {
                     alt_algo = vec![-1; 4];
                 }
 
                 // If the initial coding and initial coding parameter are -1
                 // they will be determined in tng_compress_pos/_float/
-                let dest = if *data_type == DataType::Float {
+                dest = if *data_type == DataType::Float {
                     debug_assert!(
                         data.len() % 4 == 0,
                         "Float‐branch: data_bytes.len() must be exactly count * 4"
@@ -1866,34 +1888,34 @@ impl Trajectory {
 
                 // If there had been no algorithm determined before keep the initial coding
                 // and initial coding parameter so that they won't have to be determined again.
-                if !self.compress_algo_pos.is_empty() {
+                if !compress_algo_pos.is_empty() {
                     let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                    self.compress_algo_pos = vec![0; nalgo * size_of_val(&self.compress_algo_pos)];
-                    self.compress_algo_pos[0] = alt_algo[0];
-                    self.compress_algo_pos[1] = alt_algo[1];
-                    self.compress_algo_pos[2] = -1;
-                    self.compress_algo_pos[3] = -1;
+                    *compress_algo_pos = vec![0; nalgo * size_of_val(compress_algo_pos)];
+                    compress_algo_pos[0] = alt_algo[0];
+                    compress_algo_pos[1] = alt_algo[1];
+                    compress_algo_pos[2] = -1;
+                    compress_algo_pos[3] = -1;
                 }
             // TODO: is it a bug in the original code that it checks twice for the compress_algo_pos?
-            } else if !self.compress_algo_pos.is_empty()
-                || self.compress_algo_pos[2] == -1
-                || self.compress_algo_pos[2] == -1
+            } else if !compress_algo_pos.is_empty()
+                || compress_algo_pos[2] == -1
+                || compress_algo_pos[2] == -1
             {
                 algo_find_n_frames = if n_frames > 6 { 5 } else { n_frames };
 
                 // If the algorithm parameters are -1 they will be determined during the compression.
-                if !self.compress_algo_pos.is_empty() {
+                if !compress_algo_pos.is_empty() {
                     let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                    self.compress_algo_pos = vec![0; nalgo * size_of_val(&self.compress_algo_pos)];
-                    self.compress_algo_pos[0] = -1;
-                    self.compress_algo_pos[1] = -1;
-                    self.compress_algo_pos[2] = -1;
-                    self.compress_algo_pos[3] = -1;
+                    *compress_algo_pos = vec![0; nalgo * size_of_val(compress_algo_pos)];
+                    compress_algo_pos[0] = -1;
+                    compress_algo_pos[1] = -1;
+                    compress_algo_pos[2] = -1;
+                    compress_algo_pos[3] = -1;
                 }
 
-                let dest = if *data_type == DataType::Float {
+                dest = if *data_type == DataType::Float {
                     debug_assert!(
-                        data.len() % 4 == 0,
+                        data.len().is_multiple_of(4),
                         "Float‐branch: data_bytes.len() must be exactly count * 4"
                     );
 
@@ -1904,30 +1926,25 @@ impl Trajectory {
                         floats.push(f32::from_le_bytes(arr));
                     }
 
-                    // to avoid overlapping mut borrows, we take the self.compress_algo_pos and put it back afterwards
-                    let mut tmp_algo = std::mem::take(&mut self.compress_algo_pos);
-                    let mut dest = tng_compress_pos_float(
+                    let mut return_dest = tng_compress_pos_float(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
                         f_precision,
                         0,
-                        &mut tmp_algo,
+                        compress_algo_pos,
                     );
-                    self.compress_algo_pos = tmp_algo;
                     if algo_find_n_frames < n_frames {
-                        let mut tmp_algo = std::mem::take(&mut self.compress_algo_pos);
-                        dest = tng_compress_pos_float(
+                        return_dest = tng_compress_pos_float(
                             &floats,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
                             f_precision,
                             0,
-                            &mut tmp_algo,
+                            compress_algo_pos,
                         );
-                        self.compress_algo_pos = tmp_algo;
                     }
-                    dest
+                    return_dest
                 } else {
                     let mut doubles = Vec::new();
                     for chunk in data.chunks_exact(8) {
@@ -1937,31 +1954,60 @@ impl Trajectory {
                         ];
                         doubles.push(f64::from_le_bytes(arr));
                     }
-                    let mut tmp_algo = std::mem::take(&mut self.compress_algo_pos);
-                    let mut dest = tng_compress_pos(
+                    let mut return_dest = tng_compress_pos(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
                         d_precision,
                         0,
-                        &mut tmp_algo,
+                        compress_algo_pos,
                     );
-                    self.compress_algo_pos = tmp_algo;
 
                     if algo_find_n_frames < n_frames {
-                        let mut tmp_algo = std::mem::take(&mut self.compress_algo_pos);
-                        dest = tng_compress_pos(
+                        return_dest = tng_compress_pos(
                             &doubles,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
                             d_precision,
                             0,
-                            &mut tmp_algo,
+                            compress_algo_pos,
                         );
-                        self.compress_algo_pos = tmp_algo;
                     }
-                    dest
+                    return_dest
                 };
+            } else {
+                dest = if *data_type == DataType::Float {
+                    let mut floats = Vec::new();
+                    for chunk in data.chunks_exact(4) {
+                        let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
+                        floats.push(f32::from_le_bytes(arr));
+                    }
+                    tng_compress_vel_float(
+                        &floats,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(n_frames).expect("usize from i64"),
+                        f_precision,
+                        0,
+                        compress_algo_pos,
+                    )
+                } else {
+                    let mut doubles = Vec::new();
+                    for chunk in data.chunks_exact(8) {
+                        let arr = [
+                            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                            chunk[7],
+                        ];
+                        doubles.push(f64::from_le_bytes(arr));
+                    }
+                    tng_compress_vel(
+                        &doubles,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(n_frames).expect("usize from i64"),
+                        d_precision,
+                        0,
+                        compress_algo_pos,
+                    )
+                }
             }
         } else if block.id == BlockID::TrajVelocities {
             // If there is only one frame in this frame set and there might be more
@@ -1969,38 +2015,36 @@ impl Trajectory {
             // the best one without storing it
             if n_frames == 1 && self.frame_set_n_frames > 1 {
                 let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                let mut alt_algo = vec![0; nalgo * size_of_val(&self.compress_algo_vel)];
+                let mut alt_algo = vec![0; nalgo * size_of_val(compress_algo_vel)];
 
                 // If we have already determined the initial coding and
                 // initial coding parameter do not determine them again
-                if !self.compress_algo_vel.is_empty() {
-                    alt_algo[0] = self.compress_algo_vel[0];
-                    alt_algo[1] = self.compress_algo_vel[1];
-                    alt_algo[2] = self.compress_algo_vel[2];
-                    alt_algo[3] = self.compress_algo_vel[3];
+                if !compress_algo_vel.is_empty() {
+                    alt_algo[0] = compress_algo_vel[0];
+                    alt_algo[1] = compress_algo_vel[1];
+                    alt_algo[2] = compress_algo_vel[2];
+                    alt_algo[3] = compress_algo_vel[3];
                 } else {
                     alt_algo = vec![-1; 4];
                 }
 
                 // If the initial coding and initial coding parameter are -1
                 // they will be determined in tng_compress_pos/_float/.
-                let dest = if *data_type == DataType::Float {
+                dest = if *data_type == DataType::Float {
                     // TODO: maybe just re-interpret these bytes
                     let mut floats = Vec::new();
                     for chunk in data.chunks_exact(4) {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
                         floats.push(f32::from_le_bytes(arr));
                     }
-                    // to avoid overlapping mut borrows, we take the self.compress_algo_pos and put it back afterwards
-                    let dest = tng_compress_vel_float(
+                    tng_compress_vel_float(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         f_precision,
                         0,
                         &mut alt_algo,
-                    );
-                    dest
+                    )
                 } else {
                     let mut doubles = Vec::new();
                     for chunk in data.chunks_exact(8) {
@@ -2010,70 +2054,64 @@ impl Trajectory {
                         ];
                         doubles.push(f64::from_le_bytes(arr));
                     }
-                    let dest = tng_compress_vel(
+                    tng_compress_vel(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
                         d_precision,
                         0,
                         &mut alt_algo,
-                    );
-                    dest
+                    )
                 };
                 // If there had been no algorithm determined before keep the initial coding
                 // and initial coding parameter so that they won't have to be determined again
-                if self.compress_algo_vel.is_empty() {
+                if compress_algo_vel.is_empty() {
                     let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                    self.compress_algo_vel = vec![0; nalgo * size_of_val(&self.compress_algo_vel)];
-                    self.compress_algo_vel[0] = alt_algo[0];
-                    self.compress_algo_vel[1] = alt_algo[1];
-                    self.compress_algo_vel[2] = -1;
-                    self.compress_algo_vel[3] = -1;
+                    *compress_algo_vel = vec![0; nalgo * size_of_val(compress_algo_vel)];
+                    compress_algo_vel[0] = alt_algo[0];
+                    compress_algo_vel[1] = alt_algo[1];
+                    compress_algo_vel[2] = -1;
+                    compress_algo_vel[3] = -1;
                 }
             // TODO: is it a bug in the original code that it checks twice for the compress_algo_vel?
-            } else if self.compress_algo_vel.is_empty()
-                || self.compress_algo_vel[2] == -1
-                || self.compress_algo_vel[2] == -1
+            } else if compress_algo_vel.is_empty()
+                || compress_algo_vel[2] == -1
+                || compress_algo_vel[2] == -1
             {
                 algo_find_n_frames = if n_frames > 6 { 5 } else { n_frames };
 
                 // If the algorithm parameters are -1 they will be determined during the compression
-                if self.compress_algo_vel.is_empty() {
+                if compress_algo_vel.is_empty() {
                     let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                    self.compress_algo_vel = vec![-1; nalgo * size_of_val(&self.compress_algo_vel)];
+                    *compress_algo_vel = vec![-1; nalgo * size_of_val(compress_algo_vel)];
                 }
 
-                let dest = if *data_type == DataType::Float {
+                dest = if *data_type == DataType::Float {
                     // TODO: maybe just re-interpret these bytes
                     let mut floats = Vec::new();
                     for chunk in data.chunks_exact(4) {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
                         floats.push(f32::from_le_bytes(arr));
                     }
-                    // to avoid overlapping mut borrows, we take the self.compress_algo_pos and put it back afterwards
-                    let mut tmp_algo = std::mem::take(&mut self.compress_algo_vel);
-                    let mut dest = tng_compress_vel_float(
+                    let mut return_dest = tng_compress_vel_float(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
                         f_precision,
                         0,
-                        &mut tmp_algo,
+                        compress_algo_vel,
                     );
-                    self.compress_algo_vel = tmp_algo;
                     if algo_find_n_frames < n_frames {
-                        let mut tmp_algo = std::mem::take(&mut self.compress_algo_vel);
-                        dest = tng_compress_vel_float(
+                        return_dest = tng_compress_vel_float(
                             &floats,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
                             f_precision,
                             0,
-                            &mut tmp_algo,
+                            compress_algo_vel,
                         );
-                        self.compress_algo_vel = tmp_algo;
                     }
-                    dest
+                    return_dest
                 } else {
                     let mut doubles = Vec::new();
                     for chunk in data.chunks_exact(8) {
@@ -2083,41 +2121,74 @@ impl Trajectory {
                         ];
                         doubles.push(f64::from_le_bytes(arr));
                     }
-                    let mut tmp_algo = std::mem::take(&mut self.compress_algo_vel);
-                    let dest = tng_compress_vel(
+                    let mut return_dest = tng_compress_vel(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
                         d_precision,
                         0,
-                        &mut tmp_algo,
+                        compress_algo_vel,
                     );
-                    self.compress_algo_vel = tmp_algo;
                     if algo_find_n_frames < n_frames {
-                        let mut tmp_algo = std::mem::take(&mut self.compress_algo_vel);
-                        let dest = tng_compress_vel(
+                        return_dest = tng_compress_vel(
                             &doubles,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
                             d_precision,
                             0,
-                            &mut tmp_algo,
+                            compress_algo_vel,
                         );
-                        self.compress_algo_vel = tmp_algo;
                     }
-                    dest
+                    return_dest
                 };
             } else {
-                unimplemented!("lib/tng_io.c line 4292");
+                dest = if *data_type == DataType::Float {
+                    let mut floats = Vec::new();
+                    for chunk in data.chunks_exact(4) {
+                        let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
+                        floats.push(f32::from_le_bytes(arr));
+                    }
+                    let return_dest = tng_compress_vel_float(
+                        &floats,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(n_frames).expect("usize from i64"),
+                        f_precision,
+                        0,
+                        compress_algo_vel,
+                    );
+                    return_dest
+                } else {
+                    let mut doubles = Vec::new();
+                    for chunk in data.chunks_exact(8) {
+                        let arr = [
+                            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
+                            chunk[7],
+                        ];
+                        doubles.push(f64::from_le_bytes(arr));
+                    }
+                    let return_dest = tng_compress_vel(
+                        &doubles,
+                        usize::try_from(n_particles).expect("usize from i64"),
+                        usize::try_from(n_frames).expect("usize from i64"),
+                        d_precision,
+                        0,
+                        compress_algo_vel,
+                    );
+                    return_dest
+                }
             }
+        } else {
+            error!("Can only compress positions and velocities using TNG-MF1 algorithms");
+            return Err(());
         }
 
-        Ok(())
+        Ok(i64::try_from(dest.unwrap().len()).expect("i64"))
     }
 
     /// Write a data block (particle or non-particle data)
     fn data_block_write(
         &mut self,
+        // output_file: &mut Option<File>,
         block: &mut GenBlock,
         is_particle_data: bool,
         block_index: usize,
@@ -2126,77 +2197,105 @@ impl Trajectory {
         // If we have already started writing frame sets it is too late to write
         // non-trajectory data blocks
         let mut stride_length = 0;
-        let mut data = &mut Data::default();
+        //let data: Data;
         let is_trajectory_block = self.current_trajectory_frame_set_output_file_pos > 0;
 
         self.output_file_init();
 
-        if is_particle_data {
-            if is_trajectory_block {
-                data = &mut self.current_trajectory_frame_set.tr_particle_data[block_index];
+        let slot = match (is_particle_data, is_trajectory_block) {
+            (true, true) => Slot::TrParticle,
+            (true, false) => Slot::NonTrParticle,
+            (false, true) => Slot::Tr,
+            (false, false) => Slot::NonTr,
+        };
 
-                // If this data block has not had any data added in this frame set
-                // do not write it
-                if data.first_frame_with_data < self.current_trajectory_frame_set.first_frame {
-                    return;
-                }
-
-                stride_length = max(1, data.stride_length);
-            } else {
-                data = &mut self.non_tr_particle_data[block_index];
-                stride_length = 1;
+        // helper: one-shot mutable access
+        let data_mut = match slot {
+            Slot::TrParticle => {
+                &mut self.current_trajectory_frame_set.tr_particle_data[block_index]
             }
-        } else if is_trajectory_block {
-            data = &mut self.current_trajectory_frame_set.tr_data[block_index];
+            Slot::NonTrParticle => &mut self.non_tr_particle_data[block_index],
+            Slot::Tr => &mut self.current_trajectory_frame_set.tr_data[block_index],
+            Slot::NonTr => &mut self.non_tr_data[block_index],
+        };
 
-            // If this data block has not had any data added in this frame set
-            // do not write it
-            if data.first_frame_with_data < self.current_trajectory_frame_set.first_frame {
+        let stride_length = {
+            if is_trajectory_block
+                && data_mut.first_frame_with_data < self.current_trajectory_frame_set.first_frame
+            {
                 return;
             }
+            data_mut.stride_length.max(1)
+        };
 
-            stride_length = max(1, data.stride_length);
-        } else {
-            data = &mut self.non_tr_data[block_index];
-            stride_length = 1;
-        }
+        // if is_particle_data {
+        //     if is_trajectory_block {
+        //         data = &mut self.current_trajectory_frame_set.tr_particle_data[block_index];
 
-        let size = data.data_type.get_size();
-        block.name = Some(data.block_name.clone());
-        block.id = data.block_id;
+        //         // If this data block has not had any data added in this frame set
+        //         // do not write it
+        //         if data.first_frame_with_data < self.current_trajectory_frame_set.first_frame {
+        //             return;
+        //         }
+
+        //         stride_length = max(1, data.stride_length);
+        //     } else {
+        //         data = &mut self.non_tr_particle_data[block_index];
+        //         stride_length = 1;
+        //     }
+        // } else if is_trajectory_block {
+        //     data = &mut self.current_trajectory_frame_set.tr_data[block_index];
+
+        //     // If this data block has not had any data added in this frame set
+        //     // do not write it
+        //     if data.first_frame_with_data < self.current_trajectory_frame_set.first_frame {
+        //         return;
+        //     }
+
+        //     stride_length = max(1, data.stride_length);
+        // } else {
+        //     data = &mut self.non_tr_data[block_index];
+        //     stride_length = 1;
+        // }
+
+        let size = data_mut.data_type.get_size();
+        block.name = Some(data_mut.block_name.clone());
+        block.id = data_mut.block_id;
 
         // If writing frame independent data data->n_frames is 0, but n_frames
         // is used for the loop writing the data (and reserving memory) and needs
         // to be at least 1
-        let mut n_frames = max(1, data.n_frames);
+        let mut n_frames = max(1, data_mut.n_frames);
 
         if is_trajectory_block {
             // If the frame is finished before writing the full number of frames
             // make sure the data block is not longer than the frame set
             n_frames = min(n_frames, self.current_trajectory_frame_set.n_frames);
-            n_frames -= data.first_frame_with_data - self.current_trajectory_frame_set.first_frame;
+            n_frames -=
+                data_mut.first_frame_with_data - self.current_trajectory_frame_set.first_frame;
         }
 
         let mut frame_step = (n_frames - 1) / stride_length + 1;
 
-        match data.codec_id {
+        let compression_precision = self.compression_precision;
+        match data_mut.codec_id {
             Compression::XTC => unimplemented!("XTC compression is not yet implemented"),
             // TNG compression will use compression precision to get integers from
             // floating point data. The compression multiplier stores that information
             // to be able to return the precision of the compressed data
             Compression::TNG => {
-                data.compression_multiplier = self.compression_precision;
+                data_mut.compression_multiplier = compression_precision;
             }
             // Uncompressed data blocks do not use compression multipliers at all.
             // GZip compression does not need it either
             Compression::Uncompressed | Compression::GZip => {
-                data.compression_multiplier = 1.0;
+                data_mut.compression_multiplier = 1.0;
             }
         }
 
         let mut n_particles = -1;
         let mut num_first_particle = -1;
-        if data.dependency & PARTICLE_DEPENDENT != 0 {
+        if data_mut.dependency & PARTICLE_DEPENDENT != 0 {
             if mapping.n_particles != 0 {
                 n_particles = mapping.n_particles;
                 num_first_particle = mapping.num_first_particle;
@@ -2210,9 +2309,10 @@ impl Trajectory {
             }
         }
 
-        let mut cloned_data = data.clone();
-        if data.dependency & PARTICLE_DEPENDENT != 0 {
-            block.block_contents_size = self.data_block_len_calculate(
+        // TODO: we probably want to avoid cloning the data blocks
+        let mut cloned_data = data_mut.clone();
+        if data_mut.dependency & PARTICLE_DEPENDENT != 0 {
+            block.block_contents_size = Self::data_block_len_calculate(
                 &cloned_data,
                 true,
                 u64::try_from(n_frames).expect("(u64 from i64)"),
@@ -2222,7 +2322,7 @@ impl Trajectory {
                 u64::try_from(n_particles).expect("u64 to i64"),
             );
         } else {
-            block.block_contents_size = self.data_block_len_calculate(
+            block.block_contents_size = Self::data_block_len_calculate(
                 &cloned_data,
                 false,
                 u64::try_from(n_frames).expect("(u64 from i64)"),
@@ -2241,7 +2341,7 @@ impl Trajectory {
 
         let out_file = self.output_file.as_mut().expect("init output_file");
         utils::write_u8(out_file, cloned_data.data_type as u8);
-        utils::write_u8(out_file, cloned_data.dependency as u8);
+        utils::write_u8(out_file, cloned_data.dependency);
 
         if cloned_data.dependency & FRAME_DEPENDENT != 0 {
             let temp = if stride_length > 1 { 1 } else { 0 };
@@ -2420,7 +2520,7 @@ impl Trajectory {
                 // the c code fills `contents` with 0, but we've already done that
             }
 
-            let block_data_len = full_data_len;
+            let mut block_data_len = full_data_len;
 
             match cloned_data.codec_id {
                 Compression::XTC => {
@@ -2428,13 +2528,57 @@ impl Trajectory {
                     cloned_data.codec_id = Compression::Uncompressed;
                 }
                 Compression::TNG => {
-                    todo!();
-                    // self.tng_compress();
+                    // to avoid overlapping borrows, we mem::take and put them back afterwards
+                    let mut compress_algo_pos = std::mem::take(&mut self.compress_algo_pos);
+                    let mut compress_algo_vel = std::mem::take(&mut self.compress_algo_vel);
+                    match self.tng_compress(
+                        &mut compress_algo_pos,
+                        &mut compress_algo_vel,
+                        block,
+                        frame_step,
+                        n_particles,
+                        &cloned_data.data_type,
+                        &contents,
+                    ) {
+                        Ok(compressed_len) => {
+                            block_data_len = usize::try_from(compressed_len).expect("usize")
+                        }
+                        Err(_) => {
+                            error!("Could not write TNG compressed block data.");
+                            // TODO: If critical (when?), we should panic as c does
+
+                            // Set the data again, but with no compression (to write only the relevant data)
+                            // Reborrow `data_mut`
+                            // TODO: is there a way to get rid of this reborrow?
+                            let data_mut = match slot {
+                                Slot::TrParticle => {
+                                    &mut self.current_trajectory_frame_set.tr_particle_data
+                                        [block_index]
+                                }
+                                Slot::NonTrParticle => &mut self.non_tr_particle_data[block_index],
+                                Slot::Tr => {
+                                    &mut self.current_trajectory_frame_set.tr_data[block_index]
+                                }
+                                Slot::NonTr => &mut self.non_tr_data[block_index],
+                            };
+                            data_mut.codec_id = Compression::Uncompressed;
+                            self.data_block_write(
+                                // output_file,
+                                block,
+                                is_particle_data,
+                                block_index,
+                                mapping,
+                            );
+                        }
+                    }
+                    self.compress_algo_pos = compress_algo_pos;
+                    self.compress_algo_vel = compress_algo_vel;
+                }
+                Compression::GZip => {
+                    Trajectory::gzip_compress(contents, full_data_len, block_data_len);
                 }
                 Compression::Uncompressed => todo!(),
-                Compression::GZip => todo!(),
             }
-            todo!("src/lib/tng_io.c, line 5798");
         }
     }
 
@@ -2458,14 +2602,14 @@ impl Trajectory {
                 let data = &self.non_tr_data[i];
                 block.name = Some(data.block_name.clone());
                 total_len += block.calculate_header_len();
-                total_len += self.data_block_len_calculate(data, false, 1, 1, 1, 0, 1);
+                total_len += Self::data_block_len_calculate(data, false, 1, 1, 1, 0, 1);
             }
 
             for i in 0..self.n_particle_data_blocks {
                 let data = &self.non_tr_particle_data[i];
                 block.name = Some(data.block_name.clone());
                 total_len += block.calculate_header_len();
-                total_len += self.data_block_len_calculate(data, true, 1, 1, 1, 0, 1);
+                total_len += Self::data_block_len_calculate(data, true, 1, 1, 1, 0, 1);
             }
 
             let orig_len = u64::try_from(orig_len).expect("u64 from usize");
