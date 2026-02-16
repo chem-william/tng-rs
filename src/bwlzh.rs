@@ -304,7 +304,7 @@ pub(crate) fn bwlzh_compress_gen(
 }
 
 /// Burrows-Wheeler transform
-fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) -> usize {
+pub(crate) fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) -> usize {
     if nvals > 0xFFFFFF {
         println!("BWT cannot pack more than {} values.", 0xFFFFFF);
     }
@@ -1285,68 +1285,5 @@ mod test_bwlzh {
         ];
         assert_eq!(noutput, 146);
         assert_eq!(expected_output, output[..noutput]);
-    }
-}
-
-#[cfg(test)]
-mod bwt {
-    use super::*;
-    use std::sync::Once;
-
-    static INIT: Once = Once::new();
-
-    fn init_logger() {
-        INIT.call_once(|| {
-            env_logger::builder().is_test(true).try_init().ok();
-        });
-    }
-
-    fn roundtrip_bwt(vals: &[u32]) {
-        let mut output = vec![0; vals.len()];
-        let bwt_index = ptngc_comp_to_bwt(vals, vals.len(), &mut output);
-        let mut recovered = vec![0; vals.len()];
-        inverse_bwt(&output, bwt_index, &mut recovered);
-        assert_eq!(recovered, vals, "BWT roundtrip failed for input: {vals:?}",);
-    }
-
-    #[test]
-    fn test_bwt_roundtrip_empty() {
-        roundtrip_bwt(&[]);
-    }
-
-    #[test]
-    fn test_bwt_roundtrip_single() {
-        roundtrip_bwt(&[42]);
-    }
-
-    #[test]
-    fn test_bwt_roundtrip_simple_ascii() {
-        let input = b"banana".iter().map(|&b| b as u32).collect::<Vec<u32>>();
-        roundtrip_bwt(&input);
-    }
-
-    #[test]
-    fn test_bwt_roundtrip_full_ascii_range() {
-        init_logger();
-        let input = (0u8..=255u8).map(|b| b as u32).collect::<Vec<_>>();
-        roundtrip_bwt(&input);
-    }
-
-    #[test]
-    fn test_bwt_roundtrip_repeating_pattern() {
-        let input = b"ABABABABAB".iter().map(|&b| b as u32).collect::<Vec<_>>();
-        roundtrip_bwt(&input);
-    }
-
-    #[test]
-    fn test_bwt_roundtrip_palindrome() {
-        let input = b"racecar".iter().map(|&b| b as u32).collect::<Vec<_>>();
-        roundtrip_bwt(&input);
-    }
-
-    #[test]
-    fn test_bwt_roundtrip_binary_data() {
-        let input = vec![0u32, 1, 2, 3, 0, 1, 2, 3];
-        roundtrip_bwt(&input);
     }
 }

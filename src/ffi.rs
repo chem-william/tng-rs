@@ -57,3 +57,25 @@ unsafe extern "C" {
         n: c_int,
     ) -> c_uint;
 }
+
+// ---------------------------------------------------------------------------
+// bwt.h
+// ---------------------------------------------------------------------------
+unsafe extern "C" {
+    pub fn Ptngc_comp_to_bwt(
+        vals: *mut c_uint,
+        nvals: c_int,
+        output: *mut c_uint,
+        index: *mut c_int,
+    );
+    pub fn Ptngc_comp_from_bwt(input: *mut c_uint, nvals: c_int, index: c_int, vals: *mut c_int);
+    pub fn Ptngc_bwt_merge_sort_inner(
+        indices: *mut c_int,
+        nvals: c_int,
+        vals: *mut c_uint,
+        start: c_int,
+        end: c_int,
+        nrepeat: *mut c_uint,
+        workarray: *mut c_int,
+    );
+}
