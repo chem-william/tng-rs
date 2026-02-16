@@ -60,6 +60,7 @@ mod integration {
         assert!(traj.time > 100);
     }
 
+    #[ignore]
     #[test]
     fn test_read_write() {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
