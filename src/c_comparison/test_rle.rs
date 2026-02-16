@@ -69,17 +69,22 @@ fn rle_decode_matches_c() {
         let rust_decoded = ptngc_comp_conv_from_rle(&encoded, input.len());
         let c_decoded = c_rle_decode(&encoded, input.len());
         assert_eq!(
-            rust_decoded, c_decoded,
+            rust_decoded,
+            c_decoded,
             "RLE decode mismatch for encoded={encoded:?}, len={}",
             input.len()
         );
-        assert_eq!(rust_decoded, input, "RLE roundtrip failed for input={input:?}");
+        assert_eq!(
+            rust_decoded, input,
+            "RLE roundtrip failed for input={input:?}"
+        );
     }
 }
 
 #[test]
 fn rle_cross_roundtrip_rust_encode_c_decode() {
     let test_cases: &[(&[u32], i32)] = &[
+        (&[], 0),
         (&[1, 2, 3], 3),
         (&[7, 7, 7, 7, 7], 3),
         (&[5, 5, 5, 5, 5, 5, 5, 5], 2),
@@ -100,10 +105,12 @@ fn rle_cross_roundtrip_rust_encode_c_decode() {
 #[test]
 fn rle_cross_roundtrip_c_encode_rust_decode() {
     let test_cases: &[(&[u32], i32)] = &[
+        (&[], 0),
         (&[1, 2, 3], 3),
         (&[7, 7, 7, 7, 7], 3),
         (&[5, 5, 5, 5, 5, 5, 5, 5], 2),
         (&[0, 1, 0, 1, 0, 1], 3),
+        (&[1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6], 2),
     ];
 
     for &(input, min_rle) in test_cases {
