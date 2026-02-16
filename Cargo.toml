@@ -8,5 +8,8 @@ assert_approx_eq = "1.1.0"
 flate2 = "1.1.5"
 log = "0.4.28"
 
+[build-dependencies]
+cc = "1"
+
 [dev-dependencies]
 env_logger = "0.11.8"

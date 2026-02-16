@@ -1,0 +1,3 @@
+[submodule "vendor/tng"]
+	path = vendor/tng
+	url = https://gitlab.com/gromacs/tng.git

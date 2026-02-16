@@ -24,6 +24,11 @@ mod widemuldiv;
 mod xtc2;
 mod xtc3;
 
+#[cfg(test)]
+mod ffi;
+#[cfg(test)]
+mod c_comparison;
+
 /// The maximum length of a date string
 const MAX_DATE_STR_LEN: u64 = 24;
 /// The length of an MD5 hash

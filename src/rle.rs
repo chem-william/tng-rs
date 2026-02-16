@@ -42,9 +42,9 @@ pub(crate) fn ptngc_comp_conv_from_rle(rle: &[u32], output_len: usize) -> Vec<u3
         let mut has_rle = false;
 
         while v < 2 {
-            // if v != 0 {
-            len |= mask;
-            // }
+            if v != 0 {
+                len |= mask;
+            }
             mask <<= 1;
             has_rle = true;
             v = rle[j];
