@@ -449,7 +449,7 @@ pub(crate) fn inverse_bwt(input: &[u32], index: usize, vals: &mut [u32]) {
 }
 
 /// c version: ptngc_bwt_merge_sort_inner
-fn bwt_sort(indices: &mut [usize], nvals: usize, vals: &[u32], nrepeat: &[u32]) {
+pub(crate) fn bwt_sort(indices: &mut [usize], nvals: usize, vals: &[u32], nrepeat: &[u32]) {
     // Only sort the [0..nvals] portion
     indices[..nvals].sort_by(|&ia, &ib| compare_index(ia, ib, nvals, vals, nrepeat));
 }
@@ -564,94 +564,6 @@ pub(crate) fn ptngc_comp_conv_from_vals16(vals16: &[u32], nvals16: usize, vals: 
         }
     }
     i32::try_from(j).expect("i32 from usize")
-}
-
-#[cfg(test)]
-mod sorting {
-    use super::*;
-
-    // in the following, some of the tests use bitshifts
-    // to construct the `nrepeat` vecs. that's to easier test the
-    // repeat logic. so when we write
-    //            (repeat << 8) | k
-    //
-    //    [ repeat (…bits…) ][      k (8 bits) ]
-    //    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    //          nrepeat entry
-
-    fn run_case(vals: &[u32], nrepeat: &[u32]) -> Vec<usize> {
-        let n = vals.len();
-        let mut idx: Vec<usize> = (0..n).collect();
-        bwt_sort(&mut idx, n, vals, nrepeat);
-        idx
-    }
-
-    #[test]
-    fn simple_in_order() {
-        let vals = [1, 2, 3];
-        let nrepeat = vec![0u32; vals.len()]; // no repeats
-        let sorted = run_case(&vals, &nrepeat);
-        assert_eq!(sorted, vec![0, 1, 2]);
-    }
-
-    #[test]
-    fn rotated_sequence() {
-        // rotations: [3,1,2], [1,2,3], [2,3,1]
-        let vals = [3, 1, 2];
-        let nrepeat = vec![0u32; vals.len()]; // no repeats
-        let sorted = run_case(&vals, &nrepeat);
-        // lex order: [1,2,3](@1), [2,3,1](@2), [3,1,2](@0)
-        assert_eq!(sorted, vec![1, 2, 0]);
-    }
-
-    #[test]
-    fn all_equal() {
-        let vals = [7, 7, 7, 7];
-        let nrepeat = vec![0u32; vals.len()]; // no repeats
-        let sorted = run_case(&vals, &nrepeat);
-        // stable sort must preserve original [0,1,2,3]
-        assert_eq!(sorted, vec![0, 1, 2, 3]);
-    }
-
-    #[test]
-    fn full_repeated_pattern() {
-        let vals = [1, 2, 1, 2, 1, 2];
-        let nrepeat = [(3 << 8) | 2; 6];
-        let sorted = run_case(&vals, &nrepeat);
-        assert_eq!(sorted, vec![0, 2, 4, 1, 3, 5]);
-    }
-
-    #[test]
-    fn partial_repeats_wrap() {
-        let vals = [3, 4, 5, 3, 4];
-        let nrepeat = [(2 << 8) | 3, 0, 0, (1 << 8) | 2, 0];
-        let sorted = run_case(&vals, &nrepeat);
-        assert_eq!(sorted, vec![3, 0, 4, 1, 2]);
-    }
-
-    #[test]
-    fn mismatched_k() {
-        let vals = [0, 1, 0, 1, 0, 2, 0, 2];
-        let nrepeat = [(3 << 8) | 2, 0, 0, 0, 0, (2 << 8) | 3, 0, 0];
-        let sorted = run_case(&vals, &nrepeat);
-        assert_eq!(sorted, vec![0, 2, 6, 4, 1, 3, 7, 5]);
-    }
-
-    #[test]
-    fn k_zero_malformed() {
-        let vals = [5, 6, 7];
-        let nrepeat = [(5 << 8), 0, 0];
-        let sorted = run_case(&vals, &nrepeat);
-        assert_eq!(sorted, vec![0, 1, 2]);
-    }
-
-    #[test]
-    fn overshoot_skip() {
-        let vals = [9, 8, 7, 6];
-        let nrepeat = [(10 << 8) | 1; 4];
-        let sorted = run_case(&vals, &nrepeat);
-        assert_eq!(sorted, vec![3, 2, 1, 0]);
-    }
 }
 
 #[cfg(test)]
