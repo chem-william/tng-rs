@@ -386,7 +386,7 @@ pub(crate) fn tng_compress_pos_int(
         }
     }
 
-    compress_quantized_pos(
+    let nitems = compress_quantized_pos(
         quant,
         Some(&mut quant_inter),
         Some(&mut quant_intra),
@@ -401,6 +401,7 @@ pub(crate) fn tng_compress_pos_int(
         prec_lo,
         &mut Some(&mut data),
     );
+    data.truncate(nitems);
 
     if algo[0] == -1 {
         algo[0] = initial_coding;
@@ -650,18 +651,21 @@ pub(crate) fn compress_quantized_pos(
     // Information needed for decompression
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], FixT::from(MAGIC_INT_POS), 4);
+        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
     // Number of atoms
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], FixT::from(n_atoms), 4);
+        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
     // Number of frames
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], FixT::from(n_frames), 4);
+        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
@@ -672,6 +676,7 @@ pub(crate) fn compress_quantized_pos(
             FixT::from(u32::try_from(initial_coding).expect("u32 from i32")),
             4,
         );
+        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
@@ -682,6 +687,7 @@ pub(crate) fn compress_quantized_pos(
             FixT::from(u32::try_from(initial_coding_parameter).expect("u32 from i32")),
             4,
         );
+        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
@@ -692,6 +698,7 @@ pub(crate) fn compress_quantized_pos(
             FixT::from(u32::try_from(coding).expect("u32 from i32")),
             4,
         );
+        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
@@ -702,18 +709,26 @@ pub(crate) fn compress_quantized_pos(
             FixT::from(u32::try_from(coding_parameter).expect("u32 from i32")),
             4,
         );
+        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
     // Precision
+    println!("{prec_lo}");
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], prec_lo, 4);
+        println!("Precision lo: {:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], prec_hi, 4);
+        println!("Precision hi: {:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
+
+    println!("printing intermediate data");
+    println!("{:?}", data);
+    println!("======================");
 
     // The initial frame
     let output_length;
@@ -733,6 +748,7 @@ pub(crate) fn compress_quantized_pos(
                     &mut speed,
                 )
                 .expect("packed array");
+            println!("datablock: {:?}", datablock);
         }
         TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
             let mut coder = Coder::default();
@@ -768,6 +784,7 @@ pub(crate) fn compress_quantized_pos(
 
     // The remaining frames
     if n_frames > 1 {
+        println!("we skip here");
         let us_natoms = usize::try_from(n_atoms).expect("usize from u32");
         let mut fallback_len = us_natoms
             .checked_mul(3)
@@ -834,6 +851,7 @@ pub(crate) fn compress_quantized_pos(
         }
         bufloc += output_length;
     }
+    println!("bufloc: {bufloc}");
     bufloc
 }
 
@@ -896,7 +914,6 @@ pub(crate) fn determine_best_pos_coding(
         best_coding = current_coding;
         best_coding_parameter = current_coding_parameter;
         best_code_size -= initial_code_size; // Correcet for the use of XTC2 for the first frame
-        let mut best_code_size = i32::try_from(best_code_size).expect("i32 from u32");
 
         // Determine best parameter for stopbit interframe coding
         current_coding = TNG_COMPRESS_ALGO_POS_STOPBIT_INTER;
@@ -908,12 +925,11 @@ pub(crate) fn determine_best_pos_coding(
             &mut current_code_size.try_into().expect("into u32"),
             &mut current_coding_parameter,
             n_atoms.try_into().expect("usize from u32"),
-        ) {
-            if current_code_size < best_code_size {
-                best_coding = current_coding;
-                best_coding_parameter = current_coding_parameter;
-                best_code_size = current_code_size;
-            }
+        ) && current_code_size < best_code_size
+        {
+            best_coding = current_coding;
+            best_coding_parameter = current_coding_parameter;
+            best_code_size = current_code_size;
         }
 
         // Determine best parameter for triplet interframe coding
@@ -927,12 +943,11 @@ pub(crate) fn determine_best_pos_coding(
             &mut current_code_size.try_into().expect("usize from u32"),
             &mut current_coding_parameter,
             n_atoms.try_into().expect("usize from u32"),
-        ) {
-            if current_code_size < best_code_size {
-                best_coding = current_coding;
-                best_coding_parameter = current_coding_parameter;
-                best_code_size = current_code_size;
-            }
+        ) && current_code_size < best_code_size
+        {
+            best_coding = current_coding;
+            best_coding_parameter = current_coding_parameter;
+            best_code_size = current_code_size;
         }
 
         // Determine best parameter for triplet intraframe coding
@@ -946,12 +961,11 @@ pub(crate) fn determine_best_pos_coding(
             &mut current_code_size.try_into().expect("usize from u32"),
             &mut current_coding_parameter,
             n_atoms.try_into().expect("usize from u32"),
-        ) {
-            if current_code_size < best_code_size {
-                best_coding = current_coding;
-                best_coding_parameter = current_coding_parameter;
-                best_code_size = current_code_size;
-            }
+        ) && current_code_size < best_code_size
+        {
+            best_coding = current_coding;
+            best_coding_parameter = current_coding_parameter;
+            best_code_size = current_code_size;
         }
 
         // Determine best parameter for triplet one-to-one coding
@@ -965,12 +979,11 @@ pub(crate) fn determine_best_pos_coding(
             &mut current_code_size.try_into().expect("usize from u32"),
             &mut current_coding_parameter,
             n_atoms.try_into().expect("usize from u32"),
-        ) {
-            if current_code_size < best_code_size {
-                best_coding = current_coding;
-                best_coding_parameter = current_coding_parameter;
-                best_code_size = current_code_size;
-            }
+        ) && current_code_size < best_code_size
+        {
+            best_coding = current_coding;
+            best_coding_parameter = current_coding_parameter;
+            best_code_size = current_code_size;
         }
 
         // Test BWLZH inter
@@ -1150,8 +1163,7 @@ pub(crate) fn tng_compress_vel_int(
 ) -> Vec<u8> {
     // 12 bytes are required to store 4 32 bit integers
     // This is 17% extra. The final 11*4 is to store information needed for decompression
-    let mut data =
-        vec![0u8; usize::try_from(n_atoms * n_frames).expect("usize from u32") * 14 + 11 * 4];
+    let mut data = vec![0u8; n_atoms * n_frames * 14 + 11 * 4];
     let quant = vel;
     let mut inner_speed = if speed == 0 { SPEED_DEFAULT } else { speed };
 
@@ -1163,11 +1175,7 @@ pub(crate) fn tng_compress_vel_int(
     let mut coding = algo[2];
     let mut coding_parameter = algo[3];
 
-    let mut quant_inter = quant_inter_differences(
-        quant,
-        usize::try_from(n_atoms).expect("usize from u32"),
-        usize::try_from(n_frames).expect("usize from u32"),
-    );
+    let mut quant_inter = quant_inter_differences(quant, n_atoms, n_frames);
 
     // If any of the above codings / coding parameters are == -1, the optimal parameters must be found
     if initial_coding == -1 {
@@ -1175,7 +1183,7 @@ pub(crate) fn tng_compress_vel_int(
 
         (initial_coding, initial_coding_parameter) = determine_best_vel_initial_coding(
             quant,
-            usize::try_from(n_atoms).expect("usize from u32"),
+            n_atoms,
             inner_speed,
             prec_hi,
             prec_lo,
@@ -1185,7 +1193,7 @@ pub(crate) fn tng_compress_vel_int(
     } else if initial_coding_parameter == -1 {
         (initial_coding, initial_coding_parameter) = determine_best_vel_initial_coding(
             quant,
-            usize::try_from(n_atoms).expect("usize from u32"),
+            n_atoms,
             inner_speed,
             prec_hi,
             prec_lo,
@@ -1326,12 +1334,11 @@ fn determine_best_vel_coding(
             &mut current_code_size,
             &mut current_coding_parameter,
             n_atoms,
-        ) {
-            if current_code_size < best_code_size {
-                best_coding = current_coding;
-                best_coding_parameter = current_coding_parameter;
-                best_code_size = current_code_size;
-            }
+        ) && current_code_size < best_code_size
+        {
+            best_coding = current_coding;
+            best_coding_parameter = current_coding_parameter;
+            best_code_size = current_code_size;
         }
 
         // Test triplet one-to-one
@@ -1344,12 +1351,11 @@ fn determine_best_vel_coding(
             &mut current_code_size,
             &mut current_coding_parameter,
             n_atoms,
-        ) {
-            if current_code_size < best_code_size {
-                best_coding = current_coding;
-                best_code_size = current_code_size;
-                best_coding_parameter = current_coding_parameter;
-            }
+        ) && current_code_size < best_code_size
+        {
+            best_coding = current_coding;
+            best_code_size = current_code_size;
+            best_coding_parameter = current_coding_parameter;
         }
 
         // Test stopbit interframe
@@ -1362,12 +1368,11 @@ fn determine_best_vel_coding(
             &mut current_code_size,
             &mut current_coding_parameter,
             n_atoms,
-        ) {
-            if current_code_size < best_code_size {
-                best_coding = current_coding;
-                best_code_size = current_code_size;
-                best_coding_parameter = current_coding_parameter;
-            }
+        ) && current_code_size < best_code_size
+        {
+            best_coding = current_coding;
+            best_code_size = current_code_size;
+            best_coding_parameter = current_coding_parameter;
         }
 
         if speed >= 4 {
@@ -1481,7 +1486,7 @@ fn compress_quantized_vel(
     prec_lo: FixT,
     data: &mut Option<&mut [u8]>,
 ) -> usize {
-    let mut datablock = None;
+    let datablock;
 
     let mut bufloc = 0;
     // Information needed for decompression
@@ -1562,7 +1567,7 @@ fn compress_quantized_vel(
 
     // The initial frame
     let output_length;
-    let length = n_atoms * 3;
+    let mut length = n_atoms * 3;
     match initial_coding {
         TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE
         | TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE
@@ -1572,10 +1577,10 @@ fn compress_quantized_vel(
             (out_datablock, output_length) = coder
                 .pack_array(
                     quant,
-                    &mut length.try_into().expect("usize from u32"),
+                    &mut length,
                     initial_coding,
                     initial_coding_parameter,
-                    n_atoms.try_into().expect("usize from u32"),
+                    n_atoms,
                     &mut speed,
                 )
                 .expect("packed array");
@@ -1594,19 +1599,19 @@ fn compress_quantized_vel(
     bufloc += 4;
 
     // The actual data block
-    if let Some(mut_data) = data.as_mut() {
-        if let Some(db) = datablock {
-            mut_data[bufloc..bufloc + output_length].copy_from_slice(&db[..output_length]);
-            bufloc += output_length;
-        }
+    if let Some(mut_data) = data.as_mut()
+        && let Some(db) = datablock
+    {
+        mut_data[bufloc..bufloc + output_length].copy_from_slice(&db[..output_length]);
+        bufloc += output_length;
     }
 
     if n_frames > 1 {
-        datablock = None;
-        let us_natoms = usize::try_from(n_atoms).expect("usize from u32");
+        // datablock = None;
+        let us_natoms = n_atoms;
         let mut fallback_len = us_natoms
             .checked_mul(3)
-            .and_then(|v| v.checked_mul(usize::try_from(n_frames - 1).expect("usize from u32")))
+            .and_then(|v| v.checked_mul(n_frames - 1))
             .expect("fallback_len overflow");
         let result = match coding {
             // Inter-frame compression?
@@ -1707,14 +1712,12 @@ pub(crate) fn determine_best_vel_initial_coding(
             &mut current_code_size,
             &mut current_coding_parameter,
             n_atoms,
-        ) {
-            if best_coding == -1
-                || (i32::try_from(current_code_size).expect("i32 from usize") < best_code_size)
-            {
-                best_coding = current_coding;
-                best_coding_parameter = current_coding_parameter;
-                best_code_size = i32::try_from(current_code_size).expect("i32 from usize");
-            }
+        ) && (best_coding == -1
+            || (i32::try_from(current_code_size).expect("i32 from usize") < best_code_size))
+        {
+            best_coding = current_coding;
+            best_coding_parameter = current_coding_parameter;
+            best_code_size = i32::try_from(current_code_size).expect("i32 from usize");
         }
 
         // Test BWLZH one-to-one
@@ -1861,11 +1864,32 @@ mod buffer {
 }
 
 #[cfg(test)]
-mod compress_quantized_pos_tests {
+mod compress_quantized_vel_tests {
+    use super::*;
+}
+
+#[cfg(test)]
+mod compress_quantized_pos {
     use super::*;
 
     fn u32le(b: &[u8]) -> u32 {
         u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+    }
+
+    #[test]
+    fn compress_pos() {
+        let pos = [0.0, 0.0, 0.0];
+        let mut algo = [-1, -1, -1, -1];
+        let nitmes = -1;
+
+        let result = tng_compress_pos(&pos, 1, 1, 1e-6, 1, &mut algo).unwrap();
+        println!("{:?}", &result[..45]);
+        println!("{:?}", result.len());
+        let expected = [
+            84, 78, 71, 80, 1, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            -58, 16, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        // assert_eq!(result, expected);
     }
 
     #[test]

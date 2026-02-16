@@ -2575,7 +2575,7 @@ impl Trajectory {
                     self.compress_algo_vel = compress_algo_vel;
                 }
                 Compression::GZip => {
-                    Trajectory::gzip_compress(contents, full_data_len, block_data_len);
+                    unimplemented!("lib/tng_io.c line 5828");
                 }
                 Compression::Uncompressed => todo!(),
             }
