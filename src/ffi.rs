@@ -79,3 +79,21 @@ unsafe extern "C" {
         workarray: *mut c_int,
     );
 }
+
+// ---------------------------------------------------------------------------
+// vals16.h
+// ---------------------------------------------------------------------------
+unsafe extern "C" {
+    pub fn Ptngc_comp_conv_to_vals16(
+        vals: *const c_uint,
+        nvals: c_int,
+        vals16: *mut c_uint,
+        nvals16: *mut c_int,
+    );
+    pub fn Ptngc_comp_conv_from_vals16(
+        vals16: *const c_uint,
+        nvals16: c_int,
+        vals: *mut c_int,
+        nvals: *mut c_int,
+    );
+}
