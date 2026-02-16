@@ -7,8 +7,8 @@ use crate::widemuldiv::{ptngc_largeint_add, ptngc_largeint_mul};
 fn largeint_add_matches_c() {
     let test_cases: &[(u32, &[u32])] = &[
         (1, &[0, 0, 0, 0]),
-        (1, &[u32::MAX, 0, 0, 0]),           // carry propagation
-        (1, &[u32::MAX, u32::MAX, 0, 0]),     // double carry
+        (1, &[u32::MAX, 0, 0, 0]),        // carry propagation
+        (1, &[u32::MAX, u32::MAX, 0, 0]), // double carry
         (100, &[50, 200, 300, 400]),
         (0, &[1, 2, 3, 4]),
         (u32::MAX, &[1, 0, 0, 0]),
@@ -44,7 +44,10 @@ fn largeint_mul_matches_c() {
         (2, &[0, 0, 0, 0xFFFFFFFF]),
         (0x1000, &[0x12345678, 0x9ABCDEF0, 0, 0]),
         (0xFFFFFFFF, &[1, 0, 0, 0]),
-        (0xFFFFFFFF, &[0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF]),
+        (
+            0xFFFFFFFF,
+            &[0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF],
+        ),
     ];
 
     for &(v1, input) in test_cases {
@@ -80,7 +83,8 @@ fn largeint_div_c_only_smoke_test() {
     unsafe {
         let mut input = original.to_vec();
         ffi::Ptngc_largeint_mul(multiplier, input.as_mut_ptr(), mul_out.as_mut_ptr(), n);
-        let remainder = ffi::Ptngc_largeint_div(multiplier, mul_out.as_mut_ptr(), div_out.as_mut_ptr(), n);
+        let remainder =
+            ffi::Ptngc_largeint_div(multiplier, mul_out.as_mut_ptr(), div_out.as_mut_ptr(), n);
         assert_eq!(remainder, 0, "Division should have no remainder");
         assert_eq!(div_out, original, "mul then div should roundtrip");
     }
@@ -102,8 +106,12 @@ fn largeint_mul_then_div_roundtrip_c() {
 
         unsafe {
             ffi::Ptngc_largeint_mul(multiplier, c_in.as_mut_ptr(), mul_out.as_mut_ptr(), n);
-            let remainder = ffi::Ptngc_largeint_div(multiplier, mul_out.as_mut_ptr(), div_out.as_mut_ptr(), n);
-            assert_eq!(remainder, 0, "Remainder should be 0 for multiplier={multiplier}, input={input:?}");
+            let remainder =
+                ffi::Ptngc_largeint_div(multiplier, mul_out.as_mut_ptr(), div_out.as_mut_ptr(), n);
+            assert_eq!(
+                remainder, 0,
+                "Remainder should be 0 for multiplier={multiplier}, input={input:?}"
+            );
             assert_eq!(
                 div_out, input,
                 "mul/div roundtrip failed for multiplier={multiplier}, input={input:?}"

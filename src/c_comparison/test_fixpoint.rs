@@ -10,7 +10,16 @@ fn fix_t_to_u32(v: ffi::FixT) -> u32 {
 #[test]
 fn ud_to_fix_t_matches_c() {
     let max = 10.0;
-    let test_values = [-5.0, 0.0, 5.0, 10.0, 15.0, 3.421234251, 4.234, 8.123618970983];
+    let test_values = [
+        -5.0,
+        0.0,
+        5.0,
+        10.0,
+        15.0,
+        3.421234251,
+        4.234,
+        8.123618970983,
+    ];
 
     for &d in &test_values {
         let rust_result: u32 = FixT::from_f64_unsigned(d, max).into();
@@ -56,7 +65,16 @@ fn fix_t_to_ud_matches_c() {
 
 #[test]
 fn d_to_i32x2_matches_c() {
-    let test_values = [-12.345678, -1.0, -0.5, 0.0, 0.5, 1.0, 12.345678, 123456789.0];
+    let test_values = [
+        -12.345678,
+        -1.0,
+        -0.5,
+        0.0,
+        0.5,
+        1.0,
+        12.345678,
+        123456789.0,
+    ];
 
     for &d in &test_values {
         let (rust_hi, rust_lo) = f64_to_fixt_pair(d);

@@ -25,9 +25,9 @@ mod xtc2;
 mod xtc3;
 
 #[cfg(test)]
-mod ffi;
-#[cfg(test)]
 mod c_comparison;
+#[cfg(test)]
+mod ffi;
 
 /// The maximum length of a date string
 const MAX_DATE_STR_LEN: u64 = 24;
