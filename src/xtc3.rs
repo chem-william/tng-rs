@@ -476,7 +476,7 @@ pub(crate) fn is_quite_large(input: &[i32], small_index: u32, max_large_index: u
 }
 
 fn output_int(output: &mut [u8], outdata: &mut usize, n: u32) {
-    let bytes = n.to_ne_bytes();
+    let bytes = n.to_le_bytes();
     output[*outdata..*outdata + 4].copy_from_slice(&bytes);
     *outdata += 4;
 }
