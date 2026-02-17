@@ -17,33 +17,33 @@ concurrency:
   cancel-in-progress: true
 name: test
 jobs:
-  required:
-    runs-on: ubuntu-latest
-    name: ubuntu / ${{ matrix.toolchain }}
-    strategy:
-      matrix:
-        # run on stable and beta to ensure that tests won't break on the next version of the rust
-        # toolchain
-        toolchain: [stable, beta]
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: true
-      - name: Install ${{ matrix.toolchain }}
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.toolchain }}
-      - name: cargo generate-lockfile
-        # enable this ci template to run regardless of whether the lockfile is checked in or not
-        if: hashFiles('Cargo.lock') == ''
-        run: cargo generate-lockfile
-        # TODO: ENABLE THESE TESTS WHEN THIS LIB IS READY
-      # # https://twitter.com/jonhoo/status/1571290371124260865
-      # - name: cargo test --locked
-      #   run: cargo test --locked --all-features --all-targets
-      # # https://github.com/rust-lang/cargo/issues/6669
-      # - name: cargo test --doc
-      #   run: cargo test --locked --all-features --doc
+  # required:
+  #   runs-on: ubuntu-latest
+  #   name: ubuntu / ${{ matrix.toolchain }}
+  #   strategy:
+  #     matrix:
+  #       # run on stable and beta to ensure that tests won't break on the next version of the rust
+  #       # toolchain
+  #       toolchain: [stable, beta]
+  #   steps:
+  #     - uses: actions/checkout@v5
+  #       with:
+  #         submodules: true
+  #     - name: Install ${{ matrix.toolchain }}
+  #       uses: dtolnay/rust-toolchain@master
+  #       with:
+  #         toolchain: ${{ matrix.toolchain }}
+  #     - name: cargo generate-lockfile
+  #       # enable this ci template to run regardless of whether the lockfile is checked in or not
+  #       if: hashFiles('Cargo.lock') == ''
+  #       run: cargo generate-lockfile
+  #       # TODO: ENABLE THESE TESTS WHEN THIS LIB IS READY
+  #     # # https://twitter.com/jonhoo/status/1571290371124260865
+  #     # - name: cargo test --locked
+  #     #   run: cargo test --locked --all-features --all-targets
+  #     # # https://github.com/rust-lang/cargo/issues/6669
+  #     # - name: cargo test --doc
+  #     #   run: cargo test --locked --all-features --doc
   # minimal:
   #   # This action chooses the oldest version of the dependencies permitted by Cargo.toml to ensure
   #   # that this crate is compatible with the minimal version that this crate and its dependencies
