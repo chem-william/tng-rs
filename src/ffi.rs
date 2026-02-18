@@ -97,3 +97,150 @@ unsafe extern "C" {
         nvals: *mut c_int,
     );
 }
+
+// ---------------------------------------------------------------------------
+// tng_compress.h
+// ---------------------------------------------------------------------------
+unsafe extern "C" {
+    // Position compression
+    pub fn tng_compress_pos(
+        pos: *mut f64,
+        natoms: c_int,
+        nframes: c_int,
+        desired_precision: f64,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    pub fn tng_compress_pos_float(
+        pos: *mut f32,
+        natoms: c_int,
+        nframes: c_int,
+        desired_precision: f32,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    pub fn tng_compress_pos_int(
+        pos: *mut c_int,
+        natoms: c_int,
+        nframes: c_int,
+        prec_hi: c_ulong,
+        prec_lo: c_ulong,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    // Velocity compression
+    pub fn tng_compress_vel(
+        vel: *mut f64,
+        natoms: c_int,
+        nframes: c_int,
+        desired_precision: f64,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    pub fn tng_compress_vel_float(
+        vel: *mut f32,
+        natoms: c_int,
+        nframes: c_int,
+        desired_precision: f32,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    pub fn tng_compress_vel_int(
+        vel: *mut c_int,
+        natoms: c_int,
+        nframes: c_int,
+        prec_hi: c_ulong,
+        prec_lo: c_ulong,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    // Find-algo variants
+    pub fn tng_compress_pos_find_algo(
+        pos: *mut f64,
+        natoms: c_int,
+        nframes: c_int,
+        desired_precision: f64,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    pub fn tng_compress_pos_float_find_algo(
+        pos: *mut f32,
+        natoms: c_int,
+        nframes: c_int,
+        desired_precision: f32,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    pub fn tng_compress_pos_int_find_algo(
+        pos: *mut c_int,
+        natoms: c_int,
+        nframes: c_int,
+        prec_hi: c_ulong,
+        prec_lo: c_ulong,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    pub fn tng_compress_vel_find_algo(
+        vel: *mut f64,
+        natoms: c_int,
+        nframes: c_int,
+        desired_precision: f64,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    pub fn tng_compress_vel_float_find_algo(
+        vel: *mut f32,
+        natoms: c_int,
+        nframes: c_int,
+        desired_precision: f32,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    pub fn tng_compress_vel_int_find_algo(
+        vel: *mut c_int,
+        natoms: c_int,
+        nframes: c_int,
+        prec_hi: c_ulong,
+        prec_lo: c_ulong,
+        speed: c_int,
+        algo: *mut c_int,
+        nitems: *mut c_int,
+    ) -> *mut i8;
+
+    // Decompression & inquiry
+    pub fn tng_compress_inquire(
+        data: *mut i8,
+        vel: *mut c_int,
+        natoms: *mut c_int,
+        nframes: *mut c_int,
+        precision: *mut f64,
+        algo: *mut c_int,
+    ) -> c_int;
+
+    pub fn tng_compress_uncompress(data: *mut i8, posvel: *mut f64) -> c_int;
+    pub fn tng_compress_uncompress_float(data: *mut i8, posvel: *mut f32) -> c_int;
+
+    pub fn tng_compress_nalgo() -> c_int;
+}

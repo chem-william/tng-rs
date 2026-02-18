@@ -918,72 +918,83 @@ pub(crate) fn determine_best_pos_coding(
         // Determine best parameter for stopbit interframe coding
         current_coding = TNG_COMPRESS_ALGO_POS_STOPBIT_INTER;
         let mut coder = Coder::default();
-        current_code_size = i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+        let mut current_code_size_usize: usize =
+            (n_atoms * 3 * (n_frames - 1)).try_into().expect("usize from u32");
         if !coder.determine_best_coding_stop_bits(
             &mut quant_inter.as_mut().expect("quant_inter to be Some")
                 [(n_atoms * 3).try_into().expect("u32 to usize")..],
-            &mut current_code_size.try_into().expect("into u32"),
+            &mut current_code_size_usize,
             &mut current_coding_parameter,
             n_atoms.try_into().expect("usize from u32"),
-        ) && current_code_size < best_code_size
-        {
-            best_coding = current_coding;
-            best_coding_parameter = current_coding_parameter;
-            best_code_size = current_code_size;
+        ) {
+            current_code_size = i32::try_from(current_code_size_usize).expect("i32 from usize");
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
         }
 
         // Determine best parameter for triplet interframe coding
         current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTER;
         coder = Coder::default();
-        current_code_size = i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+        current_code_size_usize =
+            (n_atoms * 3 * (n_frames - 1)).try_into().expect("usize from u32");
         current_coding_parameter = 0;
         if !coder.determine_best_coding_triple(
             &mut quant_inter.as_mut().expect("quant_inter to be Some")
                 [(n_atoms * 3).try_into().expect("u32 to usize")..],
-            &mut current_code_size.try_into().expect("usize from u32"),
+            &mut current_code_size_usize,
             &mut current_coding_parameter,
             n_atoms.try_into().expect("usize from u32"),
-        ) && current_code_size < best_code_size
-        {
-            best_coding = current_coding;
-            best_coding_parameter = current_coding_parameter;
-            best_code_size = current_code_size;
+        ) {
+            current_code_size = i32::try_from(current_code_size_usize).expect("i32 from usize");
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
         }
 
         // Determine best parameter for triplet intraframe coding
         current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA;
         coder = Coder::default();
-        current_code_size = i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+        current_code_size_usize =
+            (n_atoms * 3 * (n_frames - 1)).try_into().expect("usize from u32");
         current_coding_parameter = 0;
         if !coder.determine_best_coding_triple(
-            &mut quant_inter.as_mut().expect("quant_inter to be Some")
+            &mut quant_intra.as_mut().expect("quant_intra to be Some")
                 [(n_atoms * 3).try_into().expect("u32 to usize")..],
-            &mut current_code_size.try_into().expect("usize from u32"),
+            &mut current_code_size_usize,
             &mut current_coding_parameter,
             n_atoms.try_into().expect("usize from u32"),
-        ) && current_code_size < best_code_size
-        {
-            best_coding = current_coding;
-            best_coding_parameter = current_coding_parameter;
-            best_code_size = current_code_size;
+        ) {
+            current_code_size = i32::try_from(current_code_size_usize).expect("i32 from usize");
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
         }
 
         // Determine best parameter for triplet one-to-one coding
         current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE;
         coder = Coder::default();
-        current_code_size = i32::try_from(n_atoms * 3 * (n_frames - 1)).expect("i32 from u32");
+        current_code_size_usize =
+            (n_atoms * 3 * (n_frames - 1)).try_into().expect("usize from u32");
         current_coding_parameter = 0;
         if !coder.determine_best_coding_triple(
-            &mut quant_inter.as_mut().expect("quant_inter to be Some")
-                [(n_atoms * 3).try_into().expect("u32 to usize")..],
-            &mut current_code_size.try_into().expect("usize from u32"),
+            &mut quant[(n_atoms * 3).try_into().expect("u32 to usize")..],
+            &mut current_code_size_usize,
             &mut current_coding_parameter,
             n_atoms.try_into().expect("usize from u32"),
-        ) && current_code_size < best_code_size
-        {
-            best_coding = current_coding;
-            best_coding_parameter = current_coding_parameter;
-            best_code_size = current_code_size;
+        ) {
+            current_code_size = i32::try_from(current_code_size_usize).expect("i32 from usize");
+            if current_code_size < best_code_size {
+                best_coding = current_coding;
+                best_coding_parameter = current_coding_parameter;
+                best_code_size = current_code_size;
+            }
         }
 
         // Test BWLZH inter
@@ -1235,7 +1246,7 @@ pub(crate) fn tng_compress_vel_int(
             );
         }
     }
-    compress_quantized_vel(
+    let nitems = compress_quantized_vel(
         quant,
         Some(&mut quant_inter),
         n_atoms,
@@ -1249,6 +1260,7 @@ pub(crate) fn tng_compress_vel_int(
         prec_lo,
         &mut Some(&mut data),
     );
+    data.truncate(nitems);
 
     if algo[0] == -1 {
         algo[0] = initial_coding;
@@ -1861,11 +1873,6 @@ mod buffer {
         assert_eq!(buf[2], 0xFF);
         assert_eq!(buf[3], 0x7F);
     }
-}
-
-#[cfg(test)]
-mod compress_quantized_vel_tests {
-    use super::*;
 }
 
 #[cfg(test)]

@@ -171,7 +171,7 @@ impl Coder {
                         }
                     }
                     _ => {
-                        for &item in input.iter().take(3) {
+                        for &item in input.iter().take(*length) {
                             if self.pack_stopbits_item(item, &mut output, coding_parameter) {
                                 return None;
                             }
@@ -320,7 +320,6 @@ impl Coder {
         let mut new_parameter = -1;
         let mut best_length = 0;
         for bits in 1..20 {
-            let io_length = *length;
             let result = self.pack_array(
                 input,
                 length,
@@ -331,10 +330,10 @@ impl Coder {
             );
             if let Some((_, packed)) = result
                 && packed > 0
-                && (new_parameter == -1 || io_length < best_length)
+                && (new_parameter == -1 || packed < best_length)
             {
                 new_parameter = bits;
-                best_length = io_length;
+                best_length = packed;
             }
         }
 
@@ -357,8 +356,6 @@ impl Coder {
         let mut new_parameter = -1;
         let mut best_length = 0;
         for bits in 1..20 {
-            let io_length = *length;
-
             let result = self.pack_array(
                 input,
                 length,
@@ -369,10 +366,10 @@ impl Coder {
             );
             if let Some((_, packed)) = result
                 && packed > 0
-                && (new_parameter == -1 || io_length < best_length)
+                && (new_parameter == -1 || packed < best_length)
             {
                 new_parameter = bits;
-                best_length = io_length;
+                best_length = packed;
             }
         }
 
