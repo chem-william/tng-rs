@@ -1,4 +1,5 @@
 mod test_bwt;
+mod test_coder;
 mod test_compress;
 mod test_fixpoint;
 mod test_rle;

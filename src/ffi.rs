@@ -244,3 +244,43 @@ unsafe extern "C" {
 
     pub fn tng_compress_nalgo() -> c_int;
 }
+
+// ---------------------------------------------------------------------------
+// coder.h
+// ---------------------------------------------------------------------------
+#[repr(C)]
+pub struct Coder {
+    pack_temporary: c_uint,
+    pack_temporary_bits: c_int,
+    stat_overflow: c_int,
+    stat_numval: c_int,
+}
+
+unsafe extern "C" {
+    pub fn Ptngc_coder_init() -> *mut Coder;
+    pub fn Ptngc_coder_deinit(coder: *mut Coder);
+    pub fn Ptngc_pack_array(
+        coder: *mut Coder,
+        input: *mut c_int,
+        length: *mut c_int,
+        coding: c_int,
+        coding_parameter: c_int,
+        natoms: c_int,
+        speed: c_int,
+    ) -> *mut u8;
+}
+
+// ---------------------------------------------------------------------------
+// dict.h
+// ---------------------------------------------------------------------------
+unsafe extern "C" {
+    pub fn Ptngc_comp_canonical_dict(dict: *mut c_int, ndict: *mut c_int);
+    pub fn Ptngc_comp_make_dict(
+        vals: *const c_uint,
+        nvals: c_int,
+        dict: *mut c_uint,
+        ndict: *mut c_int,
+        hist: *mut c_uint,
+    );
+
+}
