@@ -983,12 +983,12 @@ impl Trajectory {
 
     // We don't bother to estimate the max bound of the compression as Rust has dynamic arrays (Vec)
     // which C doesn't thus needing to pre-allocate the maximum amount.
-    fn gzip_compress(data: &[u8], len: usize) -> usize {
+    fn gzip_compress(data: &[u8], len: usize) -> Result<usize, ()> {
         let mut encoder = ZlibEncoder::new(Vec::with_capacity(len), flate2::Compression::default());
-        encoder.write_all(data);
+        encoder.write_all(data).map_err(|_| ())?;
 
-        let compressed = encoder.finish().expect("compression successful");
-        compressed.len()
+        let compressed = encoder.finish().map_err(|_| ())?;
+        Ok(compressed.len())
     }
 
     fn gzip_uncompress(
@@ -2185,6 +2185,10 @@ impl Trajectory {
         Ok(i64::try_from(dest.unwrap().len()).expect("i64"))
     }
 
+    fn tng_uncompress() {
+        unimplemented!("tng/lib_io.c 4326")
+    }
+
     /// Write a data block (particle or non-particle data)
     fn data_block_write(
         &mut self,
@@ -2574,8 +2578,26 @@ impl Trajectory {
                     self.compress_algo_pos = compress_algo_pos;
                     self.compress_algo_vel = compress_algo_vel;
                 }
-                Compression::GZip => {
-                    unimplemented!("lib/tng_io.c line 5828");
+                Compression::GZip => match Self::gzip_compress(&contents, contents.len()) {
+                    Ok(compressed_len) => {
+                        block_data_len = usize::try_from(compressed_len).expect("usize")
+                    }
+                    Err(_) => {
+                        error!("Could not write gzipped block data.");
+                        // TODO: is there a way to get rid of this reborrow?
+                        let data_mut = match slot {
+                            Slot::TrParticle => {
+                                &mut self.current_trajectory_frame_set.tr_particle_data[block_index]
+                            }
+                            Slot::NonTrParticle => &mut self.non_tr_particle_data[block_index],
+                            Slot::Tr => &mut self.current_trajectory_frame_set.tr_data[block_index],
+                            Slot::NonTr => &mut self.non_tr_data[block_index],
+                        };
+                        data_mut.codec_id = Compression::Uncompressed;
+                    }
+                },
+                Compression::Uncompressed => {
+                    unimplemented!("this branch seems to be unhandled in the C code")
                 }
                 Compression::Uncompressed => todo!(),
             }
