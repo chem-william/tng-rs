@@ -284,3 +284,36 @@ unsafe extern "C" {
     );
 
 }
+
+// ---------------------------------------------------------------------------
+// mtf.h
+// ---------------------------------------------------------------------------
+unsafe extern "C" {
+    pub fn Ptngc_comp_conv_to_mtf(
+        vals: *const c_uint,
+        nvals: c_int,
+        dict: *const c_uint,
+        ndict: c_int,
+        valsmtf: *mut c_uint,
+    );
+
+    pub fn Ptngc_comp_conv_from_mtf(
+        valsmtf: *const c_uint,
+        nvals: c_int,
+        dict: *const c_uint,
+        ndict: c_int,
+        vals: *mut c_uint,
+    );
+
+    pub fn Ptngc_comp_conv_to_mtf_partial(vals: *const c_uint, nvals: c_int, valsmtf: *mut c_uint);
+
+    pub fn Ptngc_comp_conv_from_mtf_partial(
+        valsmtf: *const c_uint,
+        nvals: c_int,
+        vals: *mut c_uint,
+    );
+
+    pub fn Ptngc_comp_conv_to_mtf_partial3(vals: *const c_uint, nvals: c_int, valsmtf: *mut u8);
+
+    pub fn Ptngc_comp_conv_from_mtf_partial3(valsmtf: *mut u8, nvals: c_int, vals: *mut c_uint);
+}

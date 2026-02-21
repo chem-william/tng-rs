@@ -101,6 +101,74 @@ pub(crate) fn comp_conv_from_mtf_byte(valsmtf: &[u8], vals: &mut [u8]) {
     }
 }
 
+/// Decode a dict-based Move-To-Front encoding.
+///
+/// Inverse of [`ptngc_comp_conv_to_mtf`].
+///
+/// # Panics
+///
+/// Panics if `valsmtf.len() != vals.len()`.
+pub(crate) fn ptngc_comp_conv_from_mtf(valsmtf: &[u32], dict: &[u32], vals: &mut [u32]) {
+    assert_eq!(valsmtf.len(), vals.len(), "input/output length mismatch");
+    let mut list: Vec<u32> = dict.to_vec();
+    for (i, &code) in valsmtf.iter().enumerate() {
+        let pos = code as usize;
+        let sym = list[pos];
+        vals[i] = sym;
+        if pos != 0 {
+            list.remove(pos);
+            list.insert(0, sym);
+        }
+    }
+}
+
+/// Decode a "partial" (byte-plane) Move-To-Front encoding.
+///
+/// Inverse of [`ptngc_comp_conv_to_mtf_partial`].
+///
+/// # Panics
+///
+/// Panics if `valsmtf.len() != vals.len()`.
+pub(crate) fn ptngc_comp_conv_from_mtf_partial(valsmtf: &[u32], vals: &mut [u32]) {
+    let nvals = valsmtf.len();
+    assert_eq!(vals.len(), nvals, "input/output length mismatch");
+    let mut tmp = vec![0u8; nvals * 2];
+    vals.fill(0);
+    for byte_shift in 0..3 {
+        for i in 0..nvals {
+            tmp[i] = ((valsmtf[i] >> (8 * byte_shift)) & 0xFF) as u8;
+        }
+        let (src, dst) = tmp.split_at_mut(nvals);
+        comp_conv_from_mtf_byte(src, dst);
+        for i in 0..nvals {
+            vals[i] |= (tmp[nvals + i] as u32) << (8 * byte_shift);
+        }
+    }
+}
+
+/// Decode a "partial3" Move-To-Front encoding.
+///
+/// Inverse of [`ptngc_comp_conv_to_mtf_partial3`]. The input `valsmtf` is a
+/// flat byte slice of length `nvals * 3`, laid out as three contiguous planes
+/// (byte 0, byte 1, byte 2).
+///
+/// # Panics
+///
+/// Panics if `valsmtf.len() != vals.len() * 3`.
+pub(crate) fn ptngc_comp_conv_from_mtf_partial3(valsmtf: &[u8], vals: &mut [u32]) {
+    let nvals = vals.len();
+    assert_eq!(valsmtf.len(), nvals * 3, "encoded length must be nvals * 3");
+    let mut tmp = vec![0u8; nvals];
+    vals.fill(0);
+    for j in 0..3 {
+        let src = &valsmtf[j * nvals..(j + 1) * nvals];
+        comp_conv_from_mtf_byte(src, &mut tmp);
+        for i in 0..nvals {
+            vals[i] |= (tmp[i] as u32) << (8 * j);
+        }
+    }
+}
+
 pub(crate) fn ptngc_comp_conv_to_mtf_partial(vals: &[u32], valsmtf: &mut [u32]) {
     let nvals = vals.len();
     assert_eq!(valsmtf.len(), nvals, "output length must match input");
@@ -164,4 +232,67 @@ mod tests {
     fn rt_pattern() {
         roundtrip(&[5, 2, 5, 2, 5, 3, 5, 2]);
     }
+
+    fn roundtrip_partial3(input: &[u32]) {
+        let nvals = input.len();
+        let mut encoded = vec![0u8; nvals * 3];
+        ptngc_comp_conv_to_mtf_partial3(input, nvals, &mut encoded);
+        let mut decoded = vec![0u32; nvals];
+        ptngc_comp_conv_from_mtf_partial3(&encoded, &mut decoded);
+        assert_eq!(decoded, input);
+    }
+
+    fn roundtrip_partial(input: &[u32]) {
+        let nvals = input.len();
+        let mut encoded = vec![0u32; nvals];
+        ptngc_comp_conv_to_mtf_partial(input, &mut encoded);
+        let mut decoded = vec![0u32; nvals];
+        ptngc_comp_conv_from_mtf_partial(&encoded, &mut decoded);
+        assert_eq!(decoded, input);
+    }
+
+    fn roundtrip_dict(input: &[u32]) {
+        let mut dict: Vec<u32> = input.to_vec();
+        dict.sort_unstable();
+        dict.dedup();
+        let mut encoded = vec![0u32; input.len()];
+        ptngc_comp_conv_to_mtf(input, &dict, &mut encoded);
+        let mut decoded = vec![0u32; input.len()];
+        ptngc_comp_conv_from_mtf(&encoded, &dict, &mut decoded);
+        assert_eq!(decoded, input);
+    }
+
+    // --- partial3 ---
+    #[test]
+    fn rt_partial3_empty() { roundtrip_partial3(&[]); }
+    #[test]
+    fn rt_partial3_single() { roundtrip_partial3(&[0xABCDEF]); }
+    #[test]
+    fn rt_partial3_repeat() { roundtrip_partial3(&[7, 7, 7, 7]); }
+    #[test]
+    fn rt_partial3_sequence() { roundtrip_partial3(&[0, 1, 2, 3, 4]); }
+    #[test]
+    fn rt_partial3_mixed() { roundtrip_partial3(&[0xFF, 0xAB00, 0x010203, 0xFF]); }
+
+    // --- partial ---
+    #[test]
+    fn rt_partial_empty() { roundtrip_partial(&[]); }
+    #[test]
+    fn rt_partial_single() { roundtrip_partial(&[0xABCDEF]); }
+    #[test]
+    fn rt_partial_repeat() { roundtrip_partial(&[7, 7, 7, 7]); }
+    #[test]
+    fn rt_partial_sequence() { roundtrip_partial(&[0, 1, 2, 3, 4]); }
+    #[test]
+    fn rt_partial_mixed() { roundtrip_partial(&[0xFF, 0xAB00, 0x010203, 0xFF]); }
+
+    // --- dict-based ---
+    #[test]
+    fn rt_dict_single() { roundtrip_dict(&[42]); }
+    #[test]
+    fn rt_dict_repeat() { roundtrip_dict(&[5, 5, 5, 5]); }
+    #[test]
+    fn rt_dict_sequence() { roundtrip_dict(&[3, 1, 3, 7, 1]); }
+    #[test]
+    fn rt_dict_mixed() { roundtrip_dict(&[100, 200, 100, 150, 200, 100]); }
 }
