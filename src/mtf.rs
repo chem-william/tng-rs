@@ -101,6 +101,74 @@ pub(crate) fn comp_conv_from_mtf_byte(valsmtf: &[u8], vals: &mut [u8]) {
     }
 }
 
+/// Decode a dict-based Move-To-Front encoding.
+///
+/// Inverse of [`ptngc_comp_conv_to_mtf`].
+///
+/// # Panics
+///
+/// Panics if `valsmtf.len() != vals.len()`.
+pub(crate) fn ptngc_comp_conv_from_mtf(valsmtf: &[u32], dict: &[u32], vals: &mut [u32]) {
+    assert_eq!(valsmtf.len(), vals.len(), "input/output length mismatch");
+    let mut list: Vec<u32> = dict.to_vec();
+    for (i, &code) in valsmtf.iter().enumerate() {
+        let pos = code as usize;
+        let sym = list[pos];
+        vals[i] = sym;
+        if pos != 0 {
+            list.remove(pos);
+            list.insert(0, sym);
+        }
+    }
+}
+
+/// Decode a "partial" (byte-plane) Move-To-Front encoding.
+///
+/// Inverse of [`ptngc_comp_conv_to_mtf_partial`].
+///
+/// # Panics
+///
+/// Panics if `valsmtf.len() != vals.len()`.
+pub(crate) fn ptngc_comp_conv_from_mtf_partial(valsmtf: &[u32], vals: &mut [u32]) {
+    let nvals = valsmtf.len();
+    assert_eq!(vals.len(), nvals, "input/output length mismatch");
+    let mut tmp = vec![0u8; nvals * 2];
+    vals.fill(0);
+    for byte_shift in 0..3 {
+        for i in 0..nvals {
+            tmp[i] = ((valsmtf[i] >> (8 * byte_shift)) & 0xFF) as u8;
+        }
+        let (src, dst) = tmp.split_at_mut(nvals);
+        comp_conv_from_mtf_byte(src, dst);
+        for i in 0..nvals {
+            vals[i] |= (tmp[nvals + i] as u32) << (8 * byte_shift);
+        }
+    }
+}
+
+/// Decode a "partial3" Move-To-Front encoding.
+///
+/// Inverse of [`ptngc_comp_conv_to_mtf_partial3`]. The input `valsmtf` is a
+/// flat byte slice of length `nvals * 3`, laid out as three contiguous planes
+/// (byte 0, byte 1, byte 2).
+///
+/// # Panics
+///
+/// Panics if `valsmtf.len() != vals.len() * 3`.
+pub(crate) fn ptngc_comp_conv_from_mtf_partial3(valsmtf: &[u8], vals: &mut [u32]) {
+    let nvals = vals.len();
+    assert_eq!(valsmtf.len(), nvals * 3, "encoded length must be nvals * 3");
+    let mut tmp = vec![0u8; nvals];
+    vals.fill(0);
+    for j in 0..3 {
+        let src = &valsmtf[j * nvals..(j + 1) * nvals];
+        comp_conv_from_mtf_byte(src, &mut tmp);
+        for i in 0..nvals {
+            vals[i] |= (tmp[i] as u32) << (8 * j);
+        }
+    }
+}
+
 pub(crate) fn ptngc_comp_conv_to_mtf_partial(vals: &[u32], valsmtf: &mut [u32]) {
     let nvals = vals.len();
     assert_eq!(valsmtf.len(), nvals, "output length must match input");
