@@ -317,3 +317,32 @@ unsafe extern "C" {
 
     pub fn Ptngc_comp_conv_from_mtf_partial3(valsmtf: *mut u8, nvals: c_int, vals: *mut c_uint);
 }
+
+// ---------------------------------------------------------------------------
+// huffman.h
+// ---------------------------------------------------------------------------
+unsafe extern "C" {
+    pub fn Ptngc_comp_conv_to_huffman(
+        vals: *const c_uint,
+        nvals: c_int,
+        dict: *const c_uint,
+        ndict: c_int,
+        prob: *mut c_uint,
+        huffman: *mut u8,
+        huffman_len: *mut c_int,
+        huffman_dict: *mut u8,
+        huffman_dictlen: *mut c_int,
+        huffman_dict_unpacked: *mut c_uint,
+        huffman_dict_unpackedlen: *mut c_int,
+    );
+    pub fn Ptngc_comp_conv_from_huffman(
+        huffman: *mut u8,
+        vals: *mut c_uint,
+        nvals: c_int,
+        ndict: c_int,
+        huffman_dict: *mut u8,
+        huffman_dictlen: c_int,
+        huffman_dict_unpacked: *const c_uint,
+        huffman_dict_unpackedlen: c_int,
+    );
+}
