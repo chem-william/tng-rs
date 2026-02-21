@@ -264,35 +264,63 @@ mod tests {
 
     // --- partial3 ---
     #[test]
-    fn rt_partial3_empty() { roundtrip_partial3(&[]); }
+    fn rt_partial3_empty() {
+        roundtrip_partial3(&[]);
+    }
     #[test]
-    fn rt_partial3_single() { roundtrip_partial3(&[0xABCDEF]); }
+    fn rt_partial3_single() {
+        roundtrip_partial3(&[0xABCDEF]);
+    }
     #[test]
-    fn rt_partial3_repeat() { roundtrip_partial3(&[7, 7, 7, 7]); }
+    fn rt_partial3_repeat() {
+        roundtrip_partial3(&[7, 7, 7, 7]);
+    }
     #[test]
-    fn rt_partial3_sequence() { roundtrip_partial3(&[0, 1, 2, 3, 4]); }
+    fn rt_partial3_sequence() {
+        roundtrip_partial3(&[0, 1, 2, 3, 4]);
+    }
     #[test]
-    fn rt_partial3_mixed() { roundtrip_partial3(&[0xFF, 0xAB00, 0x010203, 0xFF]); }
+    fn rt_partial3_mixed() {
+        roundtrip_partial3(&[0xFF, 0xAB00, 0x010203, 0xFF]);
+    }
 
     // --- partial ---
     #[test]
-    fn rt_partial_empty() { roundtrip_partial(&[]); }
+    fn rt_partial_empty() {
+        roundtrip_partial(&[]);
+    }
     #[test]
-    fn rt_partial_single() { roundtrip_partial(&[0xABCDEF]); }
+    fn rt_partial_single() {
+        roundtrip_partial(&[0xABCDEF]);
+    }
     #[test]
-    fn rt_partial_repeat() { roundtrip_partial(&[7, 7, 7, 7]); }
+    fn rt_partial_repeat() {
+        roundtrip_partial(&[7, 7, 7, 7]);
+    }
     #[test]
-    fn rt_partial_sequence() { roundtrip_partial(&[0, 1, 2, 3, 4]); }
+    fn rt_partial_sequence() {
+        roundtrip_partial(&[0, 1, 2, 3, 4]);
+    }
     #[test]
-    fn rt_partial_mixed() { roundtrip_partial(&[0xFF, 0xAB00, 0x010203, 0xFF]); }
+    fn rt_partial_mixed() {
+        roundtrip_partial(&[0xFF, 0xAB00, 0x010203, 0xFF]);
+    }
 
     // --- dict-based ---
     #[test]
-    fn rt_dict_single() { roundtrip_dict(&[42]); }
+    fn rt_dict_single() {
+        roundtrip_dict(&[42]);
+    }
     #[test]
-    fn rt_dict_repeat() { roundtrip_dict(&[5, 5, 5, 5]); }
+    fn rt_dict_repeat() {
+        roundtrip_dict(&[5, 5, 5, 5]);
+    }
     #[test]
-    fn rt_dict_sequence() { roundtrip_dict(&[3, 1, 3, 7, 1]); }
+    fn rt_dict_sequence() {
+        roundtrip_dict(&[3, 1, 3, 7, 1]);
+    }
     #[test]
-    fn rt_dict_mixed() { roundtrip_dict(&[100, 200, 100, 150, 200, 100]); }
+    fn rt_dict_mixed() {
+        roundtrip_dict(&[100, 200, 100, 150, 200, 100]);
+    }
 }

@@ -200,13 +200,14 @@ fn c_compress_pos_find_algo(
 /// Values are small enough that quantization with precision 0.001 stays in range.
 fn gen_pos_f64(natoms: usize, nframes: usize) -> Vec<f64> {
     let total = natoms * nframes * 3;
-    (0..total)
-        .map(|i| (i as f64) * 0.01 + 0.1)
-        .collect()
+    (0..total).map(|i| (i as f64) * 0.01 + 0.1).collect()
 }
 
 fn gen_pos_f32(natoms: usize, nframes: usize) -> Vec<f32> {
-    gen_pos_f64(natoms, nframes).into_iter().map(|v| v as f32).collect()
+    gen_pos_f64(natoms, nframes)
+        .into_iter()
+        .map(|v| v as f32)
+        .collect()
 }
 
 #[test]
@@ -277,10 +278,19 @@ fn pos_double_matches_c() {
 
     // C
     let mut c_algo = algo_init;
-    let c_result =
-        c_compress_pos(&pos, natoms as i32, nframes as i32, precision, speed as i32, &mut c_algo);
+    let c_result = c_compress_pos(
+        &pos,
+        natoms as i32,
+        nframes as i32,
+        precision,
+        speed as i32,
+        &mut c_algo,
+    );
 
-    assert_eq!(c_result, rust_result, "pos_double: compressed data mismatch");
+    assert_eq!(
+        c_result, rust_result,
+        "pos_double: compressed data mismatch"
+    );
     assert_eq!(c_algo, rust_algo, "pos_double: algo mismatch");
 }
 
@@ -365,7 +375,9 @@ fn vel_int_matches_c() {
 
 #[test]
 fn vel_double_matches_c() {
-    let vel = [0.5, -0.3, 0.1, 0.2, -0.4, 0.6, 0.8, -0.1, 0.3, 0.7, -0.5, 0.9];
+    let vel = [
+        0.5, -0.3, 0.1, 0.2, -0.4, 0.6, 0.8, -0.1, 0.3, 0.7, -0.5, 0.9,
+    ];
     let natoms = 2usize;
     let nframes = 2usize;
     let speed = 1usize;
@@ -385,17 +397,28 @@ fn vel_double_matches_c() {
 
     // C
     let mut c_algo = algo_init;
-    let c_result =
-        c_compress_vel(&vel, natoms as i32, nframes as i32, precision, speed as i32, &mut c_algo);
+    let c_result = c_compress_vel(
+        &vel,
+        natoms as i32,
+        nframes as i32,
+        precision,
+        speed as i32,
+        &mut c_algo,
+    );
 
-    assert_eq!(c_result, rust_result, "vel_double: compressed data mismatch");
+    assert_eq!(
+        c_result, rust_result,
+        "vel_double: compressed data mismatch"
+    );
     assert_eq!(c_algo, rust_algo, "vel_double: algo mismatch");
 }
 
 #[test]
 fn vel_float_matches_c() {
-    let vel: Vec<f32> = [0.5f32, -0.3, 0.1, 0.2, -0.4, 0.6, 0.8, -0.1, 0.3, 0.7, -0.5, 0.9]
-        .into();
+    let vel: Vec<f32> = [
+        0.5f32, -0.3, 0.1, 0.2, -0.4, 0.6, 0.8, -0.1, 0.3, 0.7, -0.5, 0.9,
+    ]
+    .into();
     let natoms = 2usize;
     let nframes = 2usize;
     let speed = 1usize;
@@ -455,5 +478,8 @@ fn find_algo_pos_matches_c() {
     );
 
     assert_eq!(c_algo, rust_algo, "find_algo_pos: algo mismatch");
-    assert_eq!(c_result, rust_result, "find_algo_pos: compressed data mismatch");
+    assert_eq!(
+        c_result, rust_result,
+        "find_algo_pos: compressed data mismatch"
+    );
 }

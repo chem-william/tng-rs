@@ -918,8 +918,9 @@ pub(crate) fn determine_best_pos_coding(
         // Determine best parameter for stopbit interframe coding
         current_coding = TNG_COMPRESS_ALGO_POS_STOPBIT_INTER;
         let mut coder = Coder::default();
-        let mut current_code_size_usize: usize =
-            (n_atoms * 3 * (n_frames - 1)).try_into().expect("usize from u32");
+        let mut current_code_size_usize: usize = (n_atoms * 3 * (n_frames - 1))
+            .try_into()
+            .expect("usize from u32");
         if !coder.determine_best_coding_stop_bits(
             &mut quant_inter.as_mut().expect("quant_inter to be Some")
                 [(n_atoms * 3).try_into().expect("u32 to usize")..],
@@ -938,8 +939,9 @@ pub(crate) fn determine_best_pos_coding(
         // Determine best parameter for triplet interframe coding
         current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTER;
         coder = Coder::default();
-        current_code_size_usize =
-            (n_atoms * 3 * (n_frames - 1)).try_into().expect("usize from u32");
+        current_code_size_usize = (n_atoms * 3 * (n_frames - 1))
+            .try_into()
+            .expect("usize from u32");
         current_coding_parameter = 0;
         if !coder.determine_best_coding_triple(
             &mut quant_inter.as_mut().expect("quant_inter to be Some")
@@ -959,8 +961,9 @@ pub(crate) fn determine_best_pos_coding(
         // Determine best parameter for triplet intraframe coding
         current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA;
         coder = Coder::default();
-        current_code_size_usize =
-            (n_atoms * 3 * (n_frames - 1)).try_into().expect("usize from u32");
+        current_code_size_usize = (n_atoms * 3 * (n_frames - 1))
+            .try_into()
+            .expect("usize from u32");
         current_coding_parameter = 0;
         if !coder.determine_best_coding_triple(
             &mut quant_intra.as_mut().expect("quant_intra to be Some")
@@ -980,8 +983,9 @@ pub(crate) fn determine_best_pos_coding(
         // Determine best parameter for triplet one-to-one coding
         current_coding = TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE;
         coder = Coder::default();
-        current_code_size_usize =
-            (n_atoms * 3 * (n_frames - 1)).try_into().expect("usize from u32");
+        current_code_size_usize = (n_atoms * 3 * (n_frames - 1))
+            .try_into()
+            .expect("usize from u32");
         current_coding_parameter = 0;
         if !coder.determine_best_coding_triple(
             &mut quant[(n_atoms * 3).try_into().expect("u32 to usize")..],
