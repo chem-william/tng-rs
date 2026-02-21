@@ -232,4 +232,67 @@ mod tests {
     fn rt_pattern() {
         roundtrip(&[5, 2, 5, 2, 5, 3, 5, 2]);
     }
+
+    fn roundtrip_partial3(input: &[u32]) {
+        let nvals = input.len();
+        let mut encoded = vec![0u8; nvals * 3];
+        ptngc_comp_conv_to_mtf_partial3(input, nvals, &mut encoded);
+        let mut decoded = vec![0u32; nvals];
+        ptngc_comp_conv_from_mtf_partial3(&encoded, &mut decoded);
+        assert_eq!(decoded, input);
+    }
+
+    fn roundtrip_partial(input: &[u32]) {
+        let nvals = input.len();
+        let mut encoded = vec![0u32; nvals];
+        ptngc_comp_conv_to_mtf_partial(input, &mut encoded);
+        let mut decoded = vec![0u32; nvals];
+        ptngc_comp_conv_from_mtf_partial(&encoded, &mut decoded);
+        assert_eq!(decoded, input);
+    }
+
+    fn roundtrip_dict(input: &[u32]) {
+        let mut dict: Vec<u32> = input.to_vec();
+        dict.sort_unstable();
+        dict.dedup();
+        let mut encoded = vec![0u32; input.len()];
+        ptngc_comp_conv_to_mtf(input, &dict, &mut encoded);
+        let mut decoded = vec![0u32; input.len()];
+        ptngc_comp_conv_from_mtf(&encoded, &dict, &mut decoded);
+        assert_eq!(decoded, input);
+    }
+
+    // --- partial3 ---
+    #[test]
+    fn rt_partial3_empty() { roundtrip_partial3(&[]); }
+    #[test]
+    fn rt_partial3_single() { roundtrip_partial3(&[0xABCDEF]); }
+    #[test]
+    fn rt_partial3_repeat() { roundtrip_partial3(&[7, 7, 7, 7]); }
+    #[test]
+    fn rt_partial3_sequence() { roundtrip_partial3(&[0, 1, 2, 3, 4]); }
+    #[test]
+    fn rt_partial3_mixed() { roundtrip_partial3(&[0xFF, 0xAB00, 0x010203, 0xFF]); }
+
+    // --- partial ---
+    #[test]
+    fn rt_partial_empty() { roundtrip_partial(&[]); }
+    #[test]
+    fn rt_partial_single() { roundtrip_partial(&[0xABCDEF]); }
+    #[test]
+    fn rt_partial_repeat() { roundtrip_partial(&[7, 7, 7, 7]); }
+    #[test]
+    fn rt_partial_sequence() { roundtrip_partial(&[0, 1, 2, 3, 4]); }
+    #[test]
+    fn rt_partial_mixed() { roundtrip_partial(&[0xFF, 0xAB00, 0x010203, 0xFF]); }
+
+    // --- dict-based ---
+    #[test]
+    fn rt_dict_single() { roundtrip_dict(&[42]); }
+    #[test]
+    fn rt_dict_repeat() { roundtrip_dict(&[5, 5, 5, 5]); }
+    #[test]
+    fn rt_dict_sequence() { roundtrip_dict(&[3, 1, 3, 7, 1]); }
+    #[test]
+    fn rt_dict_mixed() { roundtrip_dict(&[100, 200, 100, 150, 200, 100]); }
 }
