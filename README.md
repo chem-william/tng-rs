@@ -15,3 +15,6 @@ The port matches the behavior at commit `f8d55273` at [https://gitlab.com/gromac
  ```bash
  RUST_LOG=debug cargo test -- --nocapture
  ```
+
+ # LLM usage
+ Parts of the code has been translated with the use of large language models (LLMs). All code has been reviewed by humans.
