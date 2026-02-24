@@ -467,4 +467,94 @@ mod tests {
         let result = fread_str(&mut cursor);
         assert_eq!(result, "��");
     }
+
+    // ── Middle-endian (BytePairSwap) 32-bit swap tests ────────────────
+
+    #[test]
+    fn swap_big_endian_32_from_byte_pair_swap() {
+        // BytePairSwap: swap 16-bit halves
+        let mut val: u32 = 0xAABB_CCDD;
+        swap_byte_order_big_endian_32(Endianness32::BytePairSwap, &mut val);
+        assert_eq!(val, 0xCCDD_AABB);
+    }
+
+    #[test]
+    fn swap_little_endian_32_from_byte_pair_swap() {
+        // BytePairSwap: swap adjacent bytes within each 16-bit half
+        // 0xAABB_CCDD → [BB,AA,DD,CC] = 0xBBAA_DDCC
+        let mut val: u32 = 0xAABB_CCDD;
+        swap_byte_order_little_endian_32(Endianness32::BytePairSwap, &mut val);
+        assert_eq!(val, 0xBBAA_DDCC);
+    }
+
+    // ── Middle-endian 64-bit swap tests ────────────────────────────────
+
+    #[test]
+    fn swap_big_endian_64_from_quad_swap() {
+        // QuadSwap: swap 32-bit halves
+        let mut val: u64 = 0x0123_4567_89AB_CDEF;
+        swap_byte_order_big_endian_64(Endianness64::QuadSwap, &mut val);
+        assert_eq!(val, 0x89AB_CDEF_0123_4567);
+    }
+
+    #[test]
+    fn swap_big_endian_64_from_byte_pair_swap() {
+        // BytePairSwap: swap 16-bit halves within each 32-bit half
+        let mut val: u64 = 0x0123_4567_89AB_CDEF;
+        swap_byte_order_big_endian_64(Endianness64::BytePairSwap, &mut val);
+        assert_eq!(val, 0x4567_0123_CDEF_89AB);
+    }
+
+    #[test]
+    fn swap_big_endian_64_from_byte_swap() {
+        // ByteSwap: swap bytes within each 16-bit pair
+        let mut val: u64 = 0x0123_4567_89AB_CDEF;
+        swap_byte_order_big_endian_64(Endianness64::ByteSwap, &mut val);
+        assert_eq!(val, 0x2301_6745_AB89_EFCD);
+    }
+
+    #[test]
+    fn swap_little_endian_64_from_quad_swap() {
+        let mut val: u64 = 0x0123_4567_89AB_CDEF;
+        swap_byte_order_little_endian_64(Endianness64::QuadSwap, &mut val);
+        let expected: u64 = {
+            let mut v = 0x0123_4567_89AB_CDEF_u64;
+            v = ((v & 0xFF00_0000_FF00_0000) >> 24)
+                | ((v & 0x00FF_0000_00FF_0000) >> 8)
+                | ((v & 0x0000_FF00_0000_FF00) << 8)
+                | ((v & 0x0000_00FF_0000_00FF) << 24);
+            v
+        };
+        assert_eq!(val, expected);
+    }
+
+    #[test]
+    fn swap_little_endian_64_from_byte_pair_swap() {
+        let mut val: u64 = 0x0123_4567_89AB_CDEF;
+        swap_byte_order_little_endian_64(Endianness64::BytePairSwap, &mut val);
+        let expected: u64 = {
+            let mut v = 0x0123_4567_89AB_CDEF_u64;
+            v = ((v & 0xFF00_FF00_0000_0000) >> 40)
+                | ((v & 0x00FF_00FF_0000_0000) >> 24)
+                | ((v & 0x0000_0000_FF00_FF00) << 24)
+                | ((v & 0x0000_0000_00FF_00FF) << 40);
+            v
+        };
+        assert_eq!(val, expected);
+    }
+
+    #[test]
+    fn swap_little_endian_64_from_byte_swap() {
+        let mut val: u64 = 0x0123_4567_89AB_CDEF;
+        swap_byte_order_little_endian_64(Endianness64::ByteSwap, &mut val);
+        let expected: u64 = {
+            let mut v = 0x0123_4567_89AB_CDEF_u64;
+            v = ((v & 0xFFFF_0000_0000_0000) >> 48)
+                | ((v & 0x0000_FFFF_0000_0000) >> 16)
+                | ((v & 0x0000_0000_FFFF_0000) << 16)
+                | ((v & 0x0000_0000_0000_FFFF) << 48);
+            v
+        };
+        assert_eq!(val, expected);
+    }
 }
