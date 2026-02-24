@@ -264,6 +264,7 @@ pub fn fread_str<R: Read>(input_file: &mut R) -> String {
     }
 }
 
+// The following write_* replace the tng_file_output_numerical from the c code
 pub fn write_u64(
     output_file: &mut File,
     src: u64,
