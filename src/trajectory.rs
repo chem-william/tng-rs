@@ -1,4 +1,4 @@
-use log::{error, warn};
+use log::{debug, error, warn};
 use std::cmp::{max, min};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -209,6 +209,9 @@ impl Trajectory {
             0x23 => Endianness64::ByteSwap,
             _ => panic!("unable to detect host system 64-bit endianness"),
         };
+
+        debug!("Host system 32-bit endianness: {endianness32:?}");
+        debug!("Host system 64-bit endianness: {endianness64:?}");
 
         (endianness32, endianness64)
     }
