@@ -623,9 +623,7 @@ impl Trajectory {
         self.input_file
             .as_ref()
             .expect("init input_file")
-            .seek(SeekFrom::Start(
-                start_pos + u64::try_from(block.block_contents_size).expect("u64 from i64"),
-            ))
+            .seek(SeekFrom::Start(start_pos + block.block_contents_size))
             .expect("no error handling");
     }
 
@@ -2197,14 +2195,12 @@ impl Trajectory {
         &mut self,
         // output_file: &mut Option<File>,
         block: &mut GenBlock,
-        is_particle_data: bool,
         block_index: usize,
-        mapping: ParticleMapping,
+        is_particle_data: bool,
+        mapping: &Option<ParticleMapping>,
     ) {
         // If we have already started writing frame sets it is too late to write
         // non-trajectory data blocks
-        let mut stride_length = 0;
-        //let data: Data;
         let is_trajectory_block = self.current_trajectory_frame_set_output_file_pos > 0;
 
         self.output_file_init();
@@ -2303,7 +2299,9 @@ impl Trajectory {
         let mut n_particles = -1;
         let mut num_first_particle = -1;
         if data_mut.dependency & PARTICLE_DEPENDENT != 0 {
-            if mapping.n_particles != 0 {
+            if let Some(mapping) = mapping
+                && mapping.n_particles != 0
+            {
                 n_particles = mapping.n_particles;
                 num_first_particle = mapping.num_first_particle;
             } else {
@@ -2572,8 +2570,8 @@ impl Trajectory {
                             self.data_block_write(
                                 // output_file,
                                 block,
-                                is_particle_data,
                                 block_index,
+                                is_particle_data,
                                 mapping,
                             );
                         }
@@ -2582,9 +2580,7 @@ impl Trajectory {
                     self.compress_algo_vel = compress_algo_vel;
                 }
                 Compression::GZip => match Self::gzip_compress(&contents, contents.len()) {
-                    Ok(compressed_len) => {
-                        block_data_len = usize::try_from(compressed_len).expect("usize")
-                    }
+                    Ok(compressed_len) => block_data_len = compressed_len,
                     Err(_) => {
                         error!("Could not write gzipped block data.");
                         // TODO: is there a way to get rid of this reborrow?
@@ -2600,14 +2596,52 @@ impl Trajectory {
                     }
                 },
                 Compression::Uncompressed => {
-                    unimplemented!("this branch seems to be unhandled in the C code")
+                    // this is silently skipped in the C code
                 }
-                Compression::Uncompressed => todo!(),
             }
+
+            if block_data_len != full_data_len {
+                block.block_contents_size -=
+                    u64::try_from(full_data_len - block_data_len).expect("u64 to usize");
+
+                let file = self.output_file.as_mut().expect("init output_file");
+
+                // c version is ftello
+                let curr_file_pos = file.stream_position().expect("no error handling");
+
+                // c version is fseeko
+                let offset =
+                    header_file_pos + std::mem::size_of_val(&block.header_contents_size) as u64;
+                file.seek(SeekFrom::Start(offset))
+                    .expect("no error handling");
+
+                utils::write_u64(
+                    file,
+                    block.block_contents_size,
+                    self.endianness64,
+                    self.output_swap64,
+                );
+                file.seek(SeekFrom::Start(curr_file_pos))
+                    .expect("no error handling");
+            }
+            let out_file = self.output_file.as_mut().expect("init output_file");
+            out_file
+                .write_all(&contents[..block_data_len])
+                .expect("Could not write all block data.");
+            // TODO: hash mode lib/tng_io.c 5851
         }
+
+        // if hash_mode == TNG_USE_HASH {
+        //     unimplemented!("tng/lib_io.c 5859")
+        // }
+        // frame_set
+        self.current_trajectory_frame_set.n_written_frames *=
+            self.current_trajectory_frame_set.n_unwritten_frames;
+        self.current_trajectory_frame_set.n_unwritten_frames = 0;
     }
 
-    pub fn file_headers_write(&mut self) {
+    pub fn file_headers_write(&mut self) -> Result<(), std::io::Error> {
+        let mut temp_pos = None;
         let mut total_len = 0;
         self.output_file_init();
 
@@ -2653,7 +2687,7 @@ impl Trajectory {
 
             // In order to write non-trajectory data the current_trajectory_frame_set_output_file_pos
             // must temporarily be reset
-            let temp_pos = self.current_trajectory_frame_set_output_file_pos;
+            temp_pos = Some(self.current_trajectory_frame_set_output_file_pos);
             self.current_trajectory_frame_set_output_file_pos = -1;
         }
 
@@ -2667,9 +2701,24 @@ impl Trajectory {
 
         for i in 0..self.n_data_blocks {
             block.id = self.non_tr_data[i].block_id;
-            todo!()
-            // self.data_block_write()
+            self.data_block_write(&mut block, i, false, &None)
         }
+
+        for i in 0..self.n_particle_data_blocks {
+            block.id = self.non_tr_particle_data[i].block_id;
+            self.data_block_write(&mut block, i, true, &None);
+        }
+
+        // Continue writing at the end of the file
+        self.output_file
+            .as_mut()
+            .expect("init output_file")
+            .seek(SeekFrom::End(0))?;
+        if let Some(temp_pos) = temp_pos {
+            self.current_trajectory_frame_set_output_file_pos = temp_pos;
+        }
+
+        Ok(())
     }
 
     fn file_pos_of_subsequent_trajectory_block_get(&mut self) -> i64 {
