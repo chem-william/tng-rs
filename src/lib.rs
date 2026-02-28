@@ -92,9 +92,6 @@ mod integration {
         let (box_data, _n_frames, _n_vpf, _dtype) = traj
             .data_get(BlockID::TrajBoxShape)
             .expect("Failed getting box shape");
-        // The X dimension in the example file is 50
-        // TODO: endianness swap for uncompressed data in data_read is not yet implemented,
-        // so this value is byte-swapped on little-endian machines
         assert!((box_data[0] - 50.0).abs() < 0.000001);
         // ==========================
     }

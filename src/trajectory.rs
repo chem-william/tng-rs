@@ -1294,12 +1294,39 @@ impl Trajectory {
                     .copy_from_slice(&actual_contents[..full_data_len]);
             }
 
-            // TODO: handle endianness here
+            // Endianness is handled by the TNG compression library. TNG compressed blocks are always written as little endian by the compression library
             if data.codec_id != Compression::TNG {
                 match data.data_type {
-                    DataType::Float => {}
-                    DataType::Int => {}
-                    DataType::Double => {}
+                    DataType::Float => {
+                        if let Some(input_swap32) = self.input_swap32 {
+                            for chunk in data
+                                .values
+                                .as_mut()
+                                .expect("data to be some")
+                                .chunks_exact_mut(size)
+                            {
+                                let mut val = u32::from_ne_bytes(chunk.try_into().unwrap());
+                                input_swap32(self.endianness32, &mut val);
+
+                                chunk.copy_from_slice(&val.to_ne_bytes());
+                            }
+                        }
+                    }
+                    DataType::Int | DataType::Double => {
+                        if let Some(input_swap64) = self.input_swap64 {
+                            for chunk in data
+                                .values
+                                .as_mut()
+                                .expect("data to be some")
+                                .chunks_exact_mut(size)
+                            {
+                                let mut val = u64::from_ne_bytes(chunk.try_into().unwrap());
+                                input_swap64(self.endianness64, &mut val);
+
+                                chunk.copy_from_slice(&val.to_ne_bytes());
+                            }
+                        }
+                    }
                     DataType::Char => {}
                 }
             }
