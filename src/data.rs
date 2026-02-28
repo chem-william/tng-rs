@@ -219,7 +219,7 @@ impl Data {
         let eff_n_frames = max(1, n_frames);
         self.stride_length = max(1, stride_length);
         self.n_values_per_frame = n_values_per_frame;
-        let frame_alloc = ((eff_n_frames - 1) / (stride_length + 1)) as usize;
+        let frame_alloc = ((eff_n_frames - 1) / self.stride_length + 1) as usize;
 
         if self.data_type == DataType::Char {
             // This will panic on OOM.

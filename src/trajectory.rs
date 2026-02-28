@@ -1154,7 +1154,7 @@ impl Trajectory {
         }
 
         // TODO: hash mode
-        if data.codec_id != Compression::Uncompressed {
+        let (actual_contents, full_data_len) = if data.codec_id != Compression::Uncompressed {
             let mut full_data_len = (n_frames_div as usize)
                 .checked_mul(size)
                 .and_then(|x| x.checked_mul(meta_info.n_values as usize))
@@ -1165,93 +1165,63 @@ impl Trajectory {
                     .expect("mul of meta_info.block_n_particles");
             }
 
-            let mut actual_contents = Vec::new();
-            match data.codec_id {
-                Compression::Uncompressed => {}
+            let actual_contents = match data.codec_id {
+                Compression::Uncompressed => unreachable!(),
                 Compression::XTC => todo!("XTC compression not implemented yet"),
                 Compression::TNG => todo!("TNG is todo"),
                 Compression::GZip => {
-                    let uncompressed_result =
-                        Trajectory::gzip_uncompress(&contents, block_data_len, full_data_len);
-                    if uncompressed_result.is_ok() {
-                        actual_contents = uncompressed_result?;
-                    } else {
-                        return Err(());
-                    }
+                    Trajectory::gzip_uncompress(&contents, block_data_len, full_data_len)?
                 }
-            }
+            };
+            (actual_contents, full_data_len)
+        } else {
+            let full_data_len = block_data_len as usize;
+            (contents, full_data_len)
+        };
 
-            // Allocate memory
-            // we assume that data.values is always allocated, but may be None. C code did something like
-            // !data->values
-            if data.values.is_none()
-                || data.n_frames != meta_info.n_frames
-                || data.n_values_per_frame != meta_info.n_values
-            {
-                if is_particle_data {
-                    data.allocate_particle_data_mem(
-                        meta_info.n_frames,
-                        meta_info.stride_length,
-                        tot_n_particles,
-                        meta_info.n_values,
-                    )
-                } else {
-                    data.allocate_data_mem(
-                        meta_info.n_frames,
-                        meta_info.stride_length,
-                        meta_info.n_values,
-                    )
-                };
-            }
-            data.first_frame_with_data = meta_info.first_frame_with_data;
+        // Allocate memory
+        // we assume that data.values is always allocated, but may be None. C code did something like
+        // !data->values
+        if data.values.is_none()
+            || data.n_frames != meta_info.n_frames
+            || data.n_values_per_frame != meta_info.n_values
+        {
+            if is_particle_data {
+                data.allocate_particle_data_mem(
+                    meta_info.n_frames,
+                    meta_info.stride_length,
+                    tot_n_particles,
+                    meta_info.n_values,
+                )
+            } else {
+                data.allocate_data_mem(
+                    meta_info.n_frames,
+                    meta_info.stride_length,
+                    meta_info.n_values,
+                )
+            };
+        }
+        data.first_frame_with_data = meta_info.first_frame_with_data;
 
-            if meta_info.datatype == DataType::Char {
-                // We expect `strings` to be Some(…) and shape at least [n_frames_div][…][…].
-                let strings_3d = match &mut data.strings {
-                    Some(s) => s,
-                    None => unreachable!("data.strings was None"),
-                };
-                let mut offset = 0;
-                // Strings are stored slightly differently if the data block contains
-                // particle data (frames * particles * n_values) or not (frames * n_values)
-                if is_particle_data {
-                    for i in 0..n_frames_div {
-                        // Get the Vec<Vec<String>> for this frame
-                        let first_dim_values = &mut strings_3d[i as usize];
+        if meta_info.datatype == DataType::Char {
+            // We expect `strings` to be Some(…) and shape at least [n_frames_div][…][…].
+            let strings_3d = match &mut data.strings {
+                Some(s) => s,
+                None => unreachable!("data.strings was None"),
+            };
+            let mut offset = 0;
+            // Strings are stored slightly differently if the data block contains
+            // particle data (frames * particles * n_values) or not (frames * n_values)
+            if is_particle_data {
+                for i in 0..n_frames_div {
+                    // Get the Vec<Vec<String>> for this frame
+                    let first_dim_values = &mut strings_3d[i as usize];
 
-                        for j in meta_info.num_first_particle
-                            ..meta_info.num_first_particle + self.n_particles
-                        {
-                            let second_dim_values = &mut first_dim_values[j as usize];
-                            for k in 0..meta_info.n_values {
-                                // Find the length of the C‐string at `contents[offset..]`, capped by TNG_MAX_STR_LEN
-                                let remaining = &actual_contents[offset..];
-                                let nul_position = remaining
-                                    .iter()
-                                    .position(|&b| b == 0)
-                                    .unwrap_or(MAX_STR_LEN - 1);
-                                // length of this C‐string including NUL
-                                let raw_len = (nul_position + 1).min(MAX_STR_LEN);
-
-                                // Extract the bytes before the NUL (i.e. [offset .. offset + raw_len - 1])
-                                if offset + raw_len > actual_contents.len() {
-                                    panic!("ran out of bounds")
-                                }
-                                let str_bytes = &actual_contents[offset..offset + raw_len - 1];
-
-                                let s = String::from_utf8_lossy(str_bytes).into_owned();
-
-                                // Store/overwrite into `strings[frame_idx][particle_idx][val_idx]`
-                                second_dim_values[k as usize] = s;
-
-                                // Advance offset by raw_len (skip the NUL too)
-                                offset += raw_len;
-                            }
-                        }
-                    }
-                } else {
-                    for i in 0..n_frames_div {
-                        for j in 0..meta_info.n_values {
+                    for j in meta_info.num_first_particle
+                        ..meta_info.num_first_particle + self.n_particles
+                    {
+                        let second_dim_values = &mut first_dim_values[j as usize];
+                        for k in 0..meta_info.n_values {
                             // Find the length of the C‐string at `contents[offset..]`, capped by TNG_MAX_STR_LEN
                             let remaining = &actual_contents[offset..];
                             let nul_position = remaining
@@ -1269,8 +1239,8 @@ impl Trajectory {
 
                             let s = String::from_utf8_lossy(str_bytes).into_owned();
 
-                            // Store/overwrite into `strings[0][particle_idx][val_idx]`
-                            strings_3d[0][i as usize][j as usize] = s;
+                            // Store/overwrite into `strings[frame_idx][particle_idx][val_idx]`
+                            second_dim_values[k as usize] = s;
 
                             // Advance offset by raw_len (skip the NUL too)
                             offset += raw_len;
@@ -1278,32 +1248,59 @@ impl Trajectory {
                     }
                 }
             } else {
-                if is_particle_data {
-                    // Compute the byte‐offset: n_frames_div * size * n_values * num_first_particle
-                    let offset = usize::try_from(
-                        n_frames_div
-                            .checked_mul(size as i64)
-                            .and_then(|v| v.checked_mul(meta_info.n_values))
-                            .and_then(|v| v.checked_mul(meta_info.num_first_particle))
-                            .expect("offset overflow"),
-                    )
-                    .expect("i64 to usize");
-                    data.values.as_mut().expect("data.values to be Some")
-                        [offset..offset + full_data_len]
-                        .copy_from_slice(&actual_contents[..full_data_len]);
-                } else {
-                    data.values.as_mut().expect("data.values to be Some")[..full_data_len]
-                        .copy_from_slice(&actual_contents[..full_data_len]);
-                }
+                for i in 0..n_frames_div {
+                    for j in 0..meta_info.n_values {
+                        // Find the length of the C‐string at `contents[offset..]`, capped by TNG_MAX_STR_LEN
+                        let remaining = &actual_contents[offset..];
+                        let nul_position = remaining
+                            .iter()
+                            .position(|&b| b == 0)
+                            .unwrap_or(MAX_STR_LEN - 1);
+                        // length of this C‐string including NUL
+                        let raw_len = (nul_position + 1).min(MAX_STR_LEN);
 
-                // TODO: handle endianness here
-                if data.codec_id != Compression::TNG {
-                    match data.data_type {
-                        DataType::Float => {}
-                        DataType::Int => {}
-                        DataType::Double => {}
-                        DataType::Char => {}
+                        // Extract the bytes before the NUL (i.e. [offset .. offset + raw_len - 1])
+                        if offset + raw_len > actual_contents.len() {
+                            panic!("ran out of bounds")
+                        }
+                        let str_bytes = &actual_contents[offset..offset + raw_len - 1];
+
+                        let s = String::from_utf8_lossy(str_bytes).into_owned();
+
+                        // Store/overwrite into `strings[0][particle_idx][val_idx]`
+                        strings_3d[0][i as usize][j as usize] = s;
+
+                        // Advance offset by raw_len (skip the NUL too)
+                        offset += raw_len;
                     }
+                }
+            }
+        } else {
+            if is_particle_data {
+                // Compute the byte‐offset: n_frames_div * size * n_values * num_first_particle
+                let offset = usize::try_from(
+                    n_frames_div
+                        .checked_mul(size as i64)
+                        .and_then(|v| v.checked_mul(meta_info.n_values))
+                        .and_then(|v| v.checked_mul(meta_info.num_first_particle))
+                        .expect("offset overflow"),
+                )
+                .expect("i64 to usize");
+                data.values.as_mut().expect("data.values to be Some")
+                    [offset..offset + full_data_len]
+                    .copy_from_slice(&actual_contents[..full_data_len]);
+            } else {
+                data.values.as_mut().expect("data.values to be Some")[..full_data_len]
+                    .copy_from_slice(&actual_contents[..full_data_len]);
+            }
+
+            // TODO: handle endianness here
+            if data.codec_id != Compression::TNG {
+                match data.data_type {
+                    DataType::Float => {}
+                    DataType::Int => {}
+                    DataType::Double => {}
+                    DataType::Char => {}
                 }
             }
         }
@@ -2149,15 +2146,14 @@ impl Trajectory {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
                         floats.push(f32::from_le_bytes(arr));
                     }
-                    let return_dest = tng_compress_vel_float(
+                    tng_compress_vel_float(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         f_precision,
                         0,
                         compress_algo_vel,
-                    );
-                    return_dest
+                    )
                 } else {
                     let mut doubles = Vec::new();
                     for chunk in data.chunks_exact(8) {
@@ -2167,15 +2163,14 @@ impl Trajectory {
                         ];
                         doubles.push(f64::from_le_bytes(arr));
                     }
-                    let return_dest = tng_compress_vel(
+                    tng_compress_vel(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         d_precision,
                         0,
                         compress_algo_vel,
-                    );
-                    return_dest
+                    )
                 }
             }
         } else {
@@ -3432,12 +3427,31 @@ impl Trajectory {
         None
     }
 
-    /// Retrieve a vector (1D array) of particle data, from the last read frame set
-    pub fn particle_data_vector(
+    /// Retrieve non-particle data, from the last read frame set.
+    /// Returns (values, n_frames, n_values_per_frame, data_type).
+    pub fn data_get(&mut self, block_id: BlockID) -> Option<(Vec<f64>, i64, i64, DataType)> {
+        let (n_frames, _n_particles, n_values_per_frame, data_type, values) =
+            self.gen_data_vector_get(false, block_id)?;
+        Some((values, n_frames, n_values_per_frame, data_type))
+    }
+
+    /// Retrieve particle data, from the last read frame set.
+    /// Returns (values, n_frames, n_particles, n_values_per_frame, data_type).
+    pub fn particle_data_get(
+        &mut self,
+        block_id: BlockID,
+    ) -> Option<(Vec<f64>, i64, i64, i64, DataType)> {
+        let (n_frames, n_particles, n_values_per_frame, data_type, values) =
+            self.gen_data_vector_get(true, block_id)?;
+        Some((values, n_frames, n_particles, n_values_per_frame, data_type))
+    }
+
+    /// Internal: retrieve a vector (1D array) of data from the last read frame set
+    fn gen_data_vector_get(
         &mut self,
         is_particle_data: bool,
         block_id: BlockID,
-    ) -> Option<(i64, Vec<f64>)> {
+    ) -> Option<(i64, i64, i64, DataType, Vec<f64>)> {
         let mut n_particles = 0;
         let mut block_index = -1;
 
@@ -3561,7 +3575,13 @@ impl Trajectory {
                 })
                 .collect(),
         };
-        Some((n_particles, float_values))
+        Some((
+            n_frames,
+            n_particles,
+            n_values_per_frame,
+            data_type,
+            float_values,
+        ))
     }
 
     /// Read one (the next) frame set, including particle mapping and related data blocks

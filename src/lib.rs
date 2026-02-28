@@ -60,6 +60,7 @@ mod integration {
         assert!(traj.time > 100);
     }
 
+    // This is the main() test of src/tests/tng_io_testing.c
     #[test]
     fn test_read_write() {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
@@ -76,7 +77,6 @@ mod integration {
         traj.set_output_file(output_filename.as_path());
 
         // test_read_and_write_file
-
         assert_eq!(traj.input_file_path, input_filename);
         assert_eq!(traj.output_file_path, output_filename);
 
@@ -86,6 +86,17 @@ mod integration {
         while traj.frame_set_read_next().is_ok() {
             traj.frame_set_write().unwrap();
         }
+        // ==========================
+
+        // test_get_box_data
+        let (box_data, _n_frames, _n_vpf, _dtype) = traj
+            .data_get(BlockID::TrajBoxShape)
+            .expect("Failed getting box shape");
+        // The X dimension in the example file is 50
+        // TODO: endianness swap for uncompressed data in data_read is not yet implemented,
+        // so this value is byte-swapped on little-endian machines
+        assert!((box_data[0] - 50.0).abs() < 0.000001);
+        // ==========================
     }
 
     #[test]
@@ -206,9 +217,9 @@ mod integration {
         assert_eq!(from_atoms.len(), 400);
         assert_eq!(to_atoms.len(), 400);
 
-        // particle_data_vector_get
-        let (_read_n_particles, masses) = traj
-            .particle_data_vector(true, BlockID::TrajMasses)
+        // particle_data_get
+        let (masses, _n_frames, _read_n_particles, _n_vpf, _dtype) = traj
+            .particle_data_get(BlockID::TrajMasses)
             .expect("particle data");
         // TODO
         // assert_eq!(read_n_particles, n_particles);
