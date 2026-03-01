@@ -384,6 +384,42 @@ impl Trajectory {
         self.first_user_name = new_name[..length].to_string();
     }
 
+    pub fn set_first_computer_name(&mut self, new_name: &str) {
+        let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
+        self.first_computer_name = new_name[..length].to_string();
+    }
+
+    pub fn set_first_program_name(&mut self, new_name: &str) {
+        let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
+        self.first_program_name = new_name[..length].to_string();
+    }
+
+    pub fn set_forcefield_name(&mut self, new_name: &str) {
+        let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
+        self.forcefield_name = new_name[..length].to_string();
+    }
+
+    pub fn set_time_per_frame(&mut self, time: f64) -> Result<(), TngError> {
+        if time < 0.0 {
+            return Err(TngError::Constraint(format!(
+                "The time per frame must be >= 0. Currently is {time}"
+            )));
+        }
+
+        if (time - self.time_per_frame).abs() < 0.00001 {
+            return Ok(());
+        }
+
+        let frame_set = self.current_trajectory_frame_set;
+
+        // If the current frame set is not finished write it to disk before changing per frame
+        if self.time_per_frame > 0 && frame_set.n_unwritten_frames > 0 {
+            frame_set.n_frames = frame_set.n_unwritten_frames;
+            self.frame_set_write()?;
+        }
+        Ok(())
+    }
+
     // c function: tng_input_file_set
     /// Set the name of the input file.
     pub fn set_input_file(&mut self, path: &Path) {
