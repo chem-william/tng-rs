@@ -377,6 +377,13 @@ impl Trajectory {
         Ok(())
     }
 
+    pub fn set_first_user_name(&mut self, new_name: &str) {
+        // We use `floor_char_boundary` as Rust strings has to be valid UTF-8. This way we never split a charachter
+        // and never panic on non-UTF-8 names
+        let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
+        self.first_user_name = new_name[..length].to_string();
+    }
+
     // c function: tng_input_file_set
     /// Set the name of the input file.
     pub fn set_input_file(&mut self, path: &Path) {
