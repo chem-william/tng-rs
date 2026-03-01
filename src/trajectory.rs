@@ -1888,6 +1888,129 @@ impl Trajectory {
         // TODO; HASH
     }
 
+    fn frame_set_block_len_calculate(&self) -> u64 {
+        let mut length = std::mem::size_of::<i64>() * 8;
+        length += std::mem::size_of::<f64>() * 2;
+
+        if self.var_num_atoms {
+            length += std::mem::size_of::<i64>()
+                * usize::try_from(self.n_molecules).expect("usize from i64");
+        }
+
+        u64::try_from(length).expect("u64 from usize")
+    }
+
+    fn frame_set_block_write(&mut self, block: &mut GenBlock) {
+        self.output_file_init();
+
+        block.name = Some("TRAJECTORY FRAME SET".to_string());
+        block.id = BlockID::TrajectoryFrameSet;
+
+        block.block_contents_size = self.frame_set_block_len_calculate();
+
+        // TODO: hash mode - headeR_file_pos is only used for hash mode
+        let header_file_pos = self
+            .output_file
+            .as_mut()
+            .expect("init output_file")
+            .stream_position()
+            // TODO
+            .expect("no error handling");
+
+        self.block_header_write(block);
+
+        // TODO: hash mode. line 3616 tng_io.c
+
+        // let frame_set = self.current_trajectory_frame_set;
+        let out_file = self.output_file.as_mut().expect("init input_file");
+        utils::write_i64(
+            out_file,
+            self.current_trajectory_frame_set.first_frame,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        utils::write_i64(
+            out_file,
+            self.current_trajectory_frame_set.n_frames,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        if self.var_num_atoms {
+            for i in 0..self.n_molecules {
+                utils::write_i64(
+                    out_file,
+                    self.current_trajectory_frame_set.molecule_cnt_list
+                        [usize::try_from(i).expect("usize from u64")],
+                    self.endianness64,
+                    self.output_swap64,
+                );
+            }
+        }
+        utils::write_i64(
+            out_file,
+            self.current_trajectory_frame_set.next_frame_set_file_pos,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        utils::write_i64(
+            out_file,
+            self.current_trajectory_frame_set.prev_frame_set_file_pos,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        utils::write_i64(
+            out_file,
+            self.current_trajectory_frame_set
+                .medium_stride_next_frame_set_file_pos,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        utils::write_i64(
+            out_file,
+            self.current_trajectory_frame_set
+                .medium_stride_prev_frame_set_file_pos,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        utils::write_i64(
+            out_file,
+            self.current_trajectory_frame_set
+                .long_stride_next_frame_set_file_pos,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        utils::write_i64(
+            out_file,
+            self.current_trajectory_frame_set
+                .long_stride_prev_frame_set_file_pos,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        utils::write_f64(
+            out_file,
+            self.current_trajectory_frame_set.first_frame_time,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        utils::write_f64(
+            out_file,
+            self.time_per_frame,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        // TODO: hash mode tng_io.c line 3706
+    }
+
     fn tng_compress(
         &self,
         compress_algo_pos: &mut Vec<i32>,
