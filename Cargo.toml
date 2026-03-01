@@ -7,6 +7,7 @@ edition = "2024"
 assert_approx_eq = "1.1.0"
 flate2 = "1.1.5"
 log = "0.4.28"
+thiserror = "2.0.18"
 
 [build-dependencies]
 cc = "1"

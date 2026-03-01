@@ -2,6 +2,8 @@ use log::{debug, error, warn};
 use std::cmp::{max, min};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::TngError;
+
 use crate::atom::Atom;
 use crate::bond::Bond;
 use crate::chain::Chain;
@@ -349,6 +351,30 @@ impl Trajectory {
                 }
             }
         }
+    }
+
+    pub fn set_medium_stride_length(&mut self, length: i64) -> Result<(), TngError> {
+        if length >= self.long_stride_length {
+            return Err(TngError::Constraint(format!(
+                "medium stride length ({length}) must be less than long stride length ({})",
+                self.long_stride_length
+            )));
+        }
+        self.medium_stride_length = length;
+
+        Ok(())
+    }
+
+    pub fn set_long_stride_length(&mut self, length: i64) -> Result<(), TngError> {
+        if length <= self.medium_stride_length {
+            return Err(TngError::Constraint(format!(
+                "long stride length ({length}) must be greater than medium stride length ({})",
+                self.medium_stride_length
+            )));
+        }
+        self.long_stride_length = length;
+
+        Ok(())
     }
 
     // c function: tng_input_file_set

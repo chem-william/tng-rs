@@ -1,4 +1,22 @@
 #![allow(dead_code)]
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum TngError {
+    /// A constraint or validation was violated (e.g. stride length ordering).
+    /// Corresponds to C's TNG_FAILURE for argument/state validation.
+    #[error("{0}")]
+    Constraint(String),
+
+    /// An item was not found (e.g. molecule not in trajectory).
+    #[error("{0}")]
+    NotFound(String),
+
+    /// I/O error wrapping std::io::Error.
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+}
 mod atom;
 mod bond;
 mod bwlzh;
@@ -50,9 +68,19 @@ mod integration {
     };
     use assert_approx_eq::assert_approx_eq;
 
-    const N_FRAME_SETS: i64 = 100;
     const TIME_PER_FRAME: f64 = 2e-15;
     const TEST_FILES_DIR: &str = "test_files";
+
+    const BOX_SHAPE_X: f32 = 150.0;
+    const BOX_SHAPE_Y: f32 = 145.5;
+    const BOX_SHAPE_Z: f32 = 155.5;
+    const N_FRAME_SETS: i64 = 100;
+    const MEDIUM_STRIDE_LEN: i64 = 5;
+    const LONG_STRIDE_LEN: i64 = 25;
+    const USER_NAME: &str = "USER 1";
+    const PROGRAM_NAME: &str = "tng_testing";
+    const COMPUTER_NAME: &str = "Unknown computer";
+    const FORCEFIELD_NAME: &str = "No forcefield";
 
     #[test]
     fn can_we_init_traj_with_time() {
