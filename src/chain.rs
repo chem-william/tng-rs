@@ -50,8 +50,6 @@ impl Chain {
     }
 
     pub fn set_name(&mut self, new_name: String) {
-        assert!(!new_name.is_empty(), "new_name must not be empty.");
-
         // The C version leaves space for a '\0' in a buffer of size TNG_MAX_STR_LEN.
         // In Rust, Strings don't need a trailing zero, so we just clamp to:
         let max_bytes = MAX_STR_LEN - 1;
