@@ -336,7 +336,13 @@ impl Trajectory {
 
             // Try to create the file
             let path = self.output_file_path.clone();
-            match File::create(&path) {
+            match File::options()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&path)
+            {
                 Ok(f) => {
                     self.output_file = Some(f);
                 }
