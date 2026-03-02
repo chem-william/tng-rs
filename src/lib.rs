@@ -87,6 +87,8 @@ mod integration {
     const FORCEFIELD_NAME: &str = "No forcefield";
     const COMPRESSION_PRECISION: f64 = 1000.0;
 
+    const USE_HASH: bool = false;
+
     #[test]
     fn can_we_init_traj_with_time() {
         let traj = Trajectory::new();
@@ -114,10 +116,10 @@ mod integration {
         assert_eq!(traj.output_file_path, output_filename);
 
         traj.file_headers_read();
-        traj.file_headers_write().unwrap();
+        traj.file_headers_write(USE_HASH).unwrap();
 
         while traj.frame_set_read_next().is_ok() {
-            traj.frame_set_write().unwrap();
+            traj.frame_set_write(USE_HASH).unwrap();
         }
         // ==========================
 

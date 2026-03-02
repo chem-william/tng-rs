@@ -27,6 +27,8 @@ use std::path::{Path, PathBuf};
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 
+const USE_HASH: bool = false;
+
 fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
     let meta1 = file1.metadata()?;
     let meta2 = file2.metadata()?;
@@ -420,8 +422,9 @@ impl Trajectory {
         if self.time_per_frame > 0.0 && self.current_trajectory_frame_set.n_unwritten_frames > 0 {
             self.current_trajectory_frame_set.n_frames =
                 self.current_trajectory_frame_set.n_unwritten_frames;
-            self.frame_set_write()?;
+            self.frame_set_write(USE_HASH)?;
         }
+        self.time_per_frame = time;
         Ok(())
     }
 
@@ -2936,7 +2939,7 @@ impl Trajectory {
         self.current_trajectory_frame_set.n_unwritten_frames = 0;
     }
 
-    pub fn file_headers_write(&mut self) -> Result<(), std::io::Error> {
+    pub fn file_headers_write(&mut self, hash_mode: bool) -> Result<(), std::io::Error> {
         let mut temp_pos = None;
         let mut total_len = 0;
         self.output_file_init();
@@ -2972,6 +2975,7 @@ impl Trajectory {
                 self.migrate_data_in_file(
                     i64::try_from(orig_len + 1).expect("i64 from usize"),
                     i64::try_from(total_len - orig_len).expect("i64 from usize"),
+                    hash_mode,
                 );
                 self.last_trajectory_frame_set_input_pos =
                     self.last_trajectory_frame_set_output_pos;
@@ -2997,12 +3001,12 @@ impl Trajectory {
 
         for i in 0..self.n_data_blocks {
             block.id = self.non_tr_data[i].block_id;
-            self.data_block_write(&mut block, i, false, &None)
+            self.data_block_write(&mut block, i, false, &None, hash_mode)
         }
 
         for i in 0..self.n_particle_data_blocks {
             block.id = self.non_tr_particle_data[i].block_id;
-            self.data_block_write(&mut block, i, true, &None);
+            self.data_block_write(&mut block, i, true, &None, hash_mode);
         }
 
         // Continue writing at the end of the file
@@ -3112,7 +3116,7 @@ impl Trajectory {
     /// Update the frame set pointers in the current frame set block, already
     /// written to disk. It also updates the pointers of the blocks pointing to
     /// the current frame set block
-    fn frame_set_pointers_update(&mut self) {
+    fn frame_set_pointers_update(&mut self, _hash_mode: bool) {
         self.output_file_init();
         let mut block = GenBlock::new();
         let temp_input_file = self
@@ -3373,7 +3377,13 @@ impl Trajectory {
     }
 
     /// Migrate a whole frame set from one position in the file to another.
-    fn frame_set_complete_migrate(&mut self, block_start_pos: i64, block_len: usize, new_pos: u64) {
+    fn frame_set_complete_migrate(
+        &mut self,
+        block_start_pos: i64,
+        block_len: usize,
+        new_pos: u64,
+        hash_mode: bool,
+    ) {
         self.input_file_init();
         let inp_file = self.input_file.as_mut().expect("init input_file");
         let out_file = self.output_file.as_mut().expect("init input_file");
@@ -3401,13 +3411,13 @@ impl Trajectory {
                 i64::try_from(new_pos).expect("i64 from u64");
         }
 
-        self.frame_set_pointers_update();
+        self.frame_set_pointers_update(hash_mode);
     }
 
     /// Migrate data blocks in the file to make room for new data in a block. This
     /// is required e.g. when adding data to a block or extending strings in a
     /// block.
-    fn migrate_data_in_file(&mut self, start_pos: i64, offset: i64) {
+    fn migrate_data_in_file(&mut self, start_pos: i64, offset: i64, hash_mode: bool) {
         if offset <= 0 {
             return;
         }
@@ -3440,6 +3450,7 @@ impl Trajectory {
                 traj_start_pos,
                 usize::try_from(frame_set_length).expect("usize from u64"),
                 self.input_file_len,
+                hash_mode,
             );
 
             empty_space += frame_set_length
@@ -4023,6 +4034,13 @@ impl Trajectory {
         }
 
         // Update pointers in the general info block
+        let result = self.header_pointers_update(hash_mode);
+
+        if result.is_ok() {
+            self.frame_set_pointers_update(hash_mode);
+        }
+
+        self.current_trajectory_frame_set.n_unwritten_frames = 0;
 
         Ok(())
     }
@@ -5081,7 +5099,7 @@ impl Trajectory {
     /// Update the frame set pointers in the file header (general info block),
     /// already written to disk
     /// `hash_mode` specifies whether to update the block md5 hash when updating the pointers
-    fn header_pointers_update(&mut self) -> Result<(), TngError> {
+    fn header_pointers_update(&mut self, _hash_mode: bool) -> Result<(), TngError> {
         self.output_file_init();
 
         // Save original input_file, replace with a dup of output_file
