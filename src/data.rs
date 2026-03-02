@@ -155,7 +155,6 @@ impl Data {
         }
 
         self.n_frames = n_frames;
-        dbg!(&n_frames);
         let eff_n_frames = max(1, n_frames);
         self.stride_length = max(1, stride_length);
         self.n_values_per_frame = n_values_per_frame;
@@ -178,10 +177,6 @@ impl Data {
             };
 
             // Compute total length: `size * frame_alloc * n_particles * n_values_per_frame`.
-            dbg!(&frame_alloc);
-            dbg!(&n_particles);
-            dbg!(&n_values_per_frame);
-            dbg!(&size);
             let total_len = frame_alloc
                 .checked_mul(usize::try_from(n_particles).expect("i64 to usize"))
                 .and_then(|x| {
@@ -189,7 +184,6 @@ impl Data {
                 })
                 .and_then(|x| x.checked_mul(size))
                 .unwrap_or(0);
-            dbg!(&total_len);
 
             // One‐shot allocate zeroed Vec<u8>. Panics on OOM.
             let buf: Vec<u8> = vec![0u8; total_len];
