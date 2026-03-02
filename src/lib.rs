@@ -85,6 +85,7 @@ mod integration {
     const PROGRAM_NAME: &str = "tng_testing";
     const COMPUTER_NAME: &str = "Unknown computer";
     const FORCEFIELD_NAME: &str = "No forcefield";
+    const COMPRESSION_PRECISION: f64 = 1000.0;
 
     #[test]
     fn can_we_init_traj_with_time() {
@@ -125,6 +126,26 @@ mod integration {
             .data_get(BlockID::TrajBoxShape)
             .expect("Failed getting box shape");
         assert!((box_data[0] - 50.0).abs() < 0.000001);
+        // ==========================
+
+        output_filename.push(TEST_FILES_DIR);
+        output_filename.push("tng_test.tng");
+
+        // tng_test_write_and_read_traj
+        traj.set_medium_stride_length(MEDIUM_STRIDE_LEN);
+        traj.set_long_stride_length(MEDIUM_STRIDE_LEN);
+
+        traj.set_first_user_name(USER_NAME);
+        traj.set_first_program_name(PROGRAM_NAME);
+        traj.set_first_computer_name(COMPUTER_NAME);
+        traj.set_forcefield_name(FORCEFIELD_NAME);
+
+        traj.compression_precision = COMPRESSION_PRECISION;
+
+        traj.distance_unit_exponential = 9;
+
+        traj.set_time_per_frame(TIME_PER_FRAME);
+        // unimplemented!("src/tests/tng_io_testing.c line 1330")
         // ==========================
     }
 

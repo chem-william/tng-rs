@@ -410,11 +410,10 @@ impl Trajectory {
             return Ok(());
         }
 
-        let frame_set = self.current_trajectory_frame_set;
-
         // If the current frame set is not finished write it to disk before changing per frame
-        if self.time_per_frame > 0 && frame_set.n_unwritten_frames > 0 {
-            frame_set.n_frames = frame_set.n_unwritten_frames;
+        if self.time_per_frame > 0.0 && self.current_trajectory_frame_set.n_unwritten_frames > 0 {
+            self.current_trajectory_frame_set.n_frames =
+                self.current_trajectory_frame_set.n_unwritten_frames;
             self.frame_set_write()?;
         }
         Ok(())
@@ -484,7 +483,7 @@ impl Trajectory {
     }
 
     // TODO: maybe these two go on GenBlock
-    fn block_header_read(&mut self, block: &mut GenBlock) {
+    fn block_header_read(&mut self, block: &mut GenBlock) -> Result<(), TngError> {
         self.input_file_init();
 
         let start_pos = self.get_input_file_position();
@@ -495,8 +494,9 @@ impl Trajectory {
 
         if block.header_contents_size == 0 {
             block.id = BlockID::Unknown;
-            warn!("header_contents_size was 0 block.id is Unknown");
-            return;
+            return Err(TngError::Constraint(format!(
+                "header_contents_size was 0. block.id is BlockID::Unknown"
+            )));
         }
 
         // If this was the size of the general info block, check the endianness
@@ -565,7 +565,9 @@ impl Trajectory {
             .as_ref()
             .expect("init input_file")
             .seek(SeekFrom::Start(new_pos))
+            // TODO
             .expect("no error handling");
+        Ok(())
     }
 
     fn frame_set_block_read(&mut self, block: &mut GenBlock) {
@@ -694,6 +696,74 @@ impl Trajectory {
             .expect("init input_file")
             .seek(SeekFrom::Start(start_pos + block.block_contents_size))
             .expect("no error handling");
+    }
+
+    /// WRite the atom mappings of the current trajectory frame set
+    /// `block` is a general block container
+    /// `mapping_block_nr` is the index of the mapping block to write
+    /// `hash_mode` is an option to decide whether to use the md5 hash or not
+    /// if hash_mode == USE_HASH an md5 hash will be generated and written
+    fn trajectory_mapping_block_write(
+        &mut self,
+        block: &mut GenBlock,
+        mapping_block_nr: usize,
+        _hash_mode: bool,
+    ) -> Result<(), TngError> {
+        self.output_file_init();
+
+        block.name = Some("PARTICLE MAPPING".to_string());
+        block.id = BlockID::ParticleMapping;
+
+        let mapping = &self.current_trajectory_frame_set.mappings[mapping_block_nr];
+        block.block_contents_size =
+            u64::try_from(self.trajectory_mapping_block_len_calculate(mapping.n_particles))
+                .expect("u64 from usize");
+
+        // TODO: hash mode
+        let header_file_pos = self
+            .output_file
+            .as_mut()
+            .expect("init output_file")
+            .stream_position()
+            // TODO
+            .expect("no error handling");
+        self.block_header_write(block);
+
+        // TODO: hash mode
+
+        let out_file = self.output_file.as_mut().expect("init output_file");
+        let mapping = &self.current_trajectory_frame_set.mappings[mapping_block_nr];
+        utils::write_i64(
+            out_file,
+            mapping.num_first_particle,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        utils::write_i64(
+            out_file,
+            mapping.n_particles,
+            self.endianness64,
+            self.output_swap64,
+        );
+
+        // we don't need the if-else branch here from the C code as utils::write_* already handles the
+        // case where output_swap64 is None
+        // line 3946 tng_io.c
+        // TODO: hash mode
+        for i in 0..mapping.n_particles {
+            utils::write_i64(
+                out_file,
+                mapping.real_particle_numbers[usize::try_from(i).expect("usize from i64")],
+                self.endianness64,
+                self.output_swap64,
+            );
+        }
+
+        // TODO: hash mode
+        // lien 3973 tng_io.c
+
+        Ok(())
     }
 
     fn general_info_block_read(&mut self, block: &mut GenBlock) {
@@ -2011,6 +2081,10 @@ impl Trajectory {
         // TODO: hash mode tng_io.c line 3706
     }
 
+    fn trajectory_mapping_block_len_calculate(&self, n_particles: i64) -> usize {
+        std::mem::size_of::<i64>() * (2 + usize::try_from(n_particles).expect("usize from i64"))
+    }
+
     fn tng_compress(
         &self,
         compress_algo_pos: &mut Vec<i32>,
@@ -2412,6 +2486,7 @@ impl Trajectory {
         block_index: usize,
         is_particle_data: bool,
         mapping: &Option<ParticleMapping>,
+        hash_mode: bool,
     ) {
         // If we have already started writing frame sets it is too late to write
         // non-trajectory data blocks
@@ -2787,6 +2862,7 @@ impl Trajectory {
                                 block_index,
                                 is_particle_data,
                                 mapping,
+                                hash_mode,
                             );
                         }
                     }
@@ -3881,7 +3957,7 @@ impl Trajectory {
 
     /// Write one frame set, including mapping and related data blocks to [`self.output_file`]
     /// of [`Self`]
-    pub fn frame_set_write(&mut self) -> Result<(), ()> {
+    pub fn frame_set_write(&mut self, hash_mode: bool) -> Result<(), TngError> {
         let frame_set = &self.current_trajectory_frame_set;
         if frame_set.n_written_frames == frame_set.n_frames {
             return Ok(());
@@ -3892,9 +3968,55 @@ impl Trajectory {
         self.last_trajectory_frame_set_output_pos =
             self.current_trajectory_frame_set_output_file_pos;
 
-        if self.first_trajectory_frame_set_output_pos == -1 {
-            return Err(());
+        if self.current_trajectory_frame_set_output_file_pos <= 0 {
+            return Err(TngError::Constraint(
+                "output file position is invalid; cannot write frame set".to_string(),
+            ));
         }
+
+        if self.first_trajectory_frame_set_output_pos == -1 {
+            self.first_trajectory_frame_set_output_pos =
+                self.current_trajectory_frame_set_output_file_pos;
+        }
+
+        let mut block = GenBlock::new();
+
+        self.frame_set_block_write(&mut block);
+
+        // Write non-particle data blocks
+        for i in 0..self.current_trajectory_frame_set.n_data_blocks {
+            block.id = self.current_trajectory_frame_set.tr_data[i].block_id;
+            self.data_block_write(&mut block, i, false, &None, hash_mode);
+        }
+
+        // Write the mapping blocks and particle data blocks
+        if self.current_trajectory_frame_set.n_mapping_blocks > 0 {
+            for i in 0..usize::try_from(self.current_trajectory_frame_set.n_mapping_blocks)
+                .expect("usize from i64")
+            {
+                block.id = BlockID::ParticleMapping;
+                if self.current_trajectory_frame_set.mappings[i].n_particles > 0 {
+                    self.trajectory_mapping_block_write(&mut block, i, hash_mode);
+                    for j in 0..self.current_trajectory_frame_set.n_particle_data_blocks {
+                        block.id = self.current_trajectory_frame_set.tr_particle_data[i].block_id;
+                        self.data_block_write(
+                            &mut block,
+                            j,
+                            true,
+                            &Some(self.current_trajectory_frame_set.mappings[i].clone()),
+                            hash_mode,
+                        );
+                    }
+                }
+            }
+        } else {
+            for i in 0..self.current_trajectory_frame_set.n_particle_data_blocks {
+                block.id = self.current_trajectory_frame_set.tr_particle_data[i].block_id;
+                self.data_block_write(&mut block, i, true, &None, hash_mode);
+            }
+        }
+
+        // Update pointers in the general info block
 
         Ok(())
     }
@@ -4948,6 +5070,85 @@ impl Trajectory {
         }
 
         Err(())
+    }
+
+    /// Update the frame set pointers in the file header (general info block),
+    /// already written to disk
+    /// `hash_mode` specifies whether to update the block md5 hash when updating the pointers
+    fn header_pointers_update(&mut self) -> Result<(), TngError> {
+        self.output_file_init();
+
+        // Save original input_file, replace with a dup of output_file
+        let temp = self.input_file.take();
+        self.input_file = Some(
+            self.output_file
+                .as_ref()
+                .expect("init output_file")
+                .try_clone()
+                .expect("dup output file"),
+        );
+
+        let mut block = GenBlock::new();
+
+        let output_file = self
+            .output_file
+            .as_mut()
+            .expect("just initialized output file");
+        // ftello
+        let output_file_pos = output_file.stream_position().expect("no error handling");
+        // fseeko
+        output_file
+            .seek(SeekFrom::Start(0))
+            .expect("no error handling");
+
+        if self.block_header_read(&mut block).is_err() {
+            self.input_file = temp;
+            return Err(TngError::Critical(format!(
+                "Cannot read general info header."
+            )));
+        };
+
+        let output_file = self
+            .output_file
+            .as_mut()
+            .expect("just initialized output file");
+
+        // TODO: hash mode
+        let contents_start_pos = output_file.stream_position().expect("no error handling");
+        output_file
+            .seek(SeekFrom::Current(
+                i64::try_from(
+                    block.block_contents_size
+                        - u64::try_from(5 * std::mem::size_of::<i64>()).expect("u64 from usize"),
+                )
+                .expect("i64 from u64"),
+            ))
+            .expect("no error handling");
+
+        self.input_file = temp;
+
+        let mut pos = self.first_trajectory_frame_set_output_pos;
+        utils::write_u64(
+            output_file,
+            u64::try_from(pos).expect("u64 from i64"),
+            self.endianness64,
+            self.input_swap64,
+        );
+
+        pos = self.last_trajectory_frame_set_output_pos;
+        utils::write_u64(
+            output_file,
+            u64::try_from(pos).expect("u64 from i64"),
+            self.endianness64,
+            self.input_swap64,
+        );
+
+        // TODO: hash mode
+        // tng_io.c line 1282
+
+        output_file.seek(SeekFrom::Start(output_file_pos));
+
+        Ok(())
     }
 
     fn reread_frame_set_at_file_pos(&mut self, pos: u64) {
