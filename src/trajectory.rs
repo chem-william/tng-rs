@@ -5320,12 +5320,20 @@ impl Trajectory {
 
     /// Add a residue to the molecule at `molecule_idx`, associated with chain `chain_idx`.
     /// Returns the index of the new residue in `self.molecules[molecule_idx].residues`.
-    pub fn add_residue(&mut self, molecule_idx: usize, chain_idx: usize, name: &str) -> usize {
-        let id = self.molecules[molecule_idx]
-            .residues
-            .last()
-            .map(|r| r.id + 1)
-            .unwrap_or(0);
+    pub fn add_chain_residue(
+        &mut self,
+        molecule_idx: usize,
+        chain_idx: usize,
+        name: &str,
+    ) -> usize {
+        let mol = &self.molecules[molecule_idx];
+        let chain = &mol.chains[chain_idx];
+        let id = if chain.n_residues > 0 {
+            let last_res_idx = chain.residues_indices.1 - 1;
+            mol.residues[last_res_idx].id + 1
+        } else {
+            0
+        };
         self.add_residue_w_id(molecule_idx, chain_idx, name, id)
     }
 

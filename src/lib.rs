@@ -152,7 +152,8 @@ mod integration {
 
         // tng_test_setup_molecules
         let mol_idx = traj.add_molecule("water");
-        let _chain_idx = traj.add_chain(mol_idx, "W");
+        let chain_idx = traj.add_chain(mol_idx, "W");
+        let residue_idx = traj.add_chain_residue(mol_idx, chain_idx, "WAT");
         // ==========================
     }
 
