@@ -13,6 +13,10 @@ pub enum TngError {
     #[error("{0}")]
     NotFound(String),
 
+    /// A major, unspecified error has occured - matches the C code.
+    #[error("{0}")]
+    Critical(String),
+
     /// I/O error wrapping std::io::Error.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
