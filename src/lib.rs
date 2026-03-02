@@ -147,7 +147,12 @@ mod integration {
         traj.distance_unit_exponential = 9;
 
         traj.set_time_per_frame(TIME_PER_FRAME);
-        // unimplemented!("src/tests/tng_io_testing.c line 1330")
+
+        // Create molecules
+
+        // tng_test_setup_molecules
+        let mol_idx = traj.add_molecule("water");
+        let _chain_idx = traj.add_chain(mol_idx, "W");
         // ==========================
     }
 

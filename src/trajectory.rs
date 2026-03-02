@@ -503,9 +503,9 @@ impl Trajectory {
 
         if block.header_contents_size == 0 {
             block.id = BlockID::Unknown;
-            return Err(TngError::Constraint(format!(
-                "header_contents_size was 0. block.id is BlockID::Unknown"
-            )));
+            return Err(TngError::Constraint(
+                "header_contents_size was 0. block.id is BlockID::Unknown".to_string(),
+            ));
         }
 
         // If this was the size of the general info block, check the endianness
@@ -884,7 +884,7 @@ impl Trajectory {
                 let mut chain = Chain::new();
 
                 // Link back to parent molecule index
-                chain.parent_molecule_idx = chain_idx as usize;
+                chain.parent_molecule_idx = mol_idx as usize;
                 chain.name = String::new();
 
                 chain.read_data(self);
@@ -1741,7 +1741,7 @@ impl Trajectory {
         out_file
             .write_all(&block.md5_hash)
             .expect("able to write to output_file");
-        utils::fwrite_str(out_file, &block.name.as_ref().expect("block to have name"));
+        utils::fwrite_str(out_file, block.name.as_ref().expect("block to have name"));
         utils::write_u64(
             out_file,
             block.version,
@@ -3671,8 +3671,8 @@ impl Trajectory {
     }
 
     /// Add an existing [`Molecule`] to [`Self`]
-    pub fn molecule_existing_add(&mut self, molecule: Molecule) {
-        self.molecules.last().map(|mol| mol.id + 1).unwrap_or(1);
+    pub fn molecule_existing_add(&mut self, mut molecule: Molecule) {
+        molecule.id = self.molecules.last().map(|mol| mol.id + 1).unwrap_or(1);
         self.molecules.push(molecule);
         self.molecule_cnt_list.push(0);
         self.n_molecules += 1;
@@ -5270,5 +5270,162 @@ impl Trajectory {
         self.reread_frame_set_at_file_pos(orig_file_pos);
 
         Err(())
+    }
+
+    /// Add a molecule to the trajectory.
+    /// Returns the index of the new molecule in `self.molecules`.
+    pub fn add_molecule(&mut self, name: &str) -> usize {
+        let id = self.molecules.last().map(|m| m.id + 1).unwrap_or(1);
+        self.add_molecule_w_id(name, id)
+    }
+
+    fn add_molecule_w_id(&mut self, name: &str, id: i64) -> usize {
+        let mut molecule = Molecule::new();
+        let length = name.floor_char_boundary(MAX_STR_LEN - 1);
+        molecule.name = name[..length].to_string();
+        molecule.id = id;
+
+        let idx = self.molecules.len();
+        self.molecules.push(molecule);
+        self.molecule_cnt_list.push(0);
+        self.n_molecules += 1;
+        idx
+    }
+
+    /// Add a chain to the molecule at `molecule_idx`.
+    /// Returns the index of the new chain in `self.molecules[molecule_idx].chains`.
+    pub fn add_chain(&mut self, molecule_idx: usize, name: &str) -> usize {
+        let id = self.molecules[molecule_idx]
+            .chains
+            .last()
+            .map(|c| c.id + 1)
+            .unwrap_or(1);
+        self.add_chain_w_id(molecule_idx, name, id)
+    }
+
+    fn add_chain_w_id(&mut self, molecule_idx: usize, name: &str, id: u64) -> usize {
+        let mut chain = Chain::new();
+        chain.set_name(name.to_string());
+        chain.parent_molecule_idx = molecule_idx;
+        chain.id = id;
+        chain.n_residues = 0;
+
+        let mol = &mut self.molecules[molecule_idx];
+        chain.residues_indices = (mol.residues.len(), mol.residues.len());
+        let idx = mol.chains.len();
+        mol.chains.push(chain);
+        mol.n_chains += 1;
+        idx
+    }
+
+    /// Add a residue to the molecule at `molecule_idx`, associated with chain `chain_idx`.
+    /// Returns the index of the new residue in `self.molecules[molecule_idx].residues`.
+    pub fn add_residue(&mut self, molecule_idx: usize, chain_idx: usize, name: &str) -> usize {
+        let id = self.molecules[molecule_idx]
+            .residues
+            .last()
+            .map(|r| r.id + 1)
+            .unwrap_or(0);
+        self.add_residue_w_id(molecule_idx, chain_idx, name, id)
+    }
+
+    fn add_residue_w_id(
+        &mut self,
+        molecule_idx: usize,
+        chain_idx: usize,
+        name: &str,
+        id: u64,
+    ) -> usize {
+        let mol = &mut self.molecules[molecule_idx];
+
+        let insert_pos = mol.chains[chain_idx].residues_indices.1;
+
+        let mut residue = Residue::new();
+        let length = name.floor_char_boundary(MAX_STR_LEN - 1);
+        residue.name = name[..length].to_string();
+        residue.chain_index = Some(chain_idx);
+        residue.id = id;
+        residue.n_atoms = 0;
+        residue.atoms_offset = mol.atoms.len();
+
+        mol.residues.insert(insert_pos, residue);
+
+        mol.chains[chain_idx].residues_indices.1 += 1;
+        mol.chains[chain_idx].n_residues += 1;
+
+        for c in &mut mol.chains[(chain_idx + 1)..] {
+            c.residues_indices.0 += 1;
+            c.residues_indices.1 += 1;
+        }
+
+        for atom in &mut mol.atoms {
+            if let Some(ri) = atom.residue_index {
+                if ri >= insert_pos {
+                    atom.residue_index = Some(ri + 1);
+                }
+            }
+        }
+
+        mol.n_residues += 1;
+        insert_pos
+    }
+
+    /// Add an atom to the molecule at `molecule_idx`, associated with residue `residue_idx`.
+    /// Returns the index of the new atom in `self.molecules[molecule_idx].atoms`.
+    pub fn add_atom(
+        &mut self,
+        molecule_idx: usize,
+        residue_idx: usize,
+        name: &str,
+        atom_type: &str,
+    ) -> usize {
+        let id = self.molecules[molecule_idx]
+            .atoms
+            .last()
+            .map(|a| a.id + 1)
+            .unwrap_or(0);
+        self.add_atom_w_id(molecule_idx, residue_idx, name, atom_type, id)
+    }
+
+    fn add_atom_w_id(
+        &mut self,
+        molecule_idx: usize,
+        residue_idx: usize,
+        name: &str,
+        atom_type: &str,
+        id: i64,
+    ) -> usize {
+        let mol = &mut self.molecules[molecule_idx];
+
+        if mol.residues[residue_idx].n_atoms == 0 {
+            mol.residues[residue_idx].atoms_offset = mol.atoms.len();
+        }
+
+        let mut atom = Atom::new();
+        let len = name.floor_char_boundary(MAX_STR_LEN - 1);
+        atom.name = name[..len].to_string();
+        let len = atom_type.floor_char_boundary(MAX_STR_LEN - 1);
+        atom.atom_type = atom_type[..len].to_string();
+        atom.residue_index = Some(residue_idx);
+        atom.id = id;
+
+        let idx = mol.atoms.len();
+        mol.atoms.push(atom);
+        mol.residues[residue_idx].n_atoms += 1;
+        mol.n_atoms += 1;
+        idx
+    }
+
+    /// Add a bond to the molecule at `molecule_idx`.
+    /// Returns the index of the new bond in `self.molecules[molecule_idx].bonds`.
+    pub fn add_bond(&mut self, molecule_idx: usize, from_atom_id: i64, to_atom_id: i64) -> usize {
+        let mol = &mut self.molecules[molecule_idx];
+        let mut bond = Bond::new();
+        bond.from_atom_id = from_atom_id;
+        bond.to_atom_id = to_atom_id;
+        let idx = mol.bonds.len();
+        mol.bonds.push(bond);
+        mol.n_bonds += 1;
+        idx
     }
 }
