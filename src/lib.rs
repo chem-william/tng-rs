@@ -75,9 +75,9 @@ mod integration {
     const TIME_PER_FRAME: f64 = 2e-15;
     const TEST_FILES_DIR: &str = "test_files";
 
-    const BOX_SHAPE_X: f32 = 150.0;
-    const BOX_SHAPE_Y: f32 = 145.5;
-    const BOX_SHAPE_Z: f32 = 155.5;
+    const BOX_SHAPE_X: f64 = 150.0;
+    const BOX_SHAPE_Y: f64 = 145.5;
+    const BOX_SHAPE_Z: f64 = 155.5;
     const N_FRAME_SETS: i64 = 100;
     const MEDIUM_STRIDE_LEN: i64 = 5;
     const LONG_STRIDE_LEN: i64 = 25;
@@ -149,11 +149,29 @@ mod integration {
         traj.set_time_per_frame(TIME_PER_FRAME);
 
         // Create molecules
-
         // tng_test_setup_molecules
         let mol_idx = traj.add_molecule("water");
         let chain_idx = traj.add_chain(mol_idx, "W");
         let residue_idx = traj.add_chain_residue(mol_idx, chain_idx, "WAT");
+        let o_idx = traj.add_residue_atom(mol_idx, residue_idx, "O", "O");
+        let h1_idx = traj.add_residue_atom(mol_idx, residue_idx, "HO1", "H");
+        let h2_idx = traj.add_residue_atom(mol_idx, residue_idx, "HO2", "H");
+        let bond_idx = traj.add_molecule_bond(mol_idx, 0, 1);
+        let bond_idx = traj.add_molecule_bond(mol_idx, 0, 2);
+
+        traj.set_molecule_cnt(mol_idx, 200);
+        let count = traj.get_molecule_cnt(mol_idx);
+
+        assert_eq!(count, 200);
+        // ==========================
+
+        // Seth the box shape
+        let mut box_shape = [0.0; 9];
+        box_shape[0] = BOX_SHAPE_X;
+        box_shape[4] = BOX_SHAPE_Y;
+        box_shape[8] = BOX_SHAPE_Z;
+        traj.add_data_block();
+
         // ==========================
     }
 
