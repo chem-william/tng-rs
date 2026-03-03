@@ -117,9 +117,9 @@ pub struct Data {
 }
 
 impl Data {
-    pub fn new(block_id: i64, block_name: impl Into<String>, data_type: DataType) -> Self {
+    pub fn new(block_id: BlockID, block_name: impl Into<String>, data_type: DataType) -> Self {
         Data {
-            block_id: BlockID::Unknown,
+            block_id,
             block_name: block_name.into(),
             data_type,
             dependency: 0,
