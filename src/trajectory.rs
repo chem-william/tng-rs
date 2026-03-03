@@ -3678,6 +3678,28 @@ impl Trajectory {
         self.n_molecules += 1;
     }
 
+    /// Set the count of a molecule
+    pub fn set_molecule_cnt(&mut self, molecule_idx: usize, count: i64) {
+        let old_count;
+        if !self.var_num_atoms {
+            old_count = self.molecule_cnt_list[molecule_idx];
+            self.molecule_cnt_list[molecule_idx] = count;
+
+            self.n_particles += (count - old_count) * self.molecules[molecule_idx].n_atoms;
+        } else {
+            old_count = self.current_trajectory_frame_set.molecule_cnt_list[molecule_idx];
+            self.current_trajectory_frame_set.molecule_cnt_list[molecule_idx] = count;
+
+            self.current_trajectory_frame_set.n_particles +=
+                (count - old_count) * self.molecules[molecule_idx].n_atoms;
+        }
+    }
+
+    /// Get the count of a molecule.
+    pub fn get_molecule_cnt(&self, molecule_idx: usize) -> usize {
+        usize::try_from(self.molecule_cnt_list[molecule_idx]).expect("usize from i64")
+    }
+
     /// Get the bonds of the current molecular system
     pub fn molsystem_bonds_get(&self) -> Option<(usize, Vec<i64>, Vec<i64>)> {
         let molecule_count_list = self.molecule_cnt_list_get();
@@ -5380,7 +5402,7 @@ impl Trajectory {
 
     /// Add an atom to the molecule at `molecule_idx`, associated with residue `residue_idx`.
     /// Returns the index of the new atom in `self.molecules[molecule_idx].atoms`.
-    pub fn add_atom(
+    pub fn add_residue_atom(
         &mut self,
         molecule_idx: usize,
         residue_idx: usize,
@@ -5426,7 +5448,12 @@ impl Trajectory {
 
     /// Add a bond to the molecule at `molecule_idx`.
     /// Returns the index of the new bond in `self.molecules[molecule_idx].bonds`.
-    pub fn add_bond(&mut self, molecule_idx: usize, from_atom_id: i64, to_atom_id: i64) -> usize {
+    pub fn add_molecule_bond(
+        &mut self,
+        molecule_idx: usize,
+        from_atom_id: i64,
+        to_atom_id: i64,
+    ) -> usize {
         let mol = &mut self.molecules[molecule_idx];
         let mut bond = Bond::new();
         bond.from_atom_id = from_atom_id;
