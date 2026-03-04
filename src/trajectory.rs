@@ -3475,6 +3475,13 @@ impl Trajectory {
 
         let mut len = 0;
         let orig_pos = self.get_input_file_position();
+
+        self.input_file
+            .as_mut()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(0))
+            .expect("failed to seek to start of input file");
+
         let mut block = GenBlock::new();
 
         // Read through the headers of non-trajectory blocks (they come before the
