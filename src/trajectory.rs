@@ -428,6 +428,14 @@ impl Trajectory {
         Ok(())
     }
 
+    pub fn get_num_particles(&self) -> i64 {
+        if self.var_num_atoms {
+            self.n_particles
+        } else {
+            self.current_trajectory_frame_set.n_particles
+        }
+    }
+
     // c function: tng_input_file_set
     /// Set the name of the input file.
     pub fn set_input_file(&mut self, path: &Path) {
@@ -3670,6 +3678,23 @@ impl Trajectory {
         name
     }
 
+    /// Get the atom type of real particle number (number in mol system).
+    pub fn atom_type_of_particle_nr_get(&self, nr: i64) -> String {
+        let mut count = 0;
+        let molecule_count_list = self.molecule_cnt_list_get();
+
+        let mut atom_type = String::new();
+        for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            if count + mol.n_atoms * mol_count - 1 < nr {
+                count += mol.n_atoms * mol_count;
+                continue;
+            }
+            let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
+            atom_type = atom.atom_type.clone();
+        }
+        atom_type
+    }
+
     /// Add an existing [`Molecule`] to [`Self`]
     pub fn molecule_existing_add(&mut self, mut molecule: Molecule) {
         molecule.id = self.molecules.last().map(|mol| mol.id + 1).unwrap_or(1);
@@ -5462,5 +5487,278 @@ impl Trajectory {
         mol.bonds.push(bond);
         mol.n_bonds += 1;
         idx
+    }
+
+    pub fn add_data_block(
+        &mut self,
+        id: BlockID,
+        block_name: &str,
+        data_type: DataType,
+        block_type_flag: bool,
+        n_frames: i64,
+        n_values_per_frame: i64,
+        stride_length: i64,
+        codec_id: Compression,
+        new_data: Option<Vec<u8>>,
+    ) -> Result<(), TngError> {
+        if n_values_per_frame <= 0 {
+            return Err(TngError::Constraint(format!(
+                "`n_values_per_frame` must be a positive integer. Got {n_values_per_frame}"
+            )));
+        }
+
+        self.add_gen_data_block(
+            id,
+            false,
+            block_name,
+            data_type,
+            block_type_flag,
+            n_frames,
+            n_values_per_frame,
+            stride_length,
+            0,
+            0,
+            codec_id,
+            new_data,
+        );
+        Ok(())
+    }
+
+    fn add_gen_data_block(
+        &mut self,
+        id: BlockID,
+        is_particle_data: bool,
+        block_name: &str,
+        data_type: DataType,
+        block_type_flag: bool,
+        n_frames: i64,
+        n_values_per_frame: i64,
+        stride_length: i64,
+        num_first_particle: u64,
+        n_particles: i64,
+        codec_id: Compression,
+        new_data: Option<Vec<u8>>,
+    ) {
+        let mut stride_length = stride_length;
+        if stride_length <= 0 {
+            stride_length = 0;
+        }
+
+        let found_block = if is_particle_data {
+            self.particle_data_find(id)
+        } else {
+            self.data_find(id)
+        };
+
+        let mut data = Data::default();
+        // If the block does not exist, create it
+        if found_block.is_none() {
+            if is_particle_data {
+                self.particle_data_block_create(block_type_flag);
+            } else {
+                self.data_block_create(block_type_flag);
+            }
+
+            let frame_set = &self.current_trajectory_frame_set;
+            if is_particle_data {
+                // block_type_flag == true corresponds to TNG_TRAJECTORY_BLOCK
+                data = if block_type_flag {
+                    frame_set.tr_particle_data[frame_set.n_particle_data_blocks - 1].clone()
+                } else {
+                    self.non_tr_particle_data[self.n_particle_data_blocks - 1].clone()
+                };
+            } else {
+                data = if block_type_flag {
+                    frame_set.tr_data[frame_set.n_data_blocks - 1].clone()
+                } else {
+                    self.non_tr_data[self.n_data_blocks - 1].clone()
+                };
+            }
+            data.block_id = id;
+            let length = block_name.floor_char_boundary(MAX_STR_LEN - 1);
+            data.block_name = block_name[..length].to_string();
+            data.values = None;
+            data.strings = None;
+            data.last_retrieved_frame = -1;
+        }
+        data.data_type = data_type;
+        data.stride_length = stride_length.max(1);
+        data.n_values_per_frame = n_values_per_frame;
+        data.n_frames = n_frames;
+
+        if is_particle_data {
+            data.dependency = PARTICLE_DEPENDENT;
+        } else {
+            data.dependency = 0;
+        }
+
+        let frame_set = &self.current_trajectory_frame_set;
+        if block_type_flag && (n_frames > 1 || frame_set.n_frames == n_frames || stride_length > 1)
+        {
+            data.dependency = FRAME_DEPENDENT;
+        }
+        data.codec_id = codec_id;
+        data.compression_multiplier = 1.0;
+        // FIXME(from C code): this can cause problems
+        data.first_frame_with_data = frame_set.first_frame;
+
+        let mut tot_n_particles = 0;
+        if is_particle_data {
+            tot_n_particles = if block_type_flag && self.var_num_atoms {
+                frame_set.n_particles
+            } else {
+                self.n_particles
+            };
+        }
+
+        // If data values are supplied add that data to the data block
+        if let Some(ref new_data) = new_data {
+            // Allocate memory
+            if is_particle_data {
+                data.allocate_particle_data_mem(
+                    n_frames,
+                    stride_length,
+                    tot_n_particles,
+                    n_values_per_frame,
+                );
+            } else {
+                data.allocate_data_mem(n_frames, stride_length, n_values_per_frame);
+            }
+
+            if n_frames > frame_set.n_unwritten_frames {
+                self.current_trajectory_frame_set.n_unwritten_frames = n_frames;
+            }
+
+            let n_frames_div = (n_frames - 1) / stride_length + 1;
+
+            match data_type {
+                DataType::Char => {
+                    let mut cursor = 0;
+
+                    let strings_3d = match data.strings {
+                        Some(ref mut s) => s,
+                        None => unreachable!("data.strings was None"),
+                    };
+
+                    if is_particle_data {
+                        for i in 0..n_frames_div {
+                            let first_dim_values = &mut strings_3d[i as usize];
+                            for j in num_first_particle
+                                ..num_first_particle
+                                    + u64::try_from(n_particles).expect("u64 from i64")
+                            {
+                                let second_dim_values = &mut first_dim_values[j as usize];
+                                for k in 0..n_values_per_frame {
+                                    let remaining = &new_data[cursor..];
+                                    let nul_pos = remaining
+                                        .iter()
+                                        .position(|&b| b == 0)
+                                        .unwrap_or(remaining.len());
+                                    let len = (nul_pos + 1).min(MAX_STR_LEN);
+                                    let str_bytes = &new_data[cursor..cursor + len - 1];
+                                    second_dim_values[k as usize] =
+                                        String::from_utf8_lossy(str_bytes).into_owned();
+                                    cursor += len;
+                                }
+                            }
+                        }
+                    } else {
+                        for i in 0..n_frames_div {
+                            let second_dim_values = &mut strings_3d[0][i as usize];
+                            for j in 0..n_values_per_frame {
+                                let remaining = &new_data[cursor..];
+                                let nul_pos = remaining
+                                    .iter()
+                                    .position(|&b| b == 0)
+                                    .unwrap_or(remaining.len());
+                                let len = (nul_pos + 1).min(MAX_STR_LEN);
+                                let str_bytes = &new_data[cursor..cursor + len - 1];
+                                second_dim_values[j as usize] =
+                                    String::from_utf8_lossy(str_bytes).into_owned();
+                                cursor += len;
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    let size = data_type.get_size();
+                    let copy_len = if is_particle_data {
+                        size * (n_frames_div as usize)
+                            * (n_particles as usize)
+                            * (n_values_per_frame as usize)
+                    } else {
+                        size * (n_frames_div as usize) * (n_values_per_frame as usize)
+                    };
+                    data.values.as_mut().expect("data.values to be Some")[..copy_len]
+                        .copy_from_slice(&new_data[..copy_len]);
+                }
+            }
+        }
+    }
+
+    fn get_molecule_cnt_list(&self) -> &[i64] {
+        if self.var_num_atoms {
+            &self.current_trajectory_frame_set.molecule_cnt_list
+        } else {
+            &self.molecule_cnt_list
+        }
+    }
+
+    pub(crate) fn particle_data_block_add(
+        &mut self,
+        id: BlockID,
+        block_name: &str,
+        data_type: DataType,
+        block_type_flag: bool,
+        n_frames: i64,
+        n_values_per_frame: i64,
+        stride_length: i64,
+        num_first_particle: u64,
+        n_particles: i64,
+        codec_id: Compression,
+        new_data: Option<Vec<u8>>,
+    ) -> Result<(), TngError> {
+        if n_values_per_frame <= 0 {
+            return Err(TngError::Constraint(format!(
+                "`n_values_per_frame` must be a positive integer. Got {n_values_per_frame}"
+            )));
+        }
+
+        if n_particles < 0 {
+            return Err(TngError::Constraint(format!(
+                "`n_particles` must be >= 0. Got {n_particles}"
+            )));
+        }
+
+        self.add_gen_data_block(
+            id,
+            true,
+            block_name,
+            data_type,
+            block_type_flag,
+            n_frames,
+            n_values_per_frame,
+            stride_length,
+            num_first_particle,
+            n_particles,
+            codec_id,
+            new_data,
+        );
+
+        Ok(())
+    }
+
+    pub(crate) fn get_num_molecules(&self) -> usize {
+        let cnt_list = self.get_molecule_cnt_list();
+
+        if cnt_list.is_empty() {
+            unimplemented!("error handling");
+        }
+
+        cnt_list
+            .iter()
+            .take(usize::try_from(self.n_molecules).expect("usize from i64"))
+            .map(|&x| x as usize)
+            .sum()
     }
 }
