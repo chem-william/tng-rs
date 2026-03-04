@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use rand::RngExt;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -66,11 +67,18 @@ const PARTICLE_DEPENDENT: u8 = 2;
 
 #[cfg(test)]
 mod integration {
+    use std::arch::x86_64::_mm_mask_range_sd;
+
     use crate::{
-        FRAME_DEPENDENT, PARTICLE_DEPENDENT, gen_block::BlockID, molecule::Molecule,
+        FRAME_DEPENDENT, PARTICLE_DEPENDENT,
+        data::{Compression, DataType},
+        gen_block::BlockID,
+        molecule::Molecule,
         trajectory::Trajectory,
     };
     use assert_approx_eq::assert_approx_eq;
+    use flate2::Compress;
+    use rand::{RngExt, distr::Uniform};
 
     const TIME_PER_FRAME: f64 = 2e-15;
     const TEST_FILES_DIR: &str = "test_files";
@@ -130,10 +138,15 @@ mod integration {
         assert!((box_data[0] - 50.0).abs() < 0.000001);
         // ==========================
 
-        output_filename.push(TEST_FILES_DIR);
-        output_filename.push("tng_test.tng");
-
         // tng_test_write_and_read_traj
+        // Use a fresh trajectory (matching C test structure)
+        let mut test_output = std::env::current_dir().expect("able to get current working dir");
+        test_output.push(TEST_FILES_DIR);
+        test_output.push("tng_test_out.tng");
+
+        let mut traj = Trajectory::new();
+        traj.set_output_file(test_output.as_path());
+
         traj.set_medium_stride_length(MEDIUM_STRIDE_LEN);
         traj.set_long_stride_length(MEDIUM_STRIDE_LEN);
 
@@ -170,8 +183,174 @@ mod integration {
         box_shape[0] = BOX_SHAPE_X;
         box_shape[4] = BOX_SHAPE_Y;
         box_shape[8] = BOX_SHAPE_Z;
-        traj.add_data_block();
+        traj.add_data_block(
+            BlockID::TrajBoxShape,
+            "BOX SHAPE",
+            DataType::Double,
+            false,
+            1,
+            9,
+            1,
+            crate::data::Compression::Uncompressed,
+            Some(box_shape.iter().flat_map(|f| f.to_le_bytes()).collect()),
+        )
+        .unwrap();
 
+        // Set the partial charges (treat the water as TIP3P)
+        let n_particles = traj.get_num_particles();
+        let mut charges = Vec::with_capacity(3);
+        for i in 0..n_particles {
+            let atom_type = traj.atom_type_of_particle_nr_get(i);
+
+            // We only have water in the system. If the atom is oxygen set its
+            // partial charge to -0.834, if it's a hydrogen set its partial charge to
+            // 0.417
+            match atom_type.chars().next().unwrap() {
+                'O' => charges[i as usize] = -0.834,
+                'H' => charges[i as usize] = 0.417,
+                _ => unreachable!("failed to set partial charges"),
+            }
+        }
+
+        traj.particle_data_block_add(
+            BlockID::TrajPartialCharges,
+            "PARTIAL CHARGES",
+            DataType::Float,
+            false,
+            1,
+            1,
+            1,
+            0,
+            n_particles,
+            crate::data::Compression::Uncompressed,
+            Some(
+                charges
+                    .iter()
+                    .flat_map(|&f: &f32| f.to_le_bytes())
+                    .collect(),
+            ),
+        )
+        .unwrap();
+
+        // Set atom masses
+        let mut masses = Vec::new();
+        for i in 0..n_particles {
+            let atom_type = traj.atom_type_of_particle_nr_get(i);
+            // We only have water in the system. If the atom is oxygen set its
+            // mass to 16.00000, if it's a hydrogen set its mass to
+            // 1.00800.
+            match atom_type.chars().next().unwrap() {
+                'O' => masses[i as usize] = 16.00000,
+                'H' => masses[i as usize] = 1.008000,
+                _ => unreachable!("failed to set partial charges"),
+            }
+        }
+
+        traj.particle_data_block_add(
+            BlockID::TrajMasses,
+            "ATOM MASSES",
+            DataType::Float,
+            false,
+            1,
+            1,
+            1,
+            0,
+            n_particles,
+            crate::data::Compression::GZip,
+            Some(masses.iter().flat_map(|&f: &f32| f.to_le_bytes()).collect()),
+        )
+        .unwrap();
+
+        // Create a custom annotation data block
+        let annotation =
+            "This trajectory was generated from tng_io_testing. It is not a real MD trajectory.";
+        traj.add_data_block(
+            BlockID::TrajGeneralComments,
+            "COMMENTS",
+            DataType::Char,
+            false,
+            1,
+            1,
+            1,
+            crate::data::Compression::Uncompressed,
+            Some(masses.iter().flat_map(|&f: &f32| f.to_le_bytes()).collect()),
+        )
+        .expect("Failed adding details annotation data block");
+
+        // Write file headers (includes non trajectory data blocks)
+        traj.file_headers_write(USE_HASH).unwrap();
+
+        let n_frames_per_frame_set = traj.get_num_frames_per_frame_set();
+        let mut data =
+            Vec::with_capacity(usize::try_from(n_particles * n_frames_per_frame_set * 3).unwrap());
+
+        let tot_n_mols = traj.get_num_molecules();
+        // Set initial coordinates
+        let mut rng = rand::rng();
+        let mut molpos = vec![0.0; tot_n_mols * 3];
+        for i in 0..tot_n_mols {
+            let nr = i * 3;
+            // Somewhat random coordinates (between 0 and 100),
+            // but not specifiying a random seed.
+            molpos[nr] = 100.0 * rng.random_range(0.0..1.0);
+            molpos[nr + 1] = 100.0 * rng.random_range(0.0..1.0);
+            molpos[nr + 2] = 100.0 * rng.random_range(0.0..1.0);
+        }
+
+        // Generate frame sets - each with 100 frames (by default)
+        for i in 0..N_FRAME_SETS {
+            data.clear();
+            let codec_id = if i < N_FRAME_SETS / 2 {
+                Compression::GZip
+            } else {
+                Compression::TNG
+            };
+
+            for j in 0..n_frames_per_frame_set {
+                for k in 0..tot_n_mols {
+                    let nr = k * 3;
+                    // Move -1 to 1
+                    molpos[nr] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
+                    molpos[nr + 1] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
+                    molpos[nr + 2] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
+
+                    data.push(molpos[nr]);
+                    data.push(molpos[nr + 1]);
+                    data.push(molpos[nr + 2]);
+
+                    data.push(molpos[nr] + 1.0);
+                    data.push(molpos[nr + 1] + 1.0);
+                    data.push(molpos[nr + 2] + 1.0);
+
+                    data.push(molpos[nr] - 1.0);
+                    data.push(molpos[nr + 1] - 1.0);
+                    data.push(molpos[nr + 2] - 1.0);
+                }
+            }
+            traj.frame_set_with_time_new(
+                i * n_frames_per_frame_set,
+                n_frames_per_frame_set,
+                2e-15f64 * (i * n_frames_per_frame_set) as f64,
+            )
+            .expect("error creating frame set");
+
+            traj.particle_data_block_add(
+                BlockID::TrajPositions,
+                "POSITIONS",
+                DataType::Float,
+                true,
+                n_frames_per_frame_set,
+                3,
+                1,
+                0,
+                n_particles,
+                codec_id,
+                Some(data.iter().flat_map(|&f: &f64| (f as f32).to_le_bytes()).collect()),
+            )
+            .expect("error adding position data block");
+
+            traj.frame_set_write(USE_HASH).expect("error writing frame set");
+        }
         // ==========================
     }
 

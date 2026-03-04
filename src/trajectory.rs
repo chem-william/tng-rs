@@ -3130,9 +3130,7 @@ impl Trajectory {
         let temp_input_file = self
             .input_file
             .as_mut()
-            .expect("init input_file")
-            .try_clone()
-            .expect("able to clone file");
+            .map(|f| f.try_clone().expect("able to clone file"));
 
         let output_file_pos = self.get_output_file_position();
         let out_file = self.output_file.as_mut().expect("init output_file");
@@ -3381,7 +3379,7 @@ impl Trajectory {
         out_file
             .seek(SeekFrom::Start(output_file_pos))
             .expect("no error handling");
-        self.input_file = Some(temp_input_file.try_clone().expect("able to clone file"));
+        self.input_file = temp_input_file.as_ref().map(|f| f.try_clone().expect("able to clone file"));
     }
 
     /// Migrate a whole frame set from one position in the file to another.
@@ -3486,7 +3484,9 @@ impl Trajectory {
 
         // Read through the headers of non-trajectory blocks (they come before the
         // trajectory blocks in the file)
-        self.block_header_read(&mut block);
+        // TODO: error handling
+        self.block_header_read(&mut block)
+            .expect("able to read header");
         while len < self.input_file_len
             && block.id != BlockID::Unknown
             && block.id != BlockID::TrajectoryFrameSet
@@ -5557,37 +5557,28 @@ impl Trajectory {
             self.data_find(id)
         };
 
-        let mut data = Data::default();
-        // If the block does not exist, create it
-        if found_block.is_none() {
+        let is_new_block = found_block.is_none();
+        let mut data = if let Some(existing) = found_block {
+            existing
+        } else {
+            // If the block does not exist, create it
             if is_particle_data {
                 self.particle_data_block_create(block_type_flag);
             } else {
                 self.data_block_create(block_type_flag);
             }
 
-            let frame_set = &self.current_trajectory_frame_set;
-            if is_particle_data {
-                // block_type_flag == true corresponds to TNG_TRAJECTORY_BLOCK
-                data = if block_type_flag {
-                    frame_set.tr_particle_data[frame_set.n_particle_data_blocks - 1].clone()
-                } else {
-                    self.non_tr_particle_data[self.n_particle_data_blocks - 1].clone()
-                };
-            } else {
-                data = if block_type_flag {
-                    frame_set.tr_data[frame_set.n_data_blocks - 1].clone()
-                } else {
-                    self.non_tr_data[self.n_data_blocks - 1].clone()
-                };
-            }
-            data.block_id = id;
+            let mut data = Data {
+                block_id: id,
+                ..Default::default()
+            };
             let length = block_name.floor_char_boundary(MAX_STR_LEN - 1);
             data.block_name = block_name[..length].to_string();
             data.values = None;
             data.strings = None;
             data.last_retrieved_frame = -1;
-        }
+            data
+        };
         data.data_type = data_type;
         data.stride_length = stride_length.max(1);
         data.n_values_per_frame = n_values_per_frame;
@@ -5701,6 +5692,57 @@ impl Trajectory {
                 }
             }
         }
+
+        // Write the modified data back to the appropriate store.
+        // The local `data` was cloned from the store (or created as default),
+        // so we must put it back for changes to take effect.
+        if is_new_block {
+            // We just pushed a Data::default() — replace it with the fully initialized one
+            if is_particle_data {
+                if block_type_flag {
+                    *self
+                        .current_trajectory_frame_set
+                        .tr_particle_data
+                        .last_mut()
+                        .expect("just created") = data;
+                } else {
+                    *self.non_tr_particle_data.last_mut().expect("just created") = data;
+                }
+            } else if block_type_flag {
+                *self
+                    .current_trajectory_frame_set
+                    .tr_data
+                    .last_mut()
+                    .expect("just created") = data;
+            } else {
+                *self.non_tr_data.last_mut().expect("just created") = data;
+            }
+        } else {
+            // Update the existing block in-place by finding it by ID
+            let target = if is_particle_data {
+                if block_type_flag {
+                    self.current_trajectory_frame_set
+                        .tr_particle_data
+                        .iter_mut()
+                        .find(|d| d.block_id == id)
+                } else {
+                    self.non_tr_particle_data
+                        .iter_mut()
+                        .find(|d| d.block_id == id)
+                }
+            } else if block_type_flag {
+                self.current_trajectory_frame_set
+                    .tr_data
+                    .iter_mut()
+                    .find(|d| d.block_id == id)
+                    .or_else(|| self.non_tr_data.iter_mut().find(|d| d.block_id == id))
+            } else {
+                self.non_tr_data.iter_mut().find(|d| d.block_id == id)
+            };
+            if let Some(existing) = target {
+                *existing = data;
+            }
+        }
     }
 
     fn get_molecule_cnt_list(&self) -> &[i64] {
@@ -5767,5 +5809,200 @@ impl Trajectory {
             .take(usize::try_from(self.n_molecules).expect("usize from i64"))
             .map(|&x| x as usize)
             .sum()
+    }
+
+    pub(crate) fn get_num_frames_per_frame_set(&self) -> i64 {
+        self.frame_set_n_frames
+    }
+
+    // c function: tng_frame_set_new (tng_io.c:11499-11675)
+    pub(crate) fn frame_set_new(
+        &mut self,
+        first_frame: i64,
+        n_frames: i64,
+    ) -> Result<(), TngError> {
+        if first_frame < 0 {
+            return Err(TngError::Constraint(format!(
+                "`first_frame` must be >= 0. Got {first_frame}"
+            )));
+        }
+        if n_frames < 0 {
+            return Err(TngError::Constraint(format!(
+                "`n_frames` must be >= 0. Got {n_frames}"
+            )));
+        }
+
+        self.output_file_init();
+
+        let curr_file_pos = self.get_output_file_position();
+
+        if curr_file_pos <= 10 {
+            self.file_headers_write(USE_HASH)?;
+        }
+
+        // Set pointer to previous frame set to the one that was loaded before.
+        // FIXME(from c code): This is a bit risky. If they are not added in order it will be wrong
+        if self.n_trajectory_frame_sets > 0 {
+            self.current_trajectory_frame_set.prev_frame_set_file_pos =
+                self.last_trajectory_frame_set_output_pos;
+        }
+
+        self.current_trajectory_frame_set.next_frame_set_file_pos = -1;
+
+        self.current_trajectory_frame_set_output_file_pos = self.get_output_file_position() as i64;
+
+        self.n_trajectory_frame_sets += 1;
+
+        // Set the medium range pointers
+        if self.n_trajectory_frame_sets == self.medium_stride_length + 1 {
+            self.current_trajectory_frame_set
+                .medium_stride_prev_frame_set_file_pos = self.first_trajectory_frame_set_output_pos;
+        } else if self.n_trajectory_frame_sets > self.medium_stride_length + 1 {
+            // FIXME(from c code): Currently only working if the previous frame set has its
+            // medium stride pointer already set.
+            let medium_prev = self
+                .current_trajectory_frame_set
+                .medium_stride_prev_frame_set_file_pos;
+            if medium_prev != -1 && medium_prev != 0 {
+                let mut block = GenBlock::new();
+
+                // Temporarily use output file as input to read the block header
+                let temp_input = self.input_file.take();
+                self.input_file = self.output_file.take();
+
+                let curr_file_pos = self.get_input_file_position();
+                self.input_file
+                    .as_mut()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(medium_prev as u64))?;
+
+                if let Err(e) = self.block_header_read(&mut block) {
+                    eprintln!(
+                        "TNG library: Cannot read frame set header. {}:{}",
+                        file!(),
+                        line!()
+                    );
+                    self.output_file = self.input_file.take();
+                    self.input_file = temp_input;
+                    return Err(e);
+                }
+
+                // Read the next frame set from the previous frame set and one
+                // medium stride step back.
+                // Skip to medium_stride_next field: block_contents_size - 6*i64 - 2*f64
+                let skip = block.block_contents_size as i64
+                    - (6 * std::mem::size_of::<i64>() as i64
+                        + 2 * std::mem::size_of::<f64>() as i64);
+                self.input_file
+                    .as_mut()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Current(skip))?;
+
+                self.current_trajectory_frame_set
+                    .medium_stride_prev_frame_set_file_pos = utils::read_i64(
+                    self.input_file.as_mut().expect("init input_file"),
+                    self.endianness64,
+                    self.input_swap64,
+                );
+
+                // Set the long range pointers
+                if self.n_trajectory_frame_sets == self.long_stride_length + 1 {
+                    self.current_trajectory_frame_set
+                        .long_stride_prev_frame_set_file_pos =
+                        self.first_trajectory_frame_set_output_pos;
+                } else if self.n_trajectory_frame_sets > self.medium_stride_length + 1 {
+                    let long_prev = self
+                        .current_trajectory_frame_set
+                        .long_stride_prev_frame_set_file_pos;
+                    if long_prev != -1 && long_prev != 0 {
+                        let mut block = GenBlock::new();
+
+                        self.input_file
+                            .as_mut()
+                            .expect("init input_file")
+                            .seek(SeekFrom::Start(long_prev as u64))?;
+
+                        if let Err(e) = self.block_header_read(&mut block) {
+                            eprintln!(
+                                "TNG library: Cannot read frame set header. {}:{}",
+                                file!(),
+                                line!()
+                            );
+                            self.output_file = self.input_file.take();
+                            self.input_file = temp_input;
+                            return Err(e);
+                        }
+
+                        // Skip to long_stride_next field
+                        let skip = block.block_contents_size as i64
+                            - (6 * std::mem::size_of::<i64>() as i64
+                                + 2 * std::mem::size_of::<f64>() as i64);
+                        self.input_file
+                            .as_mut()
+                            .expect("init input_file")
+                            .seek(SeekFrom::Current(skip))?;
+
+                        self.current_trajectory_frame_set
+                            .long_stride_prev_frame_set_file_pos = utils::read_i64(
+                            self.input_file.as_mut().expect("init input_file"),
+                            self.endianness64,
+                            self.input_swap64,
+                        );
+                    }
+                }
+
+                // Restore input/output files and seek back to original position
+                self.output_file = self.input_file.take();
+                self.input_file = temp_input;
+                self.output_file
+                    .as_mut()
+                    .expect("init output_file")
+                    .seek(SeekFrom::Start(curr_file_pos))?;
+            }
+        }
+
+        let frame_set = &mut self.current_trajectory_frame_set;
+        frame_set.first_frame = first_frame;
+        frame_set.n_frames = n_frames;
+        frame_set.n_written_frames = 0;
+        frame_set.n_unwritten_frames = 0;
+        frame_set.first_frame_time = -1.0;
+
+        if self.first_trajectory_frame_set_output_pos == -1
+            || self.first_trajectory_frame_set_output_pos == 0
+        {
+            self.first_trajectory_frame_set_output_pos =
+                self.current_trajectory_frame_set_output_file_pos;
+        }
+
+        if self.last_trajectory_frame_set_output_pos == -1
+            || self.last_trajectory_frame_set_output_pos == 0
+            || self.last_trajectory_frame_set_output_pos
+                < self.current_trajectory_frame_set_output_file_pos
+        {
+            self.last_trajectory_frame_set_output_pos =
+                self.current_trajectory_frame_set_output_file_pos;
+        }
+
+        Ok(())
+    }
+
+    // c function: tng_frame_set_with_time_new (tng_io.c:11677-11698)
+    pub(crate) fn frame_set_with_time_new(
+        &mut self,
+        first_frame: i64,
+        n_frames: i64,
+        first_frame_time: f64,
+    ) -> Result<(), TngError> {
+        if first_frame_time < 0.0 {
+            return Err(TngError::Constraint(format!(
+                "`first_frame_time` must be >= 0"
+            )));
+        }
+
+        self.frame_set_new(first_frame, n_frames)?;
+        self.current_trajectory_frame_set.first_frame_time = first_frame_time;
+
+        Ok(())
     }
 }
