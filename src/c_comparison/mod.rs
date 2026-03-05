@@ -1,5 +1,6 @@
 mod prop_bwt;
 mod prop_coder;
+mod prop_fixpoint;
 mod test_bwt;
 mod test_coder;
 mod test_compress;

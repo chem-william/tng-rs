@@ -1,6 +1,3 @@
-// TODO: add newtype of fix_t
-// TODO: make use of property testing?
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FixT(u32);
 
