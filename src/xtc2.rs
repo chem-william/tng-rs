@@ -180,7 +180,13 @@ pub(crate) fn ptngc_find_magic_index(maxval: u32) -> u32 {
         i = 0;
     }
 
-    while MAGIC[i] <= maxval {
+    // FIXME: if maxint[1] - minint[1] + 1 = 1285866348 - (-2123051452) + 1 = 3408917801 = MAGIC[91] which
+    // means that i will be incremented once to 92 and thus give an out-of-bounds read. the same thing happens
+    // in the C code except C happily reads undefined memory.
+    //
+    // As a fix, we just restrict `i + 1` to be less than MAX_MAGIC so that his and later callers don't
+    // index out-of-bounds
+    while i + 1 < MAX_MAGIC && MAGIC[i] <= maxval {
         i += 1;
     }
     i.try_into().expect("u32 from usize")
@@ -301,11 +307,7 @@ fn trajcoder_base_compress(input: &[i32], n: usize, index: &[u32], result: &mut 
             19,
         );
         largeint.copy_from_slice(&largeint_tmp);
-        ptngc_largeint_add(
-            u32::try_from(input[i]).expect("u32 from i32"),
-            &mut largeint,
-            19,
-        );
+        ptngc_largeint_add(input[i] as u32, &mut largeint, 19);
     }
 
     if largeint[18] > 0 {
@@ -362,9 +364,9 @@ pub(crate) fn ptngc_pack_array_xtc2(
     }
 
     let large_index = [
-        ptngc_find_magic_index(u32::try_from(maxint[0] - minint[0] + 1).expect("u32 from i32")),
-        ptngc_find_magic_index(u32::try_from(maxint[1] - minint[1] + 1).expect("u32 from i32")),
-        ptngc_find_magic_index(u32::try_from(maxint[2] - minint[2] + 1).expect("u32 from i32")),
+        ptngc_find_magic_index((maxint[0].wrapping_sub(minint[0]).wrapping_add(1)) as u32),
+        ptngc_find_magic_index((maxint[1].wrapping_sub(minint[1]).wrapping_add(1)) as u32),
+        ptngc_find_magic_index((maxint[2].wrapping_sub(minint[2]).wrapping_add(1)) as u32),
     ];
     let large_nbits = compute_magic_bits(large_index);
     let max_large_index = *large_index.iter().max().unwrap();
@@ -433,7 +435,7 @@ pub(crate) fn ptngc_pack_array_xtc2(
             // TODO: I really think the `ienc` loop can only run once
             let ienc = 0;
             for jenc in 0..3 {
-                encode_ints[jenc] = input[input_ptr..][ienc * 3 + jenc] - minint[jenc];
+                encode_ints[jenc] = input[input_ptr..][ienc * 3 + jenc].wrapping_sub(minint[jenc]);
             }
             buffer_large(
                 coder,

@@ -16,5 +16,9 @@ The port matches the behavior at commit `f8d55273` at [https://gitlab.com/gromac
  RUST_LOG=debug cargo test -- --nocapture
  ```
 
+ # Testing
+ There is internal unit testing to make sure that the Rust code works (and keeps working), there's FFI tests to compare with the C lib where the C code acts as the ground-truth (bugs and all),
+ and there's some property-based testing using [`proptest`](https://docs.rs/proptest/latest/proptest/) where either the Rust code is expected to be internally consistent or the C code is used as a ground-truth.
+
  # LLM usage
  Parts of the code has been translated with the use of large language models (LLMs). All code has been reviewed by humans.

@@ -95,7 +95,7 @@ impl Coder {
                     .copied()
                     .min()
                     .expect("a negative number");
-                most_negative = -most_negative;
+                most_negative = most_negative.wrapping_neg();
                 let bytes = (most_negative as u32).to_le_bytes();
                 output[0..4].copy_from_slice(&bytes);
 
@@ -103,7 +103,7 @@ impl Coder {
                     for j in 0..3 {
                         for k in 0..n_frames {
                             let item = input[k * 3 * n_atoms + i * 3 + j];
-                            pval[cnt] = u32::try_from(item + most_negative).expect("u32 from i32");
+                            pval[cnt] = item.wrapping_add(most_negative) as u32;
                             cnt += 1;
                         }
                     }
