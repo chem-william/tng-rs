@@ -247,15 +247,9 @@ impl Xtc3Context {
         //kind of delta coding?
         // First create direct coding.
         let direct = [
-            (input[inpdata] - self.minint[0])
-                .try_into()
-                .expect("i32 to u32"),
-            (input[inpdata + 1] - self.minint[1])
-                .try_into()
-                .expect("i32 to u32"),
-            (input[inpdata + 2] - self.minint[2])
-                .try_into()
-                .expect("i32 to u32"),
+            (input[inpdata].wrapping_sub(self.minint[0])) as u32,
+            (input[inpdata + 1].wrapping_sub(self.minint[1])) as u32,
+            (input[inpdata + 2].wrapping_sub(self.minint[2])) as u32,
         ];
         let mut minlen = compute_intlen(direct.as_slice());
         let mut best_type = 0; // Direct
@@ -263,9 +257,9 @@ impl Xtc3Context {
         // in c code: #if 1
         // Then try intra coding if we can
         if intradelta_ok && atomframe >= 3 {
-            intradelta[0] = positive_int(input[inpdata] - input[inpdata - 3]);
-            intradelta[1] = positive_int(input[inpdata + 1] - input[inpdata - 2]);
-            intradelta[2] = positive_int(input[inpdata + 2] - input[inpdata - 1]);
+            intradelta[0] = positive_int(input[inpdata].wrapping_sub(input[inpdata - 3]));
+            intradelta[1] = positive_int(input[inpdata + 1].wrapping_sub(input[inpdata - 2]));
+            intradelta[2] = positive_int(input[inpdata + 2].wrapping_sub(input[inpdata - 1]));
             let thislen = compute_intlen(intradelta.as_slice());
             if thislen * THRESHOLD_INTRA_INTER_DIRECT < minlen {
                 minlen = thislen;
@@ -276,9 +270,11 @@ impl Xtc3Context {
         // in c code: #if 1
         // Then try inter coding if we can
         if frame > 0 {
-            interdelta[0] = positive_int(input[inpdata] - input[inpdata - natoms * 3]);
-            interdelta[1] = positive_int(input[inpdata + 1] - input[inpdata - natoms * 2 + 1]);
-            interdelta[2] = positive_int(input[inpdata + 2] - input[inpdata - natoms * 1 + 2]);
+            interdelta[0] = positive_int(input[inpdata].wrapping_sub(input[inpdata - natoms * 3]));
+            interdelta[1] =
+                positive_int(input[inpdata + 1].wrapping_sub(input[inpdata - natoms * 2 + 1]));
+            interdelta[2] =
+                positive_int(input[inpdata + 2].wrapping_sub(input[inpdata - natoms * 1 + 2]));
             let thislen = compute_intlen(interdelta.as_slice());
             if thislen * THRESHOLD_INTRA_INTER_DIRECT < minlen {
                 best_type = 2; // Inter delta
@@ -534,19 +530,13 @@ pub(crate) fn ptngc_pack_array_xtc3(
     }
 
     large_index[0] = ptngc_find_magic_index(
-        (xtc3_context.maxint[0] - xtc3_context.minint[0])
-            .try_into()
-            .expect("i32 to u32"),
+        (xtc3_context.maxint[0].wrapping_sub(xtc3_context.minint[0])) as u32,
     );
     large_index[1] = ptngc_find_magic_index(
-        (xtc3_context.maxint[1] - xtc3_context.minint[1])
-            .try_into()
-            .expect("i32 to u32"),
+        (xtc3_context.maxint[1].wrapping_sub(xtc3_context.minint[1])) as u32,
     );
     large_index[2] = ptngc_find_magic_index(
-        (xtc3_context.maxint[2] - xtc3_context.minint[2])
-            .try_into()
-            .expect("i32 to u32"),
+        (xtc3_context.maxint[2].wrapping_sub(xtc3_context.minint[2])) as u32,
     );
     let max_large_index = *large_index.iter().max().expect("large_index to be init");
 
