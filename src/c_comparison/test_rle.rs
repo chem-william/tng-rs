@@ -3,7 +3,6 @@ use std::ffi::c_int;
 use crate::ffi;
 use crate::rle::{ptngc_comp_conv_from_rle, ptngc_comp_conv_to_rle};
 
-/// Call C `Ptngc_comp_conv_to_rle`, return the output as a Vec<u32>.
 fn c_rle_encode(input: &[u32], min_rle: i32) -> Vec<u32> {
     let mut c_output = vec![0u32; input.len() * 4 + 16];
     let mut c_len: c_int = 0;
@@ -20,7 +19,6 @@ fn c_rle_encode(input: &[u32], min_rle: i32) -> Vec<u32> {
     c_output
 }
 
-/// Call C `Ptngc_comp_conv_from_rle`, return the output as a Vec<u32>.
 fn c_rle_decode(rle: &[u32], output_len: usize) -> Vec<u32> {
     let mut c_output = vec![0u32; output_len];
     unsafe {
@@ -143,7 +141,6 @@ fn rle_edge_case_long_run() {
     let c_result = c_rle_encode(&input, min_rle);
     assert_eq!(rust_result, c_result);
 
-    // Verify roundtrip
     let rust_decoded = ptngc_comp_conv_from_rle(&rust_result, input.len());
     assert_eq!(rust_decoded, input);
 }
