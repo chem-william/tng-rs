@@ -6128,4 +6128,36 @@ impl Trajectory {
     pub fn distance_unit_exponential_get(&self) -> i64 {
         self.distance_unit_exponential
     }
+
+    pub(crate) fn num_molecules_types_get(&self) -> i64 {
+        self.n_molecules
+    }
+
+    pub(crate) fn num_molecules_get(&self) -> i64 {
+        let cnt_list = self.molecule_cnt_list_get();
+
+        cnt_list.iter().take(self.n_molecules as usize).sum()
+    }
+
+    pub(crate) fn num_particles_variable_get(&self) -> bool {
+        self.var_num_atoms
+    }
+
+    /// Return a validated molecule index into [`Self::molecules`].
+    ///
+    /// This diverges from the C API (`tng_molecule_of_index_get`), which returns a
+    /// direct pointer to a molecule. In Rust, this method returns the index handle
+    /// instead of a [`Molecule`] reference to avoid circular ownership
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of molecules
+    pub(crate) fn molecule_of_index_get(&self, index: i64) -> Result<i64, TngError> {
+        if index >= self.n_molecules {
+            return Err(TngError::NotFound(format!(
+                "A molecule with index {index} was not found."
+            )));
+        }
+        Ok(index)
+    }
 }
