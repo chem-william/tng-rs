@@ -1541,7 +1541,7 @@ impl Trajectory {
         }
     }
 
-    pub fn file_headers_read(&mut self) {
+    pub fn file_headers_read(&mut self, _hash_mode: bool) {
         if self.input_file.is_some() {
             self.n_trajectory_frame_sets = 0;
 
@@ -1556,7 +1556,6 @@ impl Trajectory {
                 && block.id != BlockID::Unknown
                 && block.id != BlockID::TrajectoryFrameSet
             {
-                println!("calling block_read_next");
                 self.block_read_next(&mut block);
                 prev_pos = self.get_input_file_position();
                 self.block_header_read(&mut block);
@@ -1769,7 +1768,7 @@ impl Trajectory {
 
         let mut block = GenBlock::new();
         block.name = Some("GENERAL INFO".to_string());
-        block.id = BlockID::TrajectoryFrameSet;
+        block.id = BlockID::GeneralInfo;
         block.block_contents_size = self.general_info_block_len_calculate();
         let header_file_pos = 0;
         self.block_header_write(&mut block);
@@ -1909,8 +1908,9 @@ impl Trajectory {
                             self.output_swap64,
                         );
 
-                        let atom_slice = &molecule.atoms[residue.n_atoms as usize
-                            ..residue.n_atoms as usize + residue.atoms_offset];
+                        let atom_start = residue.atoms_offset;
+                        let atom_end = atom_start + residue.n_atoms as usize;
+                        let atom_slice = &molecule.atoms[atom_start..atom_end];
                         for atom in atom_slice {
                             utils::write_i64(
                                 out_file,
@@ -1933,8 +1933,9 @@ impl Trajectory {
                         self.endianness64,
                         self.output_swap64,
                     );
-                    let atom_slice = &molecule.atoms
-                        [residue.n_atoms as usize..residue.n_atoms as usize + residue.atoms_offset];
+                    let atom_start = residue.atoms_offset;
+                    let atom_end = atom_start + residue.n_atoms as usize;
+                    let atom_slice = &molecule.atoms[atom_start..atom_end];
                     for atom in atom_slice {
                         utils::write_i64(out_file, atom.id, self.endianness64, self.output_swap64);
                         utils::fwrite_str(out_file, &atom.name);
@@ -3379,7 +3380,9 @@ impl Trajectory {
         out_file
             .seek(SeekFrom::Start(output_file_pos))
             .expect("no error handling");
-        self.input_file = temp_input_file.as_ref().map(|f| f.try_clone().expect("able to clone file"));
+        self.input_file = temp_input_file
+            .as_ref()
+            .map(|f| f.try_clone().expect("able to clone file"));
     }
 
     /// Migrate a whole frame set from one position in the file to another.
@@ -4067,9 +4070,11 @@ impl Trajectory {
             {
                 block.id = BlockID::ParticleMapping;
                 if self.current_trajectory_frame_set.mappings[i].n_particles > 0 {
-                    self.trajectory_mapping_block_write(&mut block, i, hash_mode);
+                    // TODO: error handling
+                    self.trajectory_mapping_block_write(&mut block, i, hash_mode)
+                        .expect("handle errors");
                     for j in 0..self.current_trajectory_frame_set.n_particle_data_blocks {
-                        block.id = self.current_trajectory_frame_set.tr_particle_data[i].block_id;
+                        block.id = self.current_trajectory_frame_set.tr_particle_data[j].block_id;
                         self.data_block_write(
                             &mut block,
                             j,
@@ -5506,7 +5511,7 @@ impl Trajectory {
         n_values_per_frame: i64,
         stride_length: i64,
         codec_id: Compression,
-        new_data: Option<Vec<u8>>,
+        new_data: Option<&[u8]>,
     ) -> Result<(), TngError> {
         if n_values_per_frame <= 0 {
             return Err(TngError::Constraint(format!(
@@ -5544,7 +5549,7 @@ impl Trajectory {
         num_first_particle: u64,
         n_particles: i64,
         codec_id: Compression,
-        new_data: Option<Vec<u8>>,
+        new_data: Option<&[u8]>,
     ) {
         let mut stride_length = stride_length;
         if stride_length <= 0 {
@@ -5765,7 +5770,7 @@ impl Trajectory {
         num_first_particle: u64,
         n_particles: i64,
         codec_id: Compression,
-        new_data: Option<Vec<u8>>,
+        new_data: Option<&[u8]>,
     ) -> Result<(), TngError> {
         if n_values_per_frame <= 0 {
             return Err(TngError::Constraint(format!(
@@ -5995,14 +6000,92 @@ impl Trajectory {
         first_frame_time: f64,
     ) -> Result<(), TngError> {
         if first_frame_time < 0.0 {
-            return Err(TngError::Constraint(format!(
-                "`first_frame_time` must be >= 0"
-            )));
+            return Err(TngError::Constraint(
+                "`first_frame_time` must be >= 0".to_string(),
+            ));
         }
 
         self.frame_set_new(first_frame, n_frames)?;
         self.current_trajectory_frame_set.first_frame_time = first_frame_time;
 
         Ok(())
+    }
+
+    pub(crate) fn particle_mapping_add(
+        &mut self,
+        num_first_particle: i64,
+        n_particles: i64,
+        mapping_table: &[i64],
+    ) -> Result<(), TngError> {
+        let frame_set = &mut self.current_trajectory_frame_set;
+
+        // Sanity check of the particles ranges. Split into multiple if
+        // statements for improved readability
+        for i in 0..frame_set.n_mapping_blocks {
+            let mapping = &frame_set.mappings[i as usize];
+            if num_first_particle >= mapping.num_first_particle
+                && num_first_particle < mapping.num_first_particle + mapping.n_particles
+            {
+                return Err(TngError::Constraint(
+                    "Particle mapping overlap.".to_string(),
+                ));
+            }
+            if num_first_particle + n_particles >= mapping.num_first_particle
+                && num_first_particle + n_particles
+                    < mapping.num_first_particle + mapping.n_particles
+            {
+                return Err(TngError::Constraint("Particle mapping overlap".to_string()));
+            }
+            if mapping.num_first_particle >= num_first_particle
+                && mapping.num_first_particle < num_first_particle + n_particles
+            {
+                return Err(TngError::Constraint("Particle mapping overlap".to_string()));
+            }
+            if mapping.num_first_particle + mapping.n_particles > num_first_particle
+                && mapping.num_first_particle + mapping.n_particles
+                    < num_first_particle + n_particles
+            {
+                return Err(TngError::Constraint("Particle mapping overlap".to_string()));
+            }
+        }
+
+        frame_set.n_mapping_blocks += 1;
+        frame_set.mappings.push(ParticleMapping::new());
+
+        frame_set.mappings[(frame_set.n_mapping_blocks - 1) as usize].num_first_particle =
+            num_first_particle;
+        frame_set.mappings[(frame_set.n_mapping_blocks - 1) as usize].n_particles = n_particles;
+        for item in mapping_table.iter().take(n_particles as usize) {
+            frame_set.mappings[(frame_set.n_mapping_blocks - 1) as usize]
+                .real_particle_numbers
+                .push(*item);
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn frame_set_particle_mapping_free(&mut self) {
+        let frame_set = &mut self.current_trajectory_frame_set;
+
+        if frame_set.n_mapping_blocks > 0 && !frame_set.mappings.is_empty() {
+            for i in 0..frame_set.n_mapping_blocks as usize {
+                let mapping = &mut frame_set.mappings[i];
+                mapping.real_particle_numbers = vec![];
+            }
+            frame_set.mappings = vec![];
+            frame_set.n_mapping_blocks = 0;
+        }
+    }
+
+    pub(crate) fn get_first_user_name(&self, max_len: usize) -> Result<&str, TngError> {
+        dbg!(&self.first_user_name);
+        let length = self.first_user_name.floor_char_boundary(MAX_STR_LEN - 1);
+        if length > max_len {
+            return Err(TngError::Constraint(format!(
+                "first user name was longer than `max_len` (`max_len` = {max_len})"
+            )));
+        }
+
+        Ok(&self.first_user_name)
     }
 }

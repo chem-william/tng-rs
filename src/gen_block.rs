@@ -216,7 +216,7 @@ impl BlockID {
             0x1000_0000_1000_0078 => Self::GmxEnergyLambSystem,
             0x1000_0000_1000_0079 => Self::GmxSelectionGroupNames,
             0x1000_0000_1000_0080 => Self::GmxAtomSelectionGroup,
-            _ => panic!("unknown block ID"),
+            _ => Self::Unknown,
         }
     }
 }

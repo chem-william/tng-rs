@@ -70,7 +70,7 @@ mod integration {
     use std::arch::x86_64::_mm_mask_range_sd;
 
     use crate::{
-        FRAME_DEPENDENT, PARTICLE_DEPENDENT,
+        FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT,
         data::{Compression, DataType},
         gen_block::BlockID,
         molecule::Molecule,
@@ -123,7 +123,7 @@ mod integration {
         assert_eq!(traj.input_file_path, input_filename);
         assert_eq!(traj.output_file_path, output_filename);
 
-        traj.file_headers_read();
+        traj.file_headers_read(USE_HASH);
         traj.file_headers_write(USE_HASH).unwrap();
 
         while traj.frame_set_read_next().is_ok() {
@@ -159,7 +159,7 @@ mod integration {
 
         traj.distance_unit_exponential = 9;
 
-        traj.set_time_per_frame(TIME_PER_FRAME);
+        traj.set_time_per_frame(TIME_PER_FRAME).unwrap();
 
         // Create molecules
         // tng_test_setup_molecules
@@ -178,11 +178,12 @@ mod integration {
         assert_eq!(count, 200);
         // ==========================
 
-        // Seth the box shape
+        // Set the box shape
         let mut box_shape = [0.0; 9];
         box_shape[0] = BOX_SHAPE_X;
         box_shape[4] = BOX_SHAPE_Y;
         box_shape[8] = BOX_SHAPE_Z;
+        let bytes: Vec<_> = box_shape.iter().flat_map(|f| f.to_le_bytes()).collect();
         traj.add_data_block(
             BlockID::TrajBoxShape,
             "BOX SHAPE",
@@ -192,7 +193,7 @@ mod integration {
             9,
             1,
             crate::data::Compression::Uncompressed,
-            Some(box_shape.iter().flat_map(|f| f.to_le_bytes()).collect()),
+            Some(&bytes),
         )
         .unwrap();
 
@@ -212,6 +213,10 @@ mod integration {
             }
         }
 
+        let charges_bytes: Vec<_> = charges
+            .iter()
+            .flat_map(|&f: &f32| f.to_le_bytes())
+            .collect();
         traj.particle_data_block_add(
             BlockID::TrajPartialCharges,
             "PARTIAL CHARGES",
@@ -223,12 +228,7 @@ mod integration {
             0,
             n_particles,
             crate::data::Compression::Uncompressed,
-            Some(
-                charges
-                    .iter()
-                    .flat_map(|&f: &f32| f.to_le_bytes())
-                    .collect(),
-            ),
+            Some(&charges_bytes),
         )
         .unwrap();
 
@@ -246,6 +246,7 @@ mod integration {
             }
         }
 
+        let masses_bytes: Vec<_> = masses.iter().flat_map(|&f: &f32| f.to_le_bytes()).collect();
         traj.particle_data_block_add(
             BlockID::TrajMasses,
             "ATOM MASSES",
@@ -257,7 +258,7 @@ mod integration {
             0,
             n_particles,
             crate::data::Compression::GZip,
-            Some(masses.iter().flat_map(|&f: &f32| f.to_le_bytes()).collect()),
+            Some(&masses_bytes),
         )
         .unwrap();
 
@@ -273,7 +274,7 @@ mod integration {
             1,
             1,
             crate::data::Compression::Uncompressed,
-            Some(masses.iter().flat_map(|&f: &f32| f.to_le_bytes()).collect()),
+            Some(annotation.as_bytes()),
         )
         .expect("Failed adding details annotation data block");
 
@@ -334,6 +335,10 @@ mod integration {
             )
             .expect("error creating frame set");
 
+            let data_bytes: Vec<_> = data
+                .iter()
+                .flat_map(|&f: &f64| (f as f32).to_le_bytes())
+                .collect();
             traj.particle_data_block_add(
                 BlockID::TrajPositions,
                 "POSITIONS",
@@ -345,12 +350,59 @@ mod integration {
                 0,
                 n_particles,
                 codec_id,
-                Some(data.iter().flat_map(|&f: &f64| (f as f32).to_le_bytes()).collect()),
+                Some(&data_bytes),
             )
             .expect("error adding position data block");
 
-            traj.frame_set_write(USE_HASH).expect("error writing frame set");
+            traj.frame_set_particle_mapping_free();
+
+            // Setup particle mapping. Use 4 different mapping blocks with arbitrary
+            // mappings.
+            let mapping: Vec<_> = (0..150).collect();
+            traj.particle_mapping_add(0, 150, &mapping).unwrap();
+
+            let mapping = mapping.iter().map(|k| 599 - k).collect::<Vec<_>>();
+            traj.particle_mapping_add(150, 150, &mapping).unwrap();
+
+            let mapping = mapping.iter().map(|k| k + 150).collect::<Vec<_>>();
+            traj.particle_mapping_add(300, 150, &mapping).unwrap();
+
+            let mapping = mapping.iter().map(|k| 449 - k).collect::<Vec<_>>();
+            traj.particle_mapping_add(450, 150, &mapping).unwrap();
+
+            // Add the positions in a data block
+            let data_bytes: Vec<_> = data.iter().flat_map(|&f: &f64| f.to_le_bytes()).collect();
+            traj.particle_data_block_add(
+                BlockID::TrajPositions,
+                "POSITIONS",
+                DataType::Float,
+                true,
+                n_frames_per_frame_set,
+                3,
+                1,
+                0,
+                n_particles,
+                Compression::Uncompressed,
+                Some(&data_bytes),
+            )
+            .unwrap();
+
+            traj.frame_set_write(USE_HASH)
+                .expect("error writing frame set");
+            dbg!(i);
         }
+
+        let mut traj = Trajectory::new();
+        traj.set_input_file(test_output.as_path());
+
+        traj.file_headers_read(USE_HASH);
+
+        let temp_str = traj.get_first_user_name(MAX_STR_LEN).unwrap();
+        assert_eq!(
+            USER_NAME, temp_str,
+            "User name does not match when reading written file"
+        );
+
         // ==========================
     }
 
@@ -365,7 +417,7 @@ mod integration {
         traj.set_input_file(input_filename.as_path());
 
         // Read file headers
-        traj.file_headers_read();
+        traj.file_headers_read(USE_HASH);
 
         assert_eq!(traj.first_user_name, "USER 1");
         assert_eq!(traj.first_program_name, "tng_testing");
