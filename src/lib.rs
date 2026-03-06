@@ -147,8 +147,8 @@ mod integration {
         let mut traj = Trajectory::new();
         traj.set_output_file(test_output.as_path());
 
-        traj.set_medium_stride_length(MEDIUM_STRIDE_LEN);
-        traj.set_long_stride_length(MEDIUM_STRIDE_LEN);
+        traj.set_medium_stride_length(MEDIUM_STRIDE_LEN).unwrap();
+        traj.set_long_stride_length(LONG_STRIDE_LEN).unwrap();
 
         traj.set_first_user_name(USER_NAME);
         traj.set_first_program_name(PROGRAM_NAME);
