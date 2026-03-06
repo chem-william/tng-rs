@@ -6077,15 +6077,55 @@ impl Trajectory {
         }
     }
 
-    pub(crate) fn get_first_user_name(&self, max_len: usize) -> Result<&str, TngError> {
-        dbg!(&self.first_user_name);
-        let length = self.first_user_name.floor_char_boundary(MAX_STR_LEN - 1);
-        if length > max_len {
+    fn validate_get_name_len<'a>(
+        name: &'a str,
+        field_name: &str,
+        max_len: usize,
+    ) -> Result<&'a str, TngError> {
+        if max_len == 0 {
             return Err(TngError::Constraint(format!(
-                "first user name was longer than `max_len` (`max_len` = {max_len})"
+                "{field_name} get requires `max_len` > 0"
             )));
         }
 
-        Ok(&self.first_user_name)
+        if name.len() > max_len - 1 {
+            return Err(TngError::Constraint(format!(
+                "{field_name} was longer than `max_len` (`max_len` = {max_len})"
+            )));
+        }
+
+        Ok(name)
+    }
+
+    pub fn first_user_name_get(&self, max_len: usize) -> Result<&str, TngError> {
+        Self::validate_get_name_len(&self.first_user_name, "first user name", max_len)
+    }
+
+    pub fn first_program_name_get(&self, max_len: usize) -> Result<&str, TngError> {
+        Self::validate_get_name_len(&self.first_program_name, "first program name", max_len)
+    }
+
+    pub fn first_computer_name_get(&self, max_len: usize) -> Result<&str, TngError> {
+        Self::validate_get_name_len(&self.first_computer_name, "first computer name", max_len)
+    }
+
+    pub fn forcefield_name_get(&self, max_len: usize) -> Result<&str, TngError> {
+        Self::validate_get_name_len(&self.forcefield_name, "forcefield name", max_len)
+    }
+
+    pub fn medium_stride_length_get(&self) -> i64 {
+        self.medium_stride_length
+    }
+
+    pub fn long_stride_length_get(&self) -> i64 {
+        self.long_stride_length
+    }
+
+    pub fn compression_precision_get(&self) -> f64 {
+        self.compression_precision
+    }
+
+    pub fn distance_unit_exponential_get(&self) -> i64 {
+        self.distance_unit_exponential
     }
 }

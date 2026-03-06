@@ -94,6 +94,7 @@ mod integration {
     const COMPUTER_NAME: &str = "Unknown computer";
     const FORCEFIELD_NAME: &str = "No forcefield";
     const COMPRESSION_PRECISION: f64 = 1000.0;
+    const DISTANCE_UNIT_EXPONENTIAL: i64 = 9;
 
     const USE_HASH: bool = false;
 
@@ -157,7 +158,7 @@ mod integration {
 
         traj.compression_precision = COMPRESSION_PRECISION;
 
-        traj.distance_unit_exponential = 9;
+        traj.distance_unit_exponential = DISTANCE_UNIT_EXPONENTIAL;
 
         traj.set_time_per_frame(TIME_PER_FRAME).unwrap();
 
@@ -397,10 +398,51 @@ mod integration {
 
         traj.file_headers_read(USE_HASH);
 
-        let temp_str = traj.get_first_user_name(MAX_STR_LEN).unwrap();
+        let temp_str = traj.first_user_name_get(MAX_STR_LEN).unwrap();
         assert_eq!(
             USER_NAME, temp_str,
             "User name does not match when reading written file"
+        );
+
+        let temp_str = traj.first_program_name_get(MAX_STR_LEN).unwrap();
+        assert_eq!(
+            PROGRAM_NAME, temp_str,
+            "Program name does not match when reading written file"
+        );
+        let temp_str = traj.first_computer_name_get(MAX_STR_LEN).unwrap();
+        assert_eq!(
+            COMPUTER_NAME, temp_str,
+            "Computer name does not match when reading written file"
+        );
+
+        let temp_str = traj.forcefield_name_get(MAX_STR_LEN).unwrap();
+        assert_eq!(
+            FORCEFIELD_NAME, temp_str,
+            "Forcefield name does not match when reading written file"
+        );
+
+        let temp_int = traj.medium_stride_length_get();
+        assert_eq!(
+            MEDIUM_STRIDE_LEN, temp_int,
+            "Stride length does not match when reading written file"
+        );
+
+        let temp_int = traj.long_stride_length_get();
+        assert_eq!(
+            LONG_STRIDE_LEN, temp_int,
+            "Stride length does not match when reading written file"
+        );
+
+        let temp_double = traj.compression_precision_get();
+        assert_eq!(
+            COMPRESSION_PRECISION, temp_double,
+            "Compression precision does not match when reading written file"
+        );
+
+        let temp_int = traj.distance_unit_exponential_get();
+        assert_eq!(
+            DISTANCE_UNIT_EXPONENTIAL, temp_int,
+            "Distance unit exponential does not match when reading written file"
         );
 
         // ==========================
