@@ -6160,4 +6160,39 @@ impl Trajectory {
         }
         Ok(index)
     }
+
+    /// Finds a molecule in [`Self::molecules`]
+    /// # Errors
+    ///
+    /// Returns [`TngError::NotFound`] if the molecule cannot be found
+    pub(crate) fn molecule_find(
+        &self,
+        name: Option<&str>,
+        nr: Option<i64>,
+    ) -> Result<(), TngError> {
+        let n_molecules = self.n_molecules;
+
+        for i in (0..n_molecules).rev() {
+            let molecule = &self.molecules[i as usize];
+            if (name.is_none() || name.unwrap() == molecule.name)
+                && (nr.is_none() || nr.unwrap() == molecule.id)
+            {
+                return Ok(());
+            }
+        }
+
+        Err(TngError::NotFound("molecule not found".to_string()))
+    }
+
+    pub(crate) fn molecule_name_get(
+        &self,
+        mol_index: i64,
+        max_len: usize,
+    ) -> Result<&str, TngError> {
+        Self::validate_get_name_len(
+            &self.molecules[mol_index as usize].name,
+            "molecule name",
+            max_len,
+        )
+    }
 }
