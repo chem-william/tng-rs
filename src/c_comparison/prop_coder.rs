@@ -55,10 +55,10 @@ fn c_run_pack(input: &mut [i32], algo: c_int, natoms: i32, speed: c_int) -> (Vec
 
 fn arbitrary_algo() -> impl Strategy<Value = i32> {
     prop_oneof![
-        // Just(TNG_COMPRESS_ALGO_BWLZH1),
-        // Just(TNG_COMPRESS_ALGO_BWLZH2),
-        // Just(TNG_COMPRESS_ALGO_POS_XTC2),
-        // Just(TNG_COMPRESS_ALGO_POS_XTC3),
+        Just(TNG_COMPRESS_ALGO_BWLZH1),
+        Just(TNG_COMPRESS_ALGO_BWLZH2),
+        Just(TNG_COMPRESS_ALGO_POS_XTC2),
+        Just(TNG_COMPRESS_ALGO_POS_XTC3),
         Just(TNG_COMPRESS_ALGO_TRIPLET),
     ]
 }
