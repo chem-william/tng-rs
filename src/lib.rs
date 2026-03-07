@@ -67,8 +67,6 @@ const PARTICLE_DEPENDENT: u8 = 2;
 
 #[cfg(test)]
 mod integration {
-    use std::arch::x86_64::_mm_mask_range_sd;
-
     use crate::{
         FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT,
         data::{Compression, DataType},
@@ -77,8 +75,7 @@ mod integration {
         trajectory::Trajectory,
     };
     use assert_approx_eq::assert_approx_eq;
-    use flate2::Compress;
-    use rand::{RngExt, distr::Uniform};
+    use rand::RngExt;
 
     const TIME_PER_FRAME: f64 = 2e-15;
     const TEST_FILES_DIR: &str = "test_files";
