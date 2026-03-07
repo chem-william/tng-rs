@@ -1,10 +1,11 @@
-use crate::dict::ptngc_comp_make_dict_hist;
+use crate::dict::{DICT_SIZE, ptngc_comp_make_dict_hist};
 use crate::ffi;
 use crate::huffman::ptngc_comp_conv_to_huffman;
 use std::ffi::c_int;
 use std::sync::Once;
 
 static INIT: Once = Once::new();
+const HUFF_DICT_BUF_CAP: usize = DICT_SIZE + 3;
 
 fn init_logger() {
     INIT.call_once(|| {
@@ -21,8 +22,8 @@ fn single_symbol() {
     let mut rust_huffman_len = 0;
     let mut rust_huffman_dictlen = 0;
     let mut rust_huffman_dict_unpackedlen = 0;
-    let mut rust_huffman_dict = vec![0; 131077];
-    let mut rust_huffman_dict_unpacked = vec![0; 131077];
+    let mut rust_huffman_dict = vec![0; HUFF_DICT_BUF_CAP];
+    let mut rust_huffman_dict_unpacked = vec![0; HUFF_DICT_BUF_CAP];
     ptngc_comp_conv_to_huffman(
         &vals,
         &dict,
@@ -88,8 +89,8 @@ fn two_symbols() {
     let mut rust_huffman_len = 0;
     let mut rust_huffman_dictlen = 0;
     let mut rust_huffman_dict_unpackedlen = 0;
-    let mut rust_huffman_dict = vec![0; 131077];
-    let mut rust_huffman_dict_unpacked = vec![0; 131077];
+    let mut rust_huffman_dict = vec![0; HUFF_DICT_BUF_CAP];
+    let mut rust_huffman_dict_unpacked = vec![0; HUFF_DICT_BUF_CAP];
     ptngc_comp_conv_to_huffman(
         &vals,
         &dict,
@@ -155,8 +156,8 @@ fn four_symbols() {
     let mut rust_huffman_len = 0;
     let mut rust_huffman_dictlen = 0;
     let mut rust_huffman_dict_unpackedlen = 0;
-    let mut rust_huffman_dict = vec![0; 131077];
-    let mut rust_huffman_dict_unpacked = vec![0; 131077];
+    let mut rust_huffman_dict = vec![0; HUFF_DICT_BUF_CAP];
+    let mut rust_huffman_dict_unpacked = vec![0; HUFF_DICT_BUF_CAP];
     ptngc_comp_conv_to_huffman(
         &vals,
         &dict,
@@ -222,8 +223,8 @@ fn large_values() {
     let mut rust_huffman_len = 0;
     let mut rust_huffman_dictlen = 0;
     let mut rust_huffman_dict_unpackedlen = 0;
-    let mut rust_huffman_dict = vec![0; 131077];
-    let mut rust_huffman_dict_unpacked = vec![0; 131077];
+    let mut rust_huffman_dict = vec![0; HUFF_DICT_BUF_CAP];
+    let mut rust_huffman_dict_unpacked = vec![0; HUFF_DICT_BUF_CAP];
     ptngc_comp_conv_to_huffman(
         &vals,
         &dict,
@@ -292,8 +293,8 @@ fn empty() {
     let mut rust_huffman_len = 0;
     let mut rust_huffman_dictlen = 0;
     let mut rust_huffman_dict_unpackedlen = 0;
-    let mut rust_huffman_dict = vec![0; 131077];
-    let mut rust_huffman_dict_unpacked = vec![0; 131077];
+    let mut rust_huffman_dict = vec![0; HUFF_DICT_BUF_CAP];
+    let mut rust_huffman_dict_unpacked = vec![0; HUFF_DICT_BUF_CAP];
     ptngc_comp_conv_to_huffman(
         &vals,
         &dict,

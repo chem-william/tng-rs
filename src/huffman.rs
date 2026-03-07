@@ -1,8 +1,11 @@
+use crate::dict::DICT_SIZE;
 use std::cmp::{Ordering, Reverse};
 
 use log::debug;
 
 const MAX_HUFFMAN_LEN: usize = 31;
+pub(crate) const HUFFMAN_DICT_CAP: usize = 0x20005;
+pub(crate) const HUFFMAN_DICT_UNPACKED_CAP: usize = DICT_SIZE + 3;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -80,8 +83,10 @@ pub struct CodeLength {
     pub prob: u32,
 }
 
-/// The `huffman_dict` array should be 131077 (0x20005) long. The `huffman_dict_unpacked` array
-/// should be 131077 long (note five longer than 0x20000)
+/// The `huffman_dict` array should be at least 131077 (0x20005) bytes long.
+/// The `huffman_dict_unpacked` array should be at least `DICT_SIZE + 3`
+/// (131079 with current `DICT_SIZE`), to hold three header bytes plus one
+/// entry per symbol in the full dictionary range.
 pub(crate) fn ptngc_comp_conv_to_huffman(
     vals: &[u32],
     dict: &[u32],
@@ -93,6 +98,19 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
     huffman_dict_unpacked: &mut [u32],
     huffman_dict_unpackedlen: &mut usize,
 ) {
+    assert!(
+        huffman_dict.len() >= HUFFMAN_DICT_CAP,
+        "huffman_dict buffer too small: got {}, need at least {}",
+        huffman_dict.len(),
+        HUFFMAN_DICT_CAP
+    );
+    assert!(
+        huffman_dict_unpacked.len() >= HUFFMAN_DICT_UNPACKED_CAP,
+        "huffman_dict_unpacked buffer too small: got {}, need at least {}",
+        huffman_dict_unpacked.len(),
+        HUFFMAN_DICT_UNPACKED_CAP
+    );
+
     let ndict = dict.len();
     let mut bitptr = 0;
     let mut huffman_index = 0usize; // instead of huffman_ptr

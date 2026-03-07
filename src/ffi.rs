@@ -274,7 +274,6 @@ unsafe extern "C" {
 // dict.h
 // ---------------------------------------------------------------------------
 unsafe extern "C" {
-    pub fn Ptngc_comp_canonical_dict(dict: *mut c_int, ndict: *mut c_int);
     pub fn Ptngc_comp_make_dict(
         vals: *const c_uint,
         nvals: c_int,
@@ -282,7 +281,6 @@ unsafe extern "C" {
         ndict: *mut c_int,
         hist: *mut c_uint,
     );
-
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +314,18 @@ unsafe extern "C" {
     pub fn Ptngc_comp_conv_to_mtf_partial3(vals: *const c_uint, nvals: c_int, valsmtf: *mut u8);
 
     pub fn Ptngc_comp_conv_from_mtf_partial3(valsmtf: *mut u8, nvals: c_int, vals: *mut c_uint);
+}
+// ---------------------------------------------------------------------------
+// dict.h
+// ---------------------------------------------------------------------------
+unsafe extern "C" {
+    pub fn Ptngc_comp_make_dict_hist(
+        vals: *const c_uint,
+        nvals: c_int,
+        dict: *mut c_uint,
+        ndict: *mut c_int,
+        hist: *mut c_uint,
+    );
 }
 
 // ---------------------------------------------------------------------------

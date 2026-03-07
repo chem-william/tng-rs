@@ -1,6 +1,7 @@
 mod prop_bwt;
 mod prop_coder;
 mod prop_fixpoint;
+mod prop_huffman;
 mod prop_rle;
 mod test_bwt;
 mod test_coder;

@@ -1,7 +1,7 @@
 use crate::{
     bwlzh::{N_HUFFMAN_ALGO, ptngc_comp_conv_to_vals16},
     dict::ptngc_comp_make_dict_hist,
-    huffman::ptngc_comp_conv_to_huffman,
+    huffman::{HUFFMAN_DICT_CAP, HUFFMAN_DICT_UNPACKED_CAP, ptngc_comp_conv_to_huffman},
     rle::ptngc_comp_conv_to_rle,
 };
 
@@ -51,8 +51,8 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     let mut nhuff = 0;
     let mut nhuffdict = 0;
     let mut nhuffdictunpack = 0;
-    let mut huffdict = vec![0; 0x20005];
-    let mut huffdictunpack = vec![0; 0x20005];
+    let mut huffdict = vec![0; HUFFMAN_DICT_CAP];
+    let mut huffdictunpack = vec![0; HUFFMAN_DICT_UNPACKED_CAP];
     ptngc_comp_conv_to_huffman(
         vals,
         &dict,
@@ -80,9 +80,9 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     let mut nhuff1 = 0;
     let mut nhuffdict1 = 0;
     let mut nhuffdictunpack1 = 0;
-    let mut huffman1 = vec![0; 0x20005];
-    let mut huffdict1 = vec![0; 0x20005];
-    let mut huffdictunpack1 = vec![0; 0x20005];
+    let mut huffman1 = vec![0; 2 * HUFFMAN_DICT_UNPACKED_CAP];
+    let mut huffdict1 = vec![0; HUFFMAN_DICT_UNPACKED_CAP];
+    let mut huffdictunpack1 = vec![0; HUFFMAN_DICT_UNPACKED_CAP];
     ptngc_comp_conv_to_huffman(
         &huffdictunpack[..nhuffdictunpack],
         &dict,
@@ -103,9 +103,9 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     let (dict, mut hist) = ptngc_comp_make_dict_hist(&huffdictrle);
     let ndict2 = dict.len();
     // Pack huffman dictionary
-    let mut huffman2 = vec![0; 6 * 0x20005];
-    let mut huffdict2 = vec![0; 0x20005];
-    let mut huffdictunpack2 = vec![0; 0x20005];
+    let mut huffman2 = vec![0; 6 * HUFFMAN_DICT_UNPACKED_CAP];
+    let mut huffdict2 = vec![0; HUFFMAN_DICT_UNPACKED_CAP];
+    let mut huffdictunpack2 = vec![0; HUFFMAN_DICT_UNPACKED_CAP];
     let mut nhuff2 = 0;
     let mut nhuffdict2 = 0;
     let mut nhuffdictunpack2 = 0;
