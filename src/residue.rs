@@ -2,6 +2,8 @@ use crate::{trajectory::Trajectory, utils};
 
 #[derive(Debug, Default, Clone)]
 pub struct Residue {
+    /// The molecule containing this residue.
+    pub(crate) parent_molecule_idx: usize,
     /// The chain containing this residue
     // chain: Chain,
     pub chain_index: Option<usize>,
@@ -18,6 +20,7 @@ pub struct Residue {
 impl Residue {
     pub fn new() -> Self {
         Self {
+            parent_molecule_idx: 0,
             chain_index: None,
             id: 0,
             name: String::new(),

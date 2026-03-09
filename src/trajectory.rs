@@ -908,6 +908,7 @@ impl Trajectory {
                     // let residue = &mut molecule.residues[local_idx as usize];
                     let mut residue = Residue::new();
 
+                    residue.parent_molecule_idx = mol_idx as usize;
                     // Link back to parent chain index
                     residue.chain_index = Some(chain_idx as usize);
                     residue.name = String::new();
@@ -943,6 +944,7 @@ impl Trajectory {
                 for r_index in 0..molecule.n_residues {
                     let residue = &mut molecule.residues[r_index as usize];
 
+                    residue.parent_molecule_idx = mol_idx as usize;
                     // Link to no chain: `residue->chain = 0;`
                     residue.chain_index = None;
                     residue.name = String::new();
@@ -5408,6 +5410,7 @@ impl Trajectory {
         let insert_pos = mol.chains[chain_idx].residues_indices.1;
 
         let mut residue = Residue::new();
+        residue.parent_molecule_idx = molecule_idx;
         let length = name.floor_char_boundary(MAX_STR_LEN - 1);
         residue.name = name[..length].to_string();
         residue.chain_index = Some(chain_idx);
@@ -6358,5 +6361,32 @@ impl Trajectory {
         }
 
         Err(TngError::NotFound("residue not found".to_string()))
+    }
+
+    pub(crate) fn residue_name_get<'a>(
+        &'a self,
+        residue: &'a Residue,
+        max_len: usize,
+    ) -> Result<&'a str, TngError> {
+        Self::validate_get_name_len(&residue.name, "residue name", max_len)
+    }
+
+    pub(crate) fn residue_num_atoms_get(&self, residue: &Residue) -> u64 {
+        residue.n_atoms
+    }
+
+    pub(crate) fn residue_atom_of_index_get<'a>(
+        &'a self,
+        residue: &Residue,
+        index: usize,
+    ) -> Result<&'a Atom, TngError> {
+        if index >= residue.n_atoms as usize {
+            return Err(TngError::NotFound(format!(
+                "An atom with index {index} was not found in the residue."
+            )));
+        }
+
+        let molecule = &self.molecules[residue.parent_molecule_idx];
+        Ok(&molecule.atoms[residue.atoms_offset + index])
     }
 }
