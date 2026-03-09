@@ -6195,4 +6195,27 @@ impl Trajectory {
             max_len,
         )
     }
+
+    pub(crate) fn molecule_num_chains_get(&self, mol_index: usize) -> i64 {
+        self.molecules[mol_index].n_chains
+    }
+
+    /// Retrieve the [`crate::chain::Chain`] of a molecule with specified index in the list of chains.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TngError::NotFound`] if the chain cannot be found.
+    pub(crate) fn molecule_chain_of_index_get(
+        &self,
+        mol_index: i64,
+        index: i64,
+    ) -> Result<&Chain, TngError> {
+        if index >= self.molecules[mol_index as usize].n_chains {
+            return Err(TngError::NotFound(format!(
+                "chain index was bigger than the amount of chains. index: {index}"
+            )));
+        }
+
+        Ok(&self.molecules[mol_index as usize].chains[index as usize])
+    }
 }
