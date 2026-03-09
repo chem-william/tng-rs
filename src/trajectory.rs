@@ -6143,11 +6143,7 @@ impl Trajectory {
         self.var_num_atoms
     }
 
-    /// Return a validated molecule index into [`Self::molecules`].
-    ///
-    /// This diverges from the C API (`tng_molecule_of_index_get`), which returns a
-    /// direct pointer to a molecule. In Rust, this method returns the index handle
-    /// instead of a [`Molecule`] reference to avoid circular ownership
+    /// Return a [`crate::molecule::Molecule`].
     ///
     /// # Errors
     ///
@@ -6169,7 +6165,7 @@ impl Trajectory {
         &self,
         name: Option<&str>,
         nr: Option<i64>,
-    ) -> Result<(), TngError> {
+    ) -> Result<&Molecule, TngError> {
         let n_molecules = self.n_molecules;
 
         for i in (0..n_molecules).rev() {
@@ -6177,7 +6173,7 @@ impl Trajectory {
             if (name.is_none() || name.unwrap() == molecule.name)
                 && (nr.is_none() || nr.unwrap() == molecule.id)
             {
-                return Ok(());
+                return Ok(molecule);
             }
         }
 
@@ -6204,18 +6200,87 @@ impl Trajectory {
     ///
     /// # Errors
     ///
-    /// Returns [`TngError::NotFound`] if the chain cannot be found.
-    pub(crate) fn molecule_chain_of_index_get(
-        &self,
-        mol_index: i64,
-        index: i64,
-    ) -> Result<&Chain, TngError> {
-        if index >= self.molecules[mol_index as usize].n_chains {
+    /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of chains
+    pub(crate) fn molecule_chain_of_index_get<'a>(
+        &'a self,
+        molecule: &'a Molecule,
+        index: usize,
+    ) -> Result<&'a Chain, TngError> {
+        if index >= molecule.n_chains as usize {
             return Err(TngError::NotFound(format!(
                 "chain index was bigger than the amount of chains. index: {index}"
             )));
         }
 
-        Ok(&self.molecules[mol_index as usize].chains[index as usize])
+        Ok(&molecule.chains[index])
+    }
+
+    /// Return a [`crate::chain::Chain`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of chains
+    pub(crate) fn molecule_chain_find(
+        &self,
+        mol_index: i64,
+        name: Option<&str>,
+        nr: Option<i64>,
+    ) -> Result<&Chain, TngError> {
+        let molecule = &self.molecules[mol_index as usize];
+        let n_chains = molecule.n_chains;
+
+        for i in (0..n_chains as usize).rev() {
+            let chain = &molecule.chains[i];
+
+            if (name.is_none() || name.unwrap() == chain.name)
+                && (nr.is_none() || nr.unwrap() as u64 == chain.id)
+            {
+                return Ok(chain);
+            }
+        }
+
+        Err(TngError::NotFound("chain not found".to_string()))
+    }
+
+    /// Get the number of [`crate::residue::Residue`] in the molecule at `mol_index`.
+    pub(crate) fn molecule_num_residues_get(&self, mol_index: i64) -> i64 {
+        self.molecules[mol_index as usize].n_residues
+    }
+
+    /// Retrieve the [`crate::residue::Residue`] of a molecule with specified index in the list of residues.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of residues
+    pub(crate) fn molecule_residue_of_index_get<'a>(
+        &'a self,
+        molecule: &'a Molecule,
+        index: usize,
+    ) -> Result<&'a Residue, TngError> {
+        if index >= molecule.n_residues as usize {
+            return Err(TngError::NotFound(format!(
+                "residue index was bigger than the amount of residues. Index: {index}"
+            )));
+        }
+
+        Ok(&molecule.residues[index])
+    }
+
+    pub(crate) fn molecule_num_atoms_get(&self, molecule: &Molecule) -> i64 {
+        molecule.n_atoms
+    }
+
+    pub(crate) fn molecule_atom_of_index_get<'a>(
+        &'a self,
+        molecule: &'a Molecule,
+        index: usize,
+    ) -> Result<&'a Atom, TngError> {
+        if index >= molecule.n_atoms as usize {
+            return Err(TngError::NotFound(format!(
+                "atom index was bigger than the amount of atoms. Index: {index}"
+            )));
+        }
+
+        Ok(&molecule.atoms[index])
     }
 }
