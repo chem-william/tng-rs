@@ -1,26 +1,26 @@
 use crate::trajectory::Trajectory;
 use crate::{MAX_STR_LEN, utils};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Chain {
     // /// The molecule containing this chain
     // pub molecule: Molecule,
     // Instead of the full molecule, we store the molecule id
     // otherwise, we'd have a circular reference
-    pub parent_molecule_idx: usize,
+    pub(crate) parent_molecule_idx: usize,
     /// A unique (per molecule) ID number of the chain
-    pub id: u64,
+    pub(crate) id: u64,
     /// The name of the chain
-    pub name: String,
+    pub(crate) name: String,
     /// The number of residues in the chain
-    pub n_residues: u64,
+    pub(crate) n_residues: u64,
     /// A list of residues in the chain
     // pub residues: Vec<Residue>,
-    pub residues_indices: (usize, usize),
+    pub(crate) residues_indices: (usize, usize),
 }
 
 impl Chain {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             parent_molecule_idx: 0,
             id: 0,
@@ -31,7 +31,7 @@ impl Chain {
     }
 
     // c function: tng_chain_data_read
-    pub fn read_data(&mut self, trajectory_data: &mut Trajectory) {
+    pub(crate) fn read_data(&mut self, trajectory_data: &mut Trajectory) {
         let inp_file = trajectory_data
             .input_file
             .as_mut()
@@ -49,7 +49,7 @@ impl Chain {
         );
     }
 
-    pub fn set_name(&mut self, new_name: String) {
+    pub(crate) fn set_name(&mut self, new_name: String) {
         // The C version leaves space for a '\0' in a buffer of size TNG_MAX_STR_LEN.
         // In Rust, Strings don't need a trailing zero, so we just clamp to:
         let max_bytes = MAX_STR_LEN - 1;

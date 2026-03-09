@@ -6320,4 +6320,43 @@ impl Trajectory {
     pub(crate) fn chain_num_residues_get(&self, chain: &Chain) -> u64 {
         chain.n_residues
     }
+
+    /// Retrieve the residue of a chain with specified index in the list of residues.
+    pub(crate) fn chain_residue_of_index_get<'a>(
+        &'a self,
+        chain: &Chain,
+        index: usize,
+    ) -> Result<&'a Residue, TngError> {
+        if index >= chain.n_residues as usize {
+            return Err(TngError::NotFound(format!(
+                "A residue with index {index} was not found in the chain."
+            )));
+        }
+
+        let molecule = &self.molecules[chain.parent_molecule_idx];
+        let residue_index = chain.residues_indices.0 + index;
+        Ok(&molecule.residues[residue_index])
+    }
+
+    pub(crate) fn chain_residue_find(
+        &self,
+        chain: &Chain,
+        name: Option<&str>,
+        id: Option<usize>,
+    ) -> Result<&Residue, TngError> {
+        let molecule = &self.molecules[chain.parent_molecule_idx];
+        let n_residue = chain.n_residues;
+
+        for i in (0..n_residue as usize).rev() {
+            let residue = &molecule.residues[chain.residues_indices.0 + i];
+
+            if (name.is_none() || name.unwrap() == residue.name)
+                && (id.is_none() || id.unwrap() as u64 == residue.id)
+            {
+                return Ok(residue);
+            }
+        }
+
+        Err(TngError::NotFound("residue not found".to_string()))
+    }
 }

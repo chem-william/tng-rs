@@ -1,6 +1,6 @@
 use crate::{atom::Atom, bond::Bond, chain::Chain, residue::Residue};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Molecule {
     /// A unique ID number of the molecule
     pub id: i64,
@@ -46,14 +46,14 @@ impl Molecule {
     }
 
     // TODO: maybe split these into two functions that each take just a name or id?
-    pub fn chain_find(&self, name: &str, id: i64) -> Option<Chain> {
+    pub fn chain_find(&self, name: &str, id: i64) -> Option<&Chain> {
         let chain_out = self.chains.iter().rev().find(|chain| {
             let name_match = name.is_empty() || chain.name == name;
             let id_match = id == -1 || chain.id as i64 == id;
             name_match && id_match
         });
 
-        chain_out.cloned()
+        chain_out
     }
 
     // TODO: maybe split these into two functions that each take just a name or id?
