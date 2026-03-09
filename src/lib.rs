@@ -511,9 +511,7 @@ mod integration {
         let _chain_residue = &molecule.residues[chain.residues_indices.0];
 
         // chain_residue_find
-        let residue = &molecule
-            .residue_find("WAT", -1)
-            .expect("residue on molecule");
+        let residue = molecule.residue_find("WAT", -1).expect("residue on molecule");
 
         // residue_name_get
         assert_eq!(residue.name, "WAT");

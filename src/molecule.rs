@@ -45,7 +45,10 @@ impl Molecule {
         }
     }
 
-    // TODO: maybe split these into two functions that each take just a name or id?
+    /// Rust-side equivalent of C's `tng_molecule_chain_find`.
+    ///
+    /// This is exposed on [`Molecule`] rather than [`crate::trajectory::Trajectory`]
+    /// because the molecule owns its chains in the Rust model.
     pub fn chain_find(&self, name: &str, id: i64) -> Option<&Chain> {
         let chain_out = self.chains.iter().rev().find(|chain| {
             let name_match = name.is_empty() || chain.name == name;
@@ -56,26 +59,32 @@ impl Molecule {
         chain_out
     }
 
-    // TODO: maybe split these into two functions that each take just a name or id?
-    pub fn atom_find(&self, name: &str, id: i64) -> Option<Atom> {
+    /// Rust-side equivalent of C's `tng_molecule_atom_find`.
+    ///
+    /// This is exposed on [`Molecule`] rather than [`crate::trajectory::Trajectory`]
+    /// because the molecule owns its atoms in the Rust model.
+    pub fn atom_find(&self, name: &str, id: i64) -> Option<&Atom> {
         let atom_out = self.atoms.iter().rev().find(|atom| {
             let name_match = name.is_empty() || atom.name == name;
             let id_match = id == -1 || atom.id == id;
             name_match && id_match
         });
 
-        atom_out.cloned()
+        atom_out
     }
 
-    // TODO: maybe split these into two functions that each take just a name or id?
-    pub fn residue_find(&self, name: &str, id: i64) -> Option<Residue> {
+    /// Rust convenience for residue lookup within a molecule.
+    ///
+    /// There is no direct C equivalent named `tng_molecule_residue_find`; the
+    /// closest C search API is `tng_chain_residue_find`.
+    pub fn residue_find(&self, name: &str, id: i64) -> Option<&Residue> {
         let residue_out = self.residues.iter().rev().find(|residue| {
             let name_match = name.is_empty() || residue.name == name;
             let id_match = id == -1 || residue.id as i64 == id;
             name_match && id_match
         });
 
-        residue_out.cloned()
+        residue_out
     }
 
     /// Retrieve the atom of a residue with specified index in the list of atoms

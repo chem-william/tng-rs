@@ -6218,31 +6218,6 @@ impl Trajectory {
         Ok(&molecule.chains[index])
     }
 
-    /// # Errors
-    ///
-    /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of chains
-    pub(crate) fn molecule_chain_find(
-        &self,
-        mol_index: i64,
-        name: Option<&str>,
-        nr: Option<i64>,
-    ) -> Result<&Chain, TngError> {
-        let molecule = &self.molecules[mol_index as usize];
-        let n_chains = molecule.n_chains;
-
-        for i in (0..n_chains as usize).rev() {
-            let chain = &molecule.chains[i];
-
-            if (name.is_none() || name.unwrap() == chain.name)
-                && (nr.is_none() || nr.unwrap() as u64 == chain.id)
-            {
-                return Ok(chain);
-            }
-        }
-
-        Err(TngError::NotFound("chain not found".to_string()))
-    }
-
     /// Get the number of [`crate::residue::Residue`] in the molecule at `mol_index`.
     pub(crate) fn molecule_num_residues_get(&self, mol_index: i64) -> i64 {
         self.molecules[mol_index as usize].n_residues
@@ -6283,32 +6258,6 @@ impl Trajectory {
         }
 
         Ok(&molecule.atoms[index])
-    }
-
-    /// Find an atom in a molecule.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of atoms
-    pub(crate) fn molecule_atom_find<'a>(
-        &'a self,
-        molecule: &'a Molecule,
-        name: Option<&str>,
-        id: Option<usize>,
-    ) -> Result<&'a Atom, TngError> {
-        let n_atoms = molecule.n_atoms;
-
-        for i in (0..n_atoms as usize).rev() {
-            let atom = &molecule.atoms[i];
-
-            if (name.is_none() || name.unwrap() == atom.name)
-                && (id.is_none() || id.unwrap() as i64 == atom.id)
-            {
-                return Ok(atom);
-            }
-        }
-
-        Err(TngError::NotFound("atom not found".to_string()))
     }
 
     pub(crate) fn chain_name_get<'a>(

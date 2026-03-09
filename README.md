@@ -10,6 +10,9 @@ The port matches the behavior at commit `f8d55273` at [https://gitlab.com/gromac
  ## Notes
  Currently assumes that files have only been written on 64-bit systems
 
+## Divergences From the C API
+Searches over molecule-owned collections are exposed on `Molecule` in Rust. In practice, `chain_find` and `atom_find` correspond to C's `tng_molecule_chain_find` and `tng_molecule_atom_find`, while `residue_find` is a Rust convenience. Trajectory-level APIs are kept where resolving data still requires trajectory-owned context.
+
  ## Development
  You can run the tests with debug output in the following way:
  ```bash
