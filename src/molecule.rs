@@ -19,9 +19,9 @@ pub struct Molecule {
     /// The name of the molecule
     pub name: String,
     /// A list of chains in the molecule
-    pub chains: Vec<Chain>,
+    pub(crate) chains: Vec<Chain>,
     /// A list of residues in the molecule
-    pub residues: Vec<Residue>,
+    pub(crate) residues: Vec<Residue>,
     /// A list of the atoms in the molecule
     pub atoms: Vec<Atom>,
     /// A list of the bonds in the molecule

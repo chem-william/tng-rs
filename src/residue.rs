@@ -1,24 +1,24 @@
 use crate::{trajectory::Trajectory, utils};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct Residue {
     /// The molecule containing this residue.
     pub(crate) parent_molecule_idx: usize,
     /// The chain containing this residue
     // chain: Chain,
-    pub chain_index: Option<usize>,
+    pub(crate) chain_index: Option<usize>,
     /// A unique (per chain) ID number of the residue
-    pub id: u64,
+    pub(crate) id: u64,
     /// The name of the residue
-    pub name: String,
+    pub(crate) name: String,
     /// The number of atoms in the residue
-    pub n_atoms: u64,
+    pub(crate) n_atoms: u64,
     /// A list of atoms in the residue
-    pub atoms_offset: usize,
+    pub(crate) atoms_offset: usize,
 }
 
 impl Residue {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             parent_molecule_idx: 0,
             chain_index: None,
@@ -29,7 +29,7 @@ impl Residue {
         }
     }
     /// Read the residue data of a molecules block.
-    pub fn read_data(&mut self, trajectory_data: &mut Trajectory) {
+    pub(crate) fn read_data(&mut self, trajectory_data: &mut Trajectory) {
         let inp_file = trajectory_data
             .input_file
             .as_mut()
