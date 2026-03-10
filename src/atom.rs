@@ -1,22 +1,25 @@
 use crate::{trajectory::Trajectory, utils};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Atom {
+    /// The molecule containing this atom.
+    pub(crate) parent_molecule_idx: usize,
     // /// The residue containing this atom
     // residue: Residue,
     /// The index of the residue containing this atom
-    pub residue_index: Option<usize>,
+    pub(crate) residue_index: Option<usize>,
     /// A unique (per molecule) ID number of the atom
-    pub id: i64,
+    pub(crate) id: i64,
     /// The atom_type (depending on the forcefield)
-    pub atom_type: String,
+    pub(crate) atom_type: String,
     /// The name of the atom
-    pub name: String,
+    pub(crate) name: String,
 }
 
 impl Atom {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
+            parent_molecule_idx: 0,
             residue_index: None,
             id: 0,
             name: String::new(),
@@ -26,7 +29,7 @@ impl Atom {
 
     // c function name: tng_atom_data_read
     /// Read the atom data of a molecules block
-    pub fn read_data(&mut self, trajectory_data: &mut Trajectory) {
+    pub(crate) fn read_data(&mut self, trajectory_data: &mut Trajectory) {
         let inp_file = trajectory_data
             .input_file
             .as_mut()

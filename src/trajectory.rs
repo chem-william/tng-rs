@@ -138,7 +138,7 @@ pub struct Trajectory {
     /// Number of distinct molecule types in this trajectory.
     pub n_molecules: i64,
     /// Vector of molecule definitions.
-    pub molecules: Vec<Molecule>,
+    pub(crate) molecules: Vec<Molecule>,
     /// Count of each molecule type (length = `n_molecules`).
     pub(crate) molecule_cnt_list: Vec<i64>,
     /// Total number of particles (or atoms). If variable, updated per frame set.
@@ -926,6 +926,7 @@ impl Trajectory {
 
                         // Link back to parent residue index
                         residue.chain_index = Some(chain_idx as usize);
+                        atom.parent_molecule_idx = mol_idx as usize;
                         atom.residue_index =
                             Some(usize::try_from(local_idx).expect("local_idx to usize"));
 
@@ -956,6 +957,7 @@ impl Trajectory {
                     for _ in 0..atom_count {
                         let mut atom = Atom::new();
 
+                        atom.parent_molecule_idx = mol_idx as usize;
                         atom.residue_index =
                             Some(usize::try_from(r_index).expect("r_index to usize"));
                         atom.read_data(self);
@@ -968,6 +970,7 @@ impl Trajectory {
             if molecule.n_chains == 0 && molecule.n_residues == 0 {
                 for _ in 0..molecule.n_atoms {
                     let mut atom = Atom::new();
+                    atom.parent_molecule_idx = mol_idx as usize;
                     atom.residue_index = None;
                     atom.read_data(self);
                 }
@@ -3708,7 +3711,7 @@ impl Trajectory {
     }
 
     /// Add an existing [`Molecule`] to [`Self`]
-    pub fn molecule_existing_add(&mut self, mut molecule: Molecule) {
+    pub(crate) fn molecule_existing_add(&mut self, mut molecule: Molecule) {
         molecule.id = self.molecules.last().map(|mol| mol.id + 1).unwrap_or(1);
         self.molecules.push(molecule);
         self.molecule_cnt_list.push(0);
@@ -3758,7 +3761,7 @@ impl Trajectory {
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             for _ in 0..*mol_count {
                 for k in 0..mol.n_bonds {
-                    let bond = mol.bonds[k as usize];
+                    let bond = &mol.bonds[k as usize];
 
                     let from_atom = atom_count + bond.from_atom_id;
                     from_atoms.push(from_atom);
@@ -5472,6 +5475,7 @@ impl Trajectory {
         }
 
         let mut atom = Atom::new();
+        atom.parent_molecule_idx = molecule_idx;
         let len = name.floor_char_boundary(MAX_STR_LEN - 1);
         atom.name = name[..len].to_string();
         let len = atom_type.floor_char_boundary(MAX_STR_LEN - 1);
@@ -6146,21 +6150,21 @@ impl Trajectory {
         self.var_num_atoms
     }
 
-    /// Return a [`crate::molecule::Molecule`].
+    /// C API: `tng_molecule_of_index_get`.
     ///
     /// # Errors
     ///
     /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of molecules
-    pub(crate) fn molecule_of_index_get(&self, index: i64) -> Result<i64, TngError> {
-        if index >= self.n_molecules {
+    pub(crate) fn molecule_of_index_get(&self, index: i64) -> Result<&Molecule, TngError> {
+        if index >= self.n_molecules || index < 0 {
             return Err(TngError::NotFound(format!(
                 "A molecule with index {index} was not found."
             )));
         }
-        Ok(index)
+        Ok(&self.molecules[index as usize])
     }
 
-    /// Finds a molecule in [`Self::molecules`]
+    /// C API: `tng_molecule_find`.
     /// # Errors
     ///
     /// Returns [`TngError::NotFound`] if the molecule cannot be found
@@ -6183,20 +6187,18 @@ impl Trajectory {
         Err(TngError::NotFound("molecule not found".to_string()))
     }
 
-    pub(crate) fn molecule_name_get(
-        &self,
-        mol_index: i64,
+    /// C API: `tng_molecule_name_get`.
+    pub(crate) fn molecule_name_get<'a>(
+        &'a self,
+        molecule: &'a Molecule,
         max_len: usize,
-    ) -> Result<&str, TngError> {
-        Self::validate_get_name_len(
-            &self.molecules[mol_index as usize].name,
-            "molecule name",
-            max_len,
-        )
+    ) -> Result<&'a str, TngError> {
+        Self::validate_get_name_len(&molecule.name, "molecule name", max_len)
     }
 
-    pub(crate) fn molecule_num_chains_get(&self, mol_index: usize) -> i64 {
-        self.molecules[mol_index].n_chains
+    /// C API: `tng_molecule_num_chains_get`.
+    pub(crate) fn molecule_num_chains_get(&self, molecule: &Molecule) -> i64 {
+        molecule.n_chains
     }
 
     /// Retrieve the [`crate::chain::Chain`] of a molecule with specified index in the list of chains.
@@ -6218,12 +6220,16 @@ impl Trajectory {
         Ok(&molecule.chains[index])
     }
 
-    /// Get the number of [`crate::residue::Residue`] in the molecule at `mol_index`.
-    pub(crate) fn molecule_num_residues_get(&self, mol_index: i64) -> i64 {
-        self.molecules[mol_index as usize].n_residues
+    /// Get the number of [`crate::residue::Residue`] in the molecule.
+    ///
+    /// C API: `tng_molecule_num_residues_get`.
+    pub(crate) fn molecule_num_residues_get(&self, molecule: &Molecule) -> i64 {
+        molecule.n_residues
     }
 
     /// Retrieve the [`crate::residue::Residue`] of a molecule with specified index in the list of residues.
+    ///
+    /// C API: `tng_molecule_residue_of_index_get`.
     ///
     /// # Errors
     ///
@@ -6242,10 +6248,12 @@ impl Trajectory {
         Ok(&molecule.residues[index])
     }
 
+    /// C API: `tng_molecule_num_atoms_get`.
     pub(crate) fn molecule_num_atoms_get(&self, molecule: &Molecule) -> i64 {
         molecule.n_atoms
     }
 
+    /// C API: `tng_molecule_atom_of_index_get`.
     pub(crate) fn molecule_atom_of_index_get<'a>(
         &'a self,
         molecule: &'a Molecule,
@@ -6324,6 +6332,7 @@ impl Trajectory {
         residue.n_atoms
     }
 
+    /// C API: `tng_residue_atom_of_index_get`.
     pub(crate) fn residue_atom_of_index_get<'a>(
         &'a self,
         residue: &Residue,
@@ -6337,5 +6346,36 @@ impl Trajectory {
 
         let molecule = &self.molecules[residue.parent_molecule_idx];
         Ok(&molecule.atoms[residue.atoms_offset + index])
+    }
+
+    /// C API: `tng_atom_residue_get`.
+    pub(crate) fn atom_residue_get<'a>(&'a self, atom: &Atom) -> Result<&'a Residue, TngError> {
+        let residue_index = atom
+            .residue_index
+            .ok_or_else(|| TngError::NotFound("atom is not part of a residue".to_string()))?;
+
+        let molecule = &self.molecules[atom.parent_molecule_idx];
+        molecule
+            .residues
+            .get(residue_index)
+            .ok_or_else(|| TngError::NotFound("residue not found".to_string()))
+    }
+
+    /// C API: `tng_atom_name_get`.
+    pub(crate) fn atom_name_get<'a>(
+        &'a self,
+        atom: &'a Atom,
+        max_len: usize,
+    ) -> Result<&'a str, TngError> {
+        Self::validate_get_name_len(&atom.name, "atom name", max_len)
+    }
+
+    /// C API: `tng_atom_type_get`.
+    pub(crate) fn atom_type_get<'a>(
+        &'a self,
+        atom: &'a Atom,
+        max_len: usize,
+    ) -> Result<&'a str, TngError> {
+        Self::validate_get_name_len(&atom.atom_type, "atom type", max_len)
     }
 }
