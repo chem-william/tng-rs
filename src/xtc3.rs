@@ -272,9 +272,9 @@ impl Xtc3Context {
         if frame > 0 {
             interdelta[0] = positive_int(input[inpdata].wrapping_sub(input[inpdata - natoms * 3]));
             interdelta[1] =
-                positive_int(input[inpdata + 1].wrapping_sub(input[inpdata - natoms * 2 + 1]));
+                positive_int(input[inpdata + 1].wrapping_sub(input[inpdata - natoms * 3 + 1]));
             interdelta[2] =
-                positive_int(input[inpdata + 2].wrapping_sub(input[inpdata - natoms * 1 + 2]));
+                positive_int(input[inpdata + 2].wrapping_sub(input[inpdata - natoms * 3 + 2]));
             let thislen = compute_intlen(interdelta.as_slice());
             if thislen * THRESHOLD_INTRA_INTER_DIRECT < minlen {
                 best_type = 2; // Inter delta
@@ -530,13 +530,13 @@ pub(crate) fn ptngc_pack_array_xtc3(
     }
 
     large_index[0] = ptngc_find_magic_index(
-        (xtc3_context.maxint[0].wrapping_sub(xtc3_context.minint[0])) as u32,
+        (xtc3_context.maxint[0].wrapping_sub(xtc3_context.minint[0]).wrapping_add(1)) as u32,
     );
     large_index[1] = ptngc_find_magic_index(
-        (xtc3_context.maxint[1].wrapping_sub(xtc3_context.minint[1])) as u32,
+        (xtc3_context.maxint[1].wrapping_sub(xtc3_context.minint[1]).wrapping_add(1)) as u32,
     );
     large_index[2] = ptngc_find_magic_index(
-        (xtc3_context.maxint[2].wrapping_sub(xtc3_context.minint[2])) as u32,
+        (xtc3_context.maxint[2].wrapping_sub(xtc3_context.minint[2]).wrapping_add(1)) as u32,
     );
     let max_large_index = *large_index.iter().max().expect("large_index to be init");
 
@@ -601,7 +601,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             didswap = false;
             // Insert the next batch of integers to be encoded into the buffer
             let mut nencode = insert_batch(
-                input,
+                &input[inpdata..],
                 ntriplets_left,
                 prevcoord.as_slice(),
                 encode_ints.as_mut_slice(),
@@ -724,7 +724,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
 
             // Here we should only have differences for the atom coordinates.
             // Convert the ints to positive ints
-            for item in encode_ints.iter_mut() {
+            for item in encode_ints[..nencode].iter_mut() {
                 // Match the C encoder, which stores the `positive_int` result in `int`
                 // and therefore wraps when the value exceeds `i32::MAX`.
                 *item = positive_int(*item) as i32;
@@ -881,100 +881,102 @@ pub(crate) fn ptngc_pack_array_xtc3(
                         inpdata += 3 * new_runlength;
                         ntriplets_left -= new_runlength;
                     }
-                } else if new_runlength != runlength || new_small_index != small_index {
-                    let mut change: u32 = new_small_index - small_index;
-                    // c code: had `new_small_index` as an `int` and did a "<=" check
-                    if new_small_index == 0 {
-                        change = 0;
-                    }
+                } else {
+                    if new_runlength != runlength || new_small_index != small_index {
+                        let mut change: i32 = new_small_index as i32 - small_index as i32;
+                        // c code: had `new_small_index` as an `int` and did a "<=" check
+                        if new_small_index == 0 {
+                            change = 0;
+                        }
 
-                    if change < 0 {
-                        for ixx in 0..new_runlength {
-                            let mut rejected;
-                            loop {
-                                let mut isum = 0.; // ints can be almost 32 bit so multiplication will overflow. So do doubles
-                                for ixyz in 0..3 {
-                                    // `encode_ints` is already positive (and multiplied by 2 versus the original, just as magic ints)
-                                    let id = f64::from(encode_ints[ixx * 3 + ixyz]);
-                                    isum += id * id;
-                                }
-                                rejected = false;
+                        if change < 0 {
+                            for ixx in 0..new_runlength {
+                                let mut rejected;
+                                loop {
+                                    let mut isum = 0.; // ints can be almost 32 bit so multiplication will overflow. So do doubles
+                                    for ixyz in 0..3 {
+                                        // `encode_ints` is already positive (and multiplied by 2 versus the original, just as magic ints)
+                                        let id = f64::from(encode_ints[ixx * 3 + ixyz]);
+                                        isum += id * id;
+                                    }
+                                    rejected = false;
 
-                                if isum
-                                    > f64::from(ptngc_magic(
-                                        usize::try_from(small_index + change)
-                                            .expect("usize from u32"),
-                                    )) * f64::from(ptngc_magic(
-                                        usize::try_from(small_index + change)
-                                            .expect("usize from u32"),
-                                    ))
-                                {
-                                    rejected = true;
-                                    change += 1;
+                                    if isum
+                                        > f64::from(ptngc_magic(
+                                            usize::try_from((small_index as i32 + change) as u32)
+                                                .expect("usize from u32"),
+                                        )) * f64::from(ptngc_magic(
+                                            usize::try_from((small_index as i32 + change) as u32)
+                                                .expect("usize from u32"),
+                                        ))
+                                    {
+                                        rejected = true;
+                                        change += 1;
+                                    }
+                                    if !(change < 0 && rejected) {
+                                        break;
+                                    }
                                 }
-                                if !(change < 0 && rejected) {
+                                if change == 0 {
                                     break;
                                 }
                             }
-                            if change == 0 {
-                                break;
+                        }
+
+                        // Always accept the new small indices here
+                        small_index = new_small_index;
+                        // If we have a new runlength emit it
+                        if runlength != new_runlength {
+                            runlength = new_runlength;
+                            xtc3_context.instructions.push(INSTR_SMALL_RUNLENGTH);
+                            xtc3_context
+                                .rle
+                                .push(runlength.try_into().expect("u32 to usize"));
+                        }
+                    }
+                    // If we have a large previous integer we can combine it with a sequence
+                    if xtc3_context.has_large > 0 {
+                        // If swapatoms is set to 1 but we did actually not
+                        // do any swapping, we must first write out the
+                        // large atom and then the small. If swapatoms is 1
+                        // and we did swapping we can use the efficient
+                        // encoding.
+                        if swapatoms && !didswap {
+                            // Flush all large atoms
+                            xtc3_context.flush_large(xtc3_context.has_large);
+                            xtc3_context.instructions.push(INSTR_ONLY_SMALL);
+                        } else {
+                            // Flush all large atoms but one!
+                            if xtc3_context.has_large > 1 {
+                                xtc3_context.flush_large(xtc3_context.has_large - 1);
                             }
-                        }
-                    }
 
-                    // Always accep the new small indices here
-                    small_index = new_small_index;
-                    // If we have a new runlength emit it
-                    if runlength != new_runlength {
-                        runlength = new_runlength;
-                        xtc3_context.instructions.push(INSTR_SMALL_RUNLENGTH);
-                        xtc3_context
-                            .rle
-                            .push(runlength.try_into().expect("u32 to usize"));
-                    }
-                }
-                // If we have a large previous integer we can combine it with a sequence
-                if xtc3_context.has_large > 0 {
-                    // If swapatoms is set to 1 but we did actually not
-                    // do any swapping, we must first write out the
-                    // large atom and then the small. If swapatoms is 1
-                    // and we did swapping we can use the efficient
-                    // encoding.
-                    if swapatoms && !didswap {
-                        // Flush all large atoms
-                        xtc3_context.flush_large(xtc3_context.has_large);
-                        xtc3_context.instructions.push(INSTR_ONLY_SMALL);
+                            // Here we must check if we should emit a large
+                            // type change instruction
+                            xtc3_context.large_instruction_change(0);
+                            xtc3_context.instructions.push(INSTR_DEFAULT);
+                            xtc3_context.write_three_large(0);
+                            xtc3_context.has_large = 0;
+                        }
                     } else {
-                        // Flush all large atoms but one!
-                        if xtc3_context.has_large > 1 {
-                            xtc3_context.flush_large(xtc3_context.has_large - 1);
-                        }
-
-                        // Here we must check if we should emit a large
-                        // type change instruction
-                        xtc3_context.large_instruction_change(0);
-                        xtc3_context.instructions.push(INSTR_DEFAULT);
-                        xtc3_context.write_three_large(0);
-                        xtc3_context.has_large = 0;
+                        xtc3_context.instructions.push(INSTR_ONLY_SMALL);
                     }
-                } else {
-                    xtc3_context.instructions.push(INSTR_ONLY_SMALL);
+                    // Insert the small integers into the small integer array
+                    for &item in encode_ints[..runlength * 3].iter() {
+                        xtc3_context.smallintra.push(item as u32);
+                    }
+                    // Update `prevcoord`
+                    for ienc in 0..runlength {
+                        prevcoord[0] =
+                            prevcoord[0].wrapping_add(unpositive_int(encode_ints[ienc * 3]));
+                        prevcoord[1] =
+                            prevcoord[1].wrapping_add(unpositive_int(encode_ints[ienc * 3 + 1]));
+                        prevcoord[2] =
+                            prevcoord[2].wrapping_add(unpositive_int(encode_ints[ienc * 3 + 2]));
+                    }
+                    inpdata += 3 * runlength;
+                    ntriplets_left -= runlength;
                 }
-                // Insert the small integers into the small integer array
-                for &item in encode_ints[..runlength * 3].iter() {
-                    xtc3_context.smallintra.push(item as u32);
-                }
-                // Update `prevcoord`
-                for ienc in 0..runlength {
-                    prevcoord[0] =
-                        prevcoord[0].wrapping_add(unpositive_int(encode_ints[ienc * 3]));
-                    prevcoord[1] =
-                        prevcoord[1].wrapping_add(unpositive_int(encode_ints[ienc * 3 + 1]));
-                    prevcoord[2] =
-                        prevcoord[2].wrapping_add(unpositive_int(encode_ints[ienc * 3 + 2]));
-                }
-                inpdata += 3 * runlength;
-                ntriplets_left -= runlength;
             } else {
                 refused += 1;
             }
@@ -1096,7 +1098,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             bwlzh_buf = vec![];
             bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
         } else {
-            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.large_direct.len())];
+            bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.large_intra_delta.len())];
             if *speed >= 5 {
                 bwlzh_compress(
                     &xtc3_context.large_intra_delta,

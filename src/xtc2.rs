@@ -587,12 +587,11 @@ pub(crate) fn ptngc_pack_array_xtc2(
             // at least 2. If even the next atom is large, we will not do anything.
             largest_required_base = 0;
             // Determine required base
-            largest_required_base = encode_ints
-                .iter()
-                .take(min_runlength * 3)
-                .max()
-                .copied()
-                .unwrap_or(largest_required_base);
+            for &item in encode_ints.iter().take(min_runlength * 3) {
+                if item > largest_required_base {
+                    largest_required_base = item;
+                }
+            }
 
             // Also compute what the largest base is for the current runlength setting!
             largest_runlength_base = 0;
@@ -710,17 +709,18 @@ pub(crate) fn ptngc_pack_array_xtc2(
                                 let mut isum = 0.0; // ints can be almost 32 bit so multiplication will overflow. So do doubles
                                 for ixyz in 0..3 {
                                     // encode_ints is already positive (and multiplied by 2 versus the original, just as magic ints)
-                                    let id = encode_ints[ixx * 3 + ixyz];
-                                    isum += f64::from(id * id);
+                                    let id = encode_ints[ixx * 3 + ixyz] as f64;
+                                    isum += id * id;
                                 }
                                 rejected = false;
 
                                 if isum
                                     > f64::from(
                                         MAGIC[usize::try_from(small_index as i32 + change)
-                                            .expect("usize from i32")]
-                                            * MAGIC[usize::try_from(small_index as i32 + change)
-                                                .expect("usize from i32")],
+                                            .expect("usize from i32")],
+                                    ) * f64::from(
+                                        MAGIC[usize::try_from(small_index as i32 + change)
+                                            .expect("usize from i32")],
                                     )
                                 {
                                     rejected = true;
@@ -879,10 +879,10 @@ pub(crate) fn ptngc_pack_array_xtc2(
                     debug!("Prevcoord in packing: {prevcoord:?}");
                     prevcoord[0] =
                         prevcoord[0].wrapping_add(xtc3::unpositive_int(encode_ints[ienc * 3]));
-                    prevcoord[1] = prevcoord[1]
-                        .wrapping_add(xtc3::unpositive_int(encode_ints[ienc * 3 + 1]));
-                    prevcoord[2] = prevcoord[2]
-                        .wrapping_add(xtc3::unpositive_int(encode_ints[ienc * 3 + 2]));
+                    prevcoord[1] =
+                        prevcoord[1].wrapping_add(xtc3::unpositive_int(encode_ints[ienc * 3 + 1]));
+                    prevcoord[2] =
+                        prevcoord[2].wrapping_add(xtc3::unpositive_int(encode_ints[ienc * 3 + 2]));
                 }
 
                 debug!("Prevcoord in packing: {prevcoord:?}");
