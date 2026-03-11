@@ -112,6 +112,8 @@ pub(crate) fn bwlzh_compress_gen(
                 //     ptngc_comp_conv_to_mtf(bwt, &dict, mtf);
                 // }
 
+                let mut nlens = 0usize;
+                let mut noffsets = 0usize;
                 if reducealgo == 1 {
                     debug!("LZ77");
 
@@ -124,15 +126,21 @@ pub(crate) fn bwlzh_compress_gen(
                         *out = src as u32;
                     }
                     nrle = lz77_result.data.len();
-                    let lens = lz77_result.lengths;
-                    let offsets = lz77_result.offsets;
+                    nlens = lz77_result.lengths.len();
+                    for (dst, &src) in lens[..nlens].iter_mut().zip(lz77_result.lengths.iter()) {
+                        *dst = src as u32;
+                    }
+                    noffsets = lz77_result.offsets.len();
+                    for (dst, &src) in offsets[..noffsets].iter_mut().zip(lz77_result.offsets.iter()) {
+                        *dst = src as u32;
+                    }
 
                     debug!("Resulting LZ77 values: {nrle}");
-                    debug!("Resulting LZ77 lens: {}", lens.len());
-                    debug!("Resulting LZ77 offsets: {}", offsets.len());
+                    debug!("Resulting LZ77 lens: {nlens}");
+                    debug!("Resulting LZ77 offsets: {noffsets}");
 
                     // block that is "if 0"
-                    if lens.len() < 2 {
+                    if nlens < 2 {
                         reducealgo = 0;
                     }
                 }
@@ -188,7 +196,6 @@ pub(crate) fn bwlzh_compress_gen(
                 outdata += bwlzhufflen_usize;
 
                 if reducealgo == 1 {
-                    let noffsets = offsets.len();
                     // Store the number of values in this block
                     copy_bytes(noffsets as u32, output, &mut outdata);
 
@@ -197,7 +204,7 @@ pub(crate) fn bwlzh_compress_gen(
 
                         huffalgo = -1;
                         ptngc_comp_huff_compress_verbose(
-                            offsets,
+                            &mut offsets[..noffsets],
                             &mut bwlzhhuff,
                             &mut bwlzhhufflen,
                             &mut huffdatalen,
@@ -234,12 +241,12 @@ pub(crate) fn bwlzh_compress_gen(
                             // Store the huffman block
                             output[outdata
                                 ..outdata + usize::try_from(bwlzhhufflen).expect("usize from i32")]
-                                .copy_from_slice(&bwlzhhuff);
+                                .copy_from_slice(&bwlzhhuff[..usize::try_from(bwlzhhufflen).expect("usize from i32")]);
                             outdata += usize::try_from(bwlzhhufflen).expect("usize from i32");
                         } else {
                             output[outdata] = 1;
                             outdata += 1;
-                            for os in &mut *offsets {
+                            for os in &mut offsets[..noffsets] {
                                 output[outdata] = (*os & 0xFF) as u8;
                                 outdata += 1;
                                 output[outdata] = ((*os >> 8) & 0xFF) as u8;
@@ -256,7 +263,7 @@ pub(crate) fn bwlzh_compress_gen(
 
                     huffalgo = -1;
                     ptngc_comp_huff_compress_verbose(
-                        lens,
+                        &mut lens[..nlens],
                         &mut bwlzhhuff,
                         &mut bwlzhhufflen,
                         &mut huffdatalen,
@@ -284,16 +291,15 @@ pub(crate) fn bwlzh_compress_gen(
                     );
 
                     // Store the number of values in this block
-                    let nlens = lens.len();
                     copy_bytes(nlens as u32, output, &mut outdata);
 
                     // Store the size of the huffman block
                     copy_bytes(bwlzhhufflen as u32, output, &mut outdata);
 
                     // Store the huffman block
-                    output
-                        [outdata..outdata + usize::try_from(bwlzhhufflen).expect("usize from i32")]
-                        .copy_from_slice(&bwlzhhuff);
+                    let bwlzhhufflen_usize = usize::try_from(bwlzhhufflen).expect("usize from i32");
+                    output[outdata..outdata + bwlzhhufflen_usize]
+                        .copy_from_slice(&bwlzhhuff[..bwlzhhufflen_usize]);
                     outdata += usize::try_from(bwlzhhufflen).expect("usize from i32");
                 }
             }
