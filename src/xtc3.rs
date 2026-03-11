@@ -106,9 +106,9 @@ pub(crate) fn swap_is_better(input: &[i32], minint: &[i32; 3]) -> (u32, u32) {
     let mut swapped = [0; 3];
 
     for i in 0..3 {
-        normal[0] = input[i] - minint[i];
-        normal[1] = input[3 + i] - input[i]; // minint[i]-minint[i] cancels out
-        normal[2] = input[6 + i] - input[3 + i]; // minint[i]-minint[i] cancels out
+        normal[0] = input[i].wrapping_sub(minint[i]);
+        normal[1] = input[3 + i].wrapping_sub(input[i]); // minint[i]-minint[i] cancels out
+        normal[2] = input[6 + i].wrapping_sub(input[3 + i]); // minint[i]-minint[i] cancels out
         swap_ints(&normal, &mut swapped);
 
         for j in 1..3 {
@@ -429,9 +429,9 @@ fn insert_batch(
     let mut tmp_prevcoord = [prevcoord[0], prevcoord[1], prevcoord[2]];
 
     for chunk in encode_ints.chunks_exact(3).take(startenc) {
-        tmp_prevcoord[0] += chunk[0];
-        tmp_prevcoord[1] += chunk[1];
-        tmp_prevcoord[2] += chunk[2];
+        tmp_prevcoord[0] = tmp_prevcoord[0].wrapping_add(chunk[0]);
+        tmp_prevcoord[1] = tmp_prevcoord[1].wrapping_add(chunk[1]);
+        tmp_prevcoord[2] = tmp_prevcoord[2].wrapping_add(chunk[2]);
     }
 
     let total_triplets = (1 + MAX_SMALL_RLE).min(ntriplets_left);
@@ -442,9 +442,9 @@ fn insert_batch(
         .chunks_exact_mut(3)
         .zip(input_ptr[start_idx..].chunks_exact(3))
     {
-        encode_chunk[0] = input_chunk[0] - tmp_prevcoord[0];
-        encode_chunk[1] = input_chunk[1] - tmp_prevcoord[1];
-        encode_chunk[2] = input_chunk[2] - tmp_prevcoord[2];
+        encode_chunk[0] = input_chunk[0].wrapping_sub(tmp_prevcoord[0]);
+        encode_chunk[1] = input_chunk[1].wrapping_sub(tmp_prevcoord[1]);
+        encode_chunk[2] = input_chunk[2].wrapping_sub(tmp_prevcoord[2]);
 
         tmp_prevcoord = [input_chunk[0], input_chunk[1], input_chunk[2]];
     }
@@ -589,7 +589,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             xtc3_context.flush_large(xtc3_context.has_large); // Flush all
         } else {
             let mut min_runlength = 0;
-            let largest_required_base = 0;
+            let mut largest_required_base = 0;
             let mut largest_runlength_base;
             let mut largest_runlength_index;
             let mut new_runlength;
@@ -669,12 +669,14 @@ pub(crate) fn ptngc_pack_array_xtc3(
                     if swapatoms {
                         didswap = true;
                         for i in 0..3 {
-                            let mut input = [0; 3];
+                            let mut swapped_input = [0; 3];
                             let mut output = [0; 3];
-                            input[0] = input[inpdata + i];
-                            input[1] = input[inpdata + 3 + i] - input[inpdata + i];
-                            input[2] = input[inpdata + 6 + i] - input[inpdata + 3 + i];
-                            swap_ints(&input, &mut output);
+                            swapped_input[0] = input[inpdata + i];
+                            swapped_input[1] =
+                                input[inpdata + 3 + i].wrapping_sub(input[inpdata + i]);
+                            swapped_input[2] =
+                                input[inpdata + 6 + i].wrapping_sub(input[inpdata + 3 + i]);
+                            swap_ints(&swapped_input, &mut output);
                             encode_ints[i] = output[0];
                             encode_ints[3 + i] = output[1];
                             encode_ints[6 + i] = output[2];
@@ -723,18 +725,20 @@ pub(crate) fn ptngc_pack_array_xtc3(
             // Here we should only have differences for the atom coordinates.
             // Convert the ints to positive ints
             for item in encode_ints.iter_mut() {
-                *item = positive_int(*item).try_into().expect("i32 from u32");
+                // Match the C encoder, which stores the `positive_int` result in `int`
+                // and therefore wraps when the value exceeds `i32::MAX`.
+                *item = positive_int(*item) as i32;
             }
             // Now we must decide what base and runlength to do. If we have swapped atoms it will be
             // at least 2. If even the next atom is large, we will not do anything
 
             // Determine required base
-            largest_runlength_base = (0..(min_runlength * 3))
-                .filter_map(|i| encode_ints.get(i))
-                .filter(|&&val| val > largest_required_base)
-                .next_back()
-                .copied()
-                .unwrap_or(0);
+            largest_required_base = 0;
+            for &item in encode_ints.iter().take(min_runlength * 3) {
+                if item > largest_required_base {
+                    largest_required_base = item;
+                }
+            }
             // Also compute what the largest base is for the current runlength setting!
             // largest_runlength_base = 0;
             // for ienc in 0..(runlength * 3).min(nencode) {
@@ -743,17 +747,15 @@ pub(crate) fn ptngc_pack_array_xtc3(
             //     }
             // }
 
-            largest_runlength_base = (0..(min_runlength * 3).min(nencode))
-                .filter_map(|i| encode_ints.get(i))
-                .filter(|&&val| val > largest_runlength_base)
-                .next_back()
-                .copied()
-                .unwrap_or(0);
+            largest_runlength_base = 0;
+            for &item in encode_ints.iter().take((runlength * 3).min(nencode)) {
+                if item > largest_runlength_base {
+                    largest_runlength_base = item;
+                }
+            }
 
-            let largest_required_index =
-                ptngc_find_magic_index(largest_required_base.try_into().expect("i32 to u32"));
-            largest_runlength_index =
-                ptngc_find_magic_index(largest_runlength_base.try_into().expect("i32 to u32"));
+            let largest_required_index = ptngc_find_magic_index(largest_required_base as u32);
+            largest_runlength_index = ptngc_find_magic_index(largest_runlength_base as u32);
 
             if largest_required_index < largest_runlength_index {
                 new_runlength = min_runlength;
@@ -791,8 +793,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
                 // selected encoding? Also the max supported runlength is MAX_SMALL_RLE triplets!
                 let mut ienc = 0;
                 while ienc < nencode && ienc < MAX_SMALL_RLE * 3 {
-                    let test_index =
-                        ptngc_find_magic_index(encode_ints[ienc].try_into().expect("i32 to u32"));
+                    let test_index = ptngc_find_magic_index(encode_ints[ienc] as u32);
                     if test_index > new_small_index {
                         break;
                     }
@@ -804,14 +805,13 @@ pub(crate) fn ptngc_pack_array_xtc3(
                 }
 
                 // How large encoding do we have to use?
-                largest_runlength_base = (0..iter_runlength * 3)
-                    .filter_map(|i| encode_ints.get(i))
-                    .copied()
-                    .max()
-                    .unwrap_or(0);
-                largest_runlength_index = ptngc_find_magic_index(
-                    largest_runlength_base.try_into().expect("u32 from i32"),
-                );
+                largest_runlength_base = 0;
+                for &item in encode_ints.iter().take(iter_runlength * 3) {
+                    if item > largest_runlength_base {
+                        largest_runlength_base = item;
+                    }
+                }
+                largest_runlength_index = ptngc_find_magic_index(largest_runlength_base as u32);
                 if largest_runlength_index != new_small_index {
                     iter_small_index = largest_runlength_index;
                 }
@@ -962,17 +962,18 @@ pub(crate) fn ptngc_pack_array_xtc3(
                 }
                 // Insert the small integers into the small integer array
                 for &item in encode_ints[..runlength * 3].iter() {
-                    xtc3_context
-                        .smallintra
-                        .push(item.try_into().expect("i32 to u32"));
+                    xtc3_context.smallintra.push(item as u32);
                 }
                 // Update `prevcoord`
                 for ienc in 0..runlength {
-                    prevcoord[0] += unpositive_int(encode_ints[ienc * 3]);
-                    prevcoord[1] += unpositive_int(encode_ints[ienc * 3 + 1]);
-                    prevcoord[2] += unpositive_int(encode_ints[ienc * 3 + 2]);
+                    prevcoord[0] =
+                        prevcoord[0].wrapping_add(unpositive_int(encode_ints[ienc * 3]));
+                    prevcoord[1] =
+                        prevcoord[1].wrapping_add(unpositive_int(encode_ints[ienc * 3 + 1]));
+                    prevcoord[2] =
+                        prevcoord[2].wrapping_add(unpositive_int(encode_ints[ienc * 3 + 2]));
                 }
-                inpdata += 3;
+                inpdata += 3 * runlength;
                 ntriplets_left -= runlength;
             } else {
                 refused += 1;

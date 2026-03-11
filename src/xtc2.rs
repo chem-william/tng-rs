@@ -502,9 +502,9 @@ pub(crate) fn ptngc_pack_array_xtc2(
                         didswap = true;
                         for i in 0..3 {
                             let inp = [
-                                input[input_ptr..][i] - minint[i],
-                                input[input_ptr..][3 + i] - input[input_ptr..][i], // minint[i]-minint[i] cancels out
-                                input[input_ptr..][6 + i] - input[input_ptr..][3 + i],
+                                input[input_ptr..][i].wrapping_sub(minint[i]),
+                                input[input_ptr..][3 + i].wrapping_sub(input[input_ptr..][i]), // minint[i]-minint[i] cancels out
+                                input[input_ptr..][6 + i].wrapping_sub(input[input_ptr..][3 + i]),
                             ];
                             let mut out = [0; 3];
                             xtc3::swap_ints(&inp, &mut out);
@@ -535,7 +535,7 @@ pub(crate) fn ptngc_pack_array_xtc2(
                     prevcoord.copy_from_slice(&encode_ints[..3]);
                 } else {
                     for ienc in 0..3 {
-                        prevcoord[ienc] = input[input_ptr..][ienc] - minint[ienc];
+                        prevcoord[ienc] = input[input_ptr..][ienc].wrapping_sub(minint[ienc]);
                     }
                 }
                 // Cache large value for later possible combination with
@@ -578,7 +578,9 @@ pub(crate) fn ptngc_pack_array_xtc2(
             // Here we should only have differences for the atom coordinates.
             // Convert the ints to positive ints
             for val in encode_ints.iter_mut().take(nencode) {
-                *val = positive_int(*val).try_into().expect("i32 from u32");
+                // Match the C encoder, which stores the `positive_int` result in `int`
+                // and therefore wraps when the value exceeds `i32::MAX`.
+                *val = positive_int(*val) as i32;
             }
 
             // Now we must decide what base and runlength to do. If we have swapped atoms it will be
@@ -593,18 +595,15 @@ pub(crate) fn ptngc_pack_array_xtc2(
                 .unwrap_or(largest_required_base);
 
             // Also compute what the largest base is for the current runlength setting!
-            largest_runlength_base = encode_ints
-                .iter()
-                .take((runlength * 3).min(nencode))
-                .max()
-                .copied()
-                .unwrap_or(0);
+            largest_runlength_base = 0;
+            for &item in encode_ints.iter().take((runlength * 3).min(nencode)) {
+                if item > largest_runlength_base {
+                    largest_runlength_base = item;
+                }
+            }
 
-            let largest_required_index =
-                ptngc_find_magic_index(u32::try_from(largest_required_base).expect("u32 from i32"));
-            largest_runlength_index = ptngc_find_magic_index(
-                u32::try_from(largest_runlength_base).expect("u32 from i32"),
-            );
+            let largest_required_index = ptngc_find_magic_index(largest_required_base as u32);
+            largest_runlength_index = ptngc_find_magic_index(largest_runlength_base as u32);
 
             if largest_required_index < largest_runlength_index {
                 new_runlength = min_runlength;
@@ -649,8 +648,7 @@ pub(crate) fn ptngc_pack_array_xtc2(
                 // Also the max supported runlength is 6 triplets!
                 let mut ienc = 0;
                 while ienc < nencode && ienc < 18 {
-                    let test_index =
-                        ptngc_find_magic_index(encode_ints[ienc].try_into().expect("i32 to u32"));
+                    let test_index = ptngc_find_magic_index(encode_ints[ienc] as u32);
                     if test_index > new_small_index {
                         break;
                     }
@@ -662,15 +660,14 @@ pub(crate) fn ptngc_pack_array_xtc2(
                 }
 
                 // How large encoding do we have to use?
-                largest_runlength_base = encode_ints
-                    .iter()
-                    .take(iter_runlength * 3)
-                    .max()
-                    .copied()
-                    .unwrap_or(0);
+                largest_runlength_base = 0;
+                for &item in encode_ints.iter().take(iter_runlength * 3) {
+                    if item > largest_runlength_base {
+                        largest_runlength_base = item;
+                    }
+                }
 
-                largest_runlength_index =
-                    ptngc_find_magic_index(largest_runlength_base.try_into().expect("i32 to u32"));
+                largest_runlength_index = ptngc_find_magic_index(largest_runlength_base as u32);
                 if largest_runlength_index != new_small_index {
                     iter_small_index = largest_runlength_index;
                     debug!(
@@ -701,9 +698,8 @@ pub(crate) fn ptngc_pack_array_xtc2(
                 || (new_small_index + IS_LARGE < max_large_index)
             {
                 if new_runlength != runlength || new_small_index != small_index {
-                    let mut change =
-                        i32::try_from(new_small_index - small_index).expect("i32 from u32");
-                    if new_small_index < 0 {
+                    let mut change = new_small_index as i32 - small_index as i32;
+                    if new_small_index == 0 {
                         change = 0;
                     }
 
@@ -721,16 +717,10 @@ pub(crate) fn ptngc_pack_array_xtc2(
 
                                 if isum
                                     > f64::from(
-                                        MAGIC[usize::try_from(
-                                            i32::try_from(small_index).expect("i32 from u32")
-                                                + change,
-                                        )
-                                        .expect("usize from u32")]
-                                            * MAGIC[usize::try_from(
-                                                i32::try_from(small_index).expect("i32 from u32")
-                                                    + change,
-                                            )
-                                            .expect("usize from u32")],
+                                        MAGIC[usize::try_from(small_index as i32 + change)
+                                            .expect("usize from i32")]
+                                            * MAGIC[usize::try_from(small_index as i32 + change)
+                                                .expect("usize from i32")],
                                     )
                                 {
                                     rejected = true;
@@ -771,7 +761,8 @@ pub(crate) fn ptngc_pack_array_xtc2(
                             let mut this_change = change;
                             this_change = this_change.clamp(-2, 2);
                             change -= this_change;
-                            small_index += u32::try_from(this_change).expect("u32 from i32");
+                            small_index = u32::try_from(small_index as i32 + this_change)
+                                .expect("u32 from i32");
                             if this_change < 0 {
                                 code |= 2;
                                 this_change = -this_change;
@@ -792,7 +783,8 @@ pub(crate) fn ptngc_pack_array_xtc2(
                             large base change instruction above. */
                             let code = ichange + irun;
                             debug!("Small base change: {change} Runlength change: {new_runlength}");
-                            small_index += u32::try_from(change).expect("u32 from i32");
+                            small_index =
+                                u32::try_from(small_index as i32 + change).expect("u32 from i32");
                             write_instruction(coder, INSTR_BASE_RUNLENGTH, &mut output);
                             coder.ptngc_writebits(code, 4, &mut output);
                             runlength = new_runlength;
@@ -885,9 +877,12 @@ pub(crate) fn ptngc_pack_array_xtc2(
                 // Update `prevcoord`
                 for ienc in 0..runlength {
                     debug!("Prevcoord in packing: {prevcoord:?}");
-                    prevcoord[0] += xtc3::unpositive_int(encode_ints[ienc * 3]);
-                    prevcoord[1] += xtc3::unpositive_int(encode_ints[ienc * 3 + 1]);
-                    prevcoord[2] += xtc3::unpositive_int(encode_ints[ienc * 3 + 2]);
+                    prevcoord[0] =
+                        prevcoord[0].wrapping_add(xtc3::unpositive_int(encode_ints[ienc * 3]));
+                    prevcoord[1] = prevcoord[1]
+                        .wrapping_add(xtc3::unpositive_int(encode_ints[ienc * 3 + 1]));
+                    prevcoord[2] = prevcoord[2]
+                        .wrapping_add(xtc3::unpositive_int(encode_ints[ienc * 3 + 2]));
                 }
 
                 debug!("Prevcoord in packing: {prevcoord:?}");
@@ -975,23 +970,29 @@ fn insert_batch(
 
     if startenc > 0 {
         for i in 0..startenc {
-            tmp_prevcoord[0] += encode_ints[i * 3];
-            tmp_prevcoord[1] += encode_ints[i * 3 + 1];
-            tmp_prevcoord[2] += encode_ints[i * 3 + 2];
+            tmp_prevcoord[0] = tmp_prevcoord[0].wrapping_add(encode_ints[i * 3]);
+            tmp_prevcoord[1] = tmp_prevcoord[1].wrapping_add(encode_ints[i * 3 + 1]);
+            tmp_prevcoord[2] = tmp_prevcoord[2].wrapping_add(encode_ints[i * 3 + 2]);
         }
     }
 
     debug!("New batch");
     while (nencode < 21) && (nencode < ntriplets_left * 3) {
-        encode_ints[nencode] = input[nencode] - minint[0] - tmp_prevcoord[0];
-        encode_ints[nencode + 1] = input[nencode + 1] - minint[1] - tmp_prevcoord[1];
-        encode_ints[nencode + 2] = input[nencode + 2] - minint[2] - tmp_prevcoord[2];
+        encode_ints[nencode] = input[nencode]
+            .wrapping_sub(minint[0])
+            .wrapping_sub(tmp_prevcoord[0]);
+        encode_ints[nencode + 1] = input[nencode + 1]
+            .wrapping_sub(minint[1])
+            .wrapping_sub(tmp_prevcoord[1]);
+        encode_ints[nencode + 2] = input[nencode + 2]
+            .wrapping_sub(minint[2])
+            .wrapping_sub(tmp_prevcoord[2]);
         debug!(
             "{:6}: {:6} {:6} {:6}\t\t{:6} {:6} {:6}\t\t{:6} {:6} {:6}",
             nencode,
-            input[nencode] - minint[0],
-            input[nencode + 1] - minint[1],
-            input[nencode + 2] - minint[2],
+            input[nencode].wrapping_sub(minint[0]),
+            input[nencode + 1].wrapping_sub(minint[1]),
+            input[nencode + 2].wrapping_sub(minint[2]),
             encode_ints[nencode],
             encode_ints[nencode + 1],
             encode_ints[nencode + 2],
@@ -1000,9 +1001,9 @@ fn insert_batch(
             positive_int(encode_ints[nencode + 2]),
         );
 
-        tmp_prevcoord[0] = input[nencode] - minint[0];
-        tmp_prevcoord[1] = input[nencode + 1] - minint[1];
-        tmp_prevcoord[2] = input[nencode + 2] - minint[2];
+        tmp_prevcoord[0] = input[nencode].wrapping_sub(minint[0]);
+        tmp_prevcoord[1] = input[nencode + 1].wrapping_sub(minint[1]);
+        tmp_prevcoord[2] = input[nencode + 2].wrapping_sub(minint[2]);
         nencode += 3;
     }
     nencode
