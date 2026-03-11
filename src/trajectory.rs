@@ -220,6 +220,7 @@ impl Trajectory {
         (endianness32, endianness64)
     }
 
+    /// C API: `tng_trajectory_init`.
     pub fn new() -> Self {
         let time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -305,7 +306,8 @@ impl Trajectory {
             .expect("no error handling")
     }
 
-    // c function: tng_output_file_set
+    /// C API: `tng_output_file_set`.
+    ///
     /// Set the name of the output file.
     pub fn set_output_file(&mut self, path: &Path) {
         if self.output_file_path == path {
@@ -361,6 +363,7 @@ impl Trajectory {
         }
     }
 
+    /// C API: `tng_medium_stride_length_set`.
     pub fn set_medium_stride_length(&mut self, length: i64) -> Result<(), TngError> {
         if length >= self.long_stride_length {
             return Err(TngError::Constraint(format!(
@@ -373,6 +376,7 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: `tng_long_stride_length_set`.
     pub fn set_long_stride_length(&mut self, length: i64) -> Result<(), TngError> {
         if length <= self.medium_stride_length {
             return Err(TngError::Constraint(format!(
@@ -385,6 +389,7 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: `tng_first_user_name_set`.
     pub fn set_first_user_name(&mut self, new_name: &str) {
         // We use `floor_char_boundary` as Rust strings has to be valid UTF-8. This way we never split a charachter
         // and never panic on non-UTF-8 names
@@ -392,21 +397,25 @@ impl Trajectory {
         self.first_user_name = new_name[..length].to_string();
     }
 
+    /// C API: `tng_first_computer_name_set`.
     pub fn set_first_computer_name(&mut self, new_name: &str) {
         let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
         self.first_computer_name = new_name[..length].to_string();
     }
 
+    /// C API: `tng_first_program_name_set`.
     pub fn set_first_program_name(&mut self, new_name: &str) {
         let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
         self.first_program_name = new_name[..length].to_string();
     }
 
+    /// C API: `tng_forcefield_name_set`.
     pub fn set_forcefield_name(&mut self, new_name: &str) {
         let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
         self.forcefield_name = new_name[..length].to_string();
     }
 
+    /// C API: `tng_time_per_frame_set`.
     pub fn set_time_per_frame(&mut self, time: f64) -> Result<(), TngError> {
         if time < 0.0 {
             return Err(TngError::Constraint(format!(
@@ -428,6 +437,7 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: `tng_num_particles_get`.
     pub fn get_num_particles(&self) -> i64 {
         if self.var_num_atoms {
             self.n_particles
@@ -436,7 +446,8 @@ impl Trajectory {
         }
     }
 
-    // c function: tng_input_file_set
+    /// C API: `tng_input_file_set`.
+    ///
     /// Set the name of the input file.
     pub fn set_input_file(&mut self, path: &Path) {
         if self.input_file_path == path {
@@ -1546,6 +1557,7 @@ impl Trajectory {
         }
     }
 
+    /// C API: `tng_file_headers_read`.
     pub fn file_headers_read(&mut self, _hash_mode: bool) {
         if self.input_file.is_some() {
             self.n_trajectory_frame_sets = 0;
@@ -2953,6 +2965,7 @@ impl Trajectory {
         self.current_trajectory_frame_set.n_unwritten_frames = 0;
     }
 
+    /// C API: `tng_file_headers_write`.
     pub fn file_headers_write(&mut self, hash_mode: bool) -> Result<(), std::io::Error> {
         let mut temp_pos = None;
         let mut total_len = 0;
@@ -3517,6 +3530,8 @@ impl Trajectory {
         usize::try_from(len).expect("usize from u64")
     }
 
+    /// C API: `tng_molecule_find`.
+    ///
     /// Find a molecule by name and/or ID.
     ///
     /// # Parameters
@@ -3560,6 +3575,8 @@ impl Trajectory {
         // Err(MoleculeFindError::NotFound)
     }
 
+    /// C API: `tng_molecule_cnt_list_get`.
+    ///
     /// Get the list of the count of each molecule
     pub fn molecule_cnt_list_get(&self) -> &Vec<i64> {
         if self.var_num_atoms {
@@ -3569,6 +3586,7 @@ impl Trajectory {
         }
     }
 
+    /// C API: `tng_molecule_id_of_particle_nr_get`.
     pub fn molecule_id_of_particle_nr_get(&self, nr: i64) -> Option<i64> {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
@@ -3583,6 +3601,7 @@ impl Trajectory {
         None
     }
 
+    /// C API: `tng_residue_id_of_particle_nr_get`.
     pub fn residue_id_of_particle_nr_get(&self, nr: i64) -> Option<i64> {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
@@ -3598,6 +3617,8 @@ impl Trajectory {
         atom_id
     }
 
+    /// C API: `tng_global_residue_id_of_particle_nr_get`.
+    ///
     /// Get the residue id (based on other molecules and molecule counts) of real
     /// particle number (number in the mol system)
     pub fn global_residue_id_of_particle_nr_get(&self, nr: i64) -> Option<u64> {
@@ -3621,6 +3642,8 @@ impl Trajectory {
         atom_residue_index
     }
 
+    /// C API: `tng_molecule_name_of_particle_nr_get`.
+    ///
     /// Get the molecule name of real particle number (number in mol system)
     pub fn molecule_name_of_particle_nr_get(&self, nr: i64) -> String {
         let mut count = 0;
@@ -3637,6 +3660,8 @@ impl Trajectory {
         name
     }
 
+    /// C API: `tng_chain_name_of_particle_nr_get`.
+    ///
     /// Get the chain name of real particle number (number in mol system)
     pub fn chain_name_of_particle_nr_get(&self, nr: i64) -> String {
         let mut count = 0;
@@ -3658,6 +3683,8 @@ impl Trajectory {
         name
     }
 
+    /// C API: `tng_residue_name_of_particle_nr_get`.
+    ///
     /// Get the residue name of real particle number (number in mol system).
     pub fn residue_name_of_particle_nr_get(&self, nr: i64) -> String {
         let mut count = 0;
@@ -3676,6 +3703,8 @@ impl Trajectory {
         name
     }
 
+    /// C API: `tng_atom_name_of_particle_nr_get`.
+    ///
     /// Get the atom name of real particle number (number in mol system).
     pub fn atom_name_of_particle_nr_get(&self, nr: i64) -> String {
         let mut count = 0;
@@ -3693,6 +3722,8 @@ impl Trajectory {
         name
     }
 
+    /// C API: `tng_atom_type_of_particle_nr_get`.
+    ///
     /// Get the atom type of real particle number (number in mol system).
     pub fn atom_type_of_particle_nr_get(&self, nr: i64) -> String {
         let mut count = 0;
@@ -3710,6 +3741,8 @@ impl Trajectory {
         atom_type
     }
 
+    /// C API: `tng_molecule_existing_add`.
+    ///
     /// Add an existing [`Molecule`] to [`Self`]
     pub(crate) fn molecule_existing_add(&mut self, mut molecule: Molecule) {
         molecule.id = self.molecules.last().map(|mol| mol.id + 1).unwrap_or(1);
@@ -3718,6 +3751,8 @@ impl Trajectory {
         self.n_molecules += 1;
     }
 
+    /// C API: `tng_molecule_cnt_set`.
+    ///
     /// Set the count of a molecule
     pub fn set_molecule_cnt(&mut self, molecule_idx: usize, count: i64) {
         let old_count;
@@ -3735,11 +3770,15 @@ impl Trajectory {
         }
     }
 
+    /// C API: `tng_molecule_cnt_get`.
+    ///
     /// Get the count of a molecule.
     pub fn get_molecule_cnt(&self, molecule_idx: usize) -> usize {
         usize::try_from(self.molecule_cnt_list[molecule_idx]).expect("usize from i64")
     }
 
+    /// C API: `tng_molsystem_bonds_get`.
+    ///
     /// Get the bonds of the current molecular system
     pub fn molsystem_bonds_get(&self) -> Option<(usize, Vec<i64>, Vec<i64>)> {
         let molecule_count_list = self.molecule_cnt_list_get();
@@ -3801,6 +3840,8 @@ impl Trajectory {
         None
     }
 
+    /// C API: `tng_data_vector_get`.
+    ///
     /// Retrieve non-particle data, from the last read frame set.
     /// Returns (values, n_frames, n_values_per_frame, data_type).
     pub fn data_get(&mut self, block_id: BlockID) -> Option<(Vec<f64>, i64, i64, DataType)> {
@@ -3809,6 +3850,8 @@ impl Trajectory {
         Some((values, n_frames, n_values_per_frame, data_type))
     }
 
+    /// C API: `tng_particle_data_vector_get`.
+    ///
     /// Retrieve particle data, from the last read frame set.
     /// Returns (values, n_frames, n_particles, n_values_per_frame, data_type).
     pub fn particle_data_get(
@@ -3958,6 +4001,8 @@ impl Trajectory {
         ))
     }
 
+    /// C API: `tng_frame_set_read_next`.
+    ///
     /// Read one (the next) frame set, including particle mapping and related data blocks
     /// from the input_file of [`Self`]
     pub fn frame_set_read_next(&mut self) -> Result<(), ()> {
@@ -4034,6 +4079,8 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: `tng_frame_set_write`.
+    ///
     /// Write one frame set, including mapping and related data blocks to [`self.output_file`]
     /// of [`Self`]
     pub fn frame_set_write(&mut self, hash_mode: bool) -> Result<(), TngError> {
@@ -4242,6 +4289,8 @@ impl Trajectory {
         count
     }
 
+    /// C API: `tng_frame_set_nr_find`.
+    ///
     /// Find the requested frame set number
     pub fn frame_set_nr_find(&mut self, nr: i64) -> Result<(), ()> {
         let n_frame_sets = self.num_frame_sets_get();
@@ -4488,6 +4537,8 @@ impl Trajectory {
         Err(())
     }
 
+    /// C API: `tng_frame_set_read_current_only_data_from_block_id`.
+    ///
     /// Read data from the current frame set from the `input_file`. Only read
     /// particle mapping and data blocks matching the specified [`BlockID`]
     pub fn frame_set_read_current_only_data_from_block_id(
@@ -4583,6 +4634,8 @@ impl Trajectory {
         if found_flag { Ok(()) } else { Err(()) }
     }
 
+    /// C API: `tng_frame_set_read_next_only_data_from_block_id`.
+    ///
     /// Read one (the next) frame set, including particle mapping and data blocks with
     /// a specific block id from `input_file` of [`Self`]
     pub fn frame_set_read_next_only_data_from_block_id(
@@ -4623,6 +4676,8 @@ impl Trajectory {
         self.frame_set_read_current_only_data_from_block_id(match_block_id)
     }
 
+    /// C API: `tng_data_block_name_get`.
+    ///
     /// Get the name of a data block of a specific ID.
     pub fn data_block_name_get(&mut self, match_block_id: BlockID) -> Result<String, ()> {
         for i in 0..self.n_particle_data_blocks {
@@ -4684,6 +4739,8 @@ impl Trajectory {
         Err(())
     }
 
+    /// C API: `tng_data_block_dependency_get`.
+    ///
     /// Get the dependency of a data block of a specific ID.
     pub fn data_block_dependency_get(&mut self, match_block_id: BlockID) -> Result<u8, ()> {
         for i in 0..self.n_particle_data_blocks {
@@ -4727,6 +4784,8 @@ impl Trajectory {
         Err(())
     }
 
+    /// C API: `tng_data_block_num_values_per_frame_get`.
+    ///
     /// Get the number of values per frame of a data block of a specific ID.
     pub fn data_block_num_values_per_frame_get(
         &mut self,
@@ -4807,6 +4866,7 @@ impl Trajectory {
         Some(frame)
     }
 
+    /// C API: `tng_num_frames_get`.
     pub fn num_frames_get(&mut self) -> Option<i64> {
         let file_pos = self.get_input_file_position();
         let last_file_pos = self.last_trajectory_frame_set_input_pos;
@@ -5256,6 +5316,8 @@ impl Trajectory {
         self.block_read_next(&mut block);
     }
 
+    /// C API: `tng_data_get_stride_length`.
+    ///
     /// Get the stride length of a specific data (particle dependency does not matter) block,
     /// either in the current frame set or of a specific frame
     pub fn data_get_stride_length(
@@ -5336,6 +5398,8 @@ impl Trajectory {
         Err(())
     }
 
+    /// C API: `tng_molecule_add`.
+    ///
     /// Add a molecule to the trajectory.
     /// Returns the index of the new molecule in `self.molecules`.
     pub fn add_molecule(&mut self, name: &str) -> usize {
@@ -5356,6 +5420,8 @@ impl Trajectory {
         idx
     }
 
+    /// C API: `tng_molecule_chain_add`.
+    ///
     /// Add a chain to the molecule at `molecule_idx`.
     /// Returns the index of the new chain in `self.molecules[molecule_idx].chains`.
     pub fn add_chain(&mut self, molecule_idx: usize, name: &str) -> usize {
@@ -5382,6 +5448,8 @@ impl Trajectory {
         idx
     }
 
+    /// C API: `tng_chain_residue_add`.
+    ///
     /// Add a residue to the molecule at `molecule_idx`, associated with chain `chain_idx`.
     /// Returns the index of the new residue in `self.molecules[molecule_idx].residues`.
     pub fn add_chain_residue(
@@ -5443,6 +5511,8 @@ impl Trajectory {
         insert_pos
     }
 
+    /// C API: `tng_residue_atom_add`.
+    ///
     /// Add an atom to the molecule at `molecule_idx`, associated with residue `residue_idx`.
     /// Returns the index of the new atom in `self.molecules[molecule_idx].atoms`.
     pub fn add_residue_atom(
@@ -5490,6 +5560,8 @@ impl Trajectory {
         idx
     }
 
+    /// C API: `tng_molecule_bond_add`.
+    ///
     /// Add a bond to the molecule at `molecule_idx`.
     /// Returns the index of the new bond in `self.molecules[molecule_idx].bonds`.
     pub fn add_molecule_bond(
@@ -5508,6 +5580,7 @@ impl Trajectory {
         idx
     }
 
+    /// C API: `tng_data_block_add`.
     pub fn add_data_block(
         &mut self,
         id: BlockID,
@@ -5765,6 +5838,7 @@ impl Trajectory {
         }
     }
 
+    /// C API: `tng_particle_data_block_add`.
     pub(crate) fn particle_data_block_add(
         &mut self,
         id: BlockID,
@@ -5809,6 +5883,7 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: `tng_num_molecules_get`.
     pub(crate) fn get_num_molecules(&self) -> usize {
         let cnt_list = self.get_molecule_cnt_list();
 
@@ -5823,11 +5898,12 @@ impl Trajectory {
             .sum()
     }
 
+    /// C API: `tng_num_frames_per_frame_set_get`.
     pub(crate) fn get_num_frames_per_frame_set(&self) -> i64 {
         self.frame_set_n_frames
     }
 
-    // c function: tng_frame_set_new (tng_io.c:11499-11675)
+    /// C API: `tng_frame_set_new`.
     pub(crate) fn frame_set_new(
         &mut self,
         first_frame: i64,
@@ -5999,7 +6075,7 @@ impl Trajectory {
         Ok(())
     }
 
-    // c function: tng_frame_set_with_time_new (tng_io.c:11677-11698)
+    /// C API: `tng_frame_set_with_time_new`.
     pub(crate) fn frame_set_with_time_new(
         &mut self,
         first_frame: i64,
@@ -6018,6 +6094,7 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: `tng_particle_mapping_add`.
     pub(crate) fn particle_mapping_add(
         &mut self,
         num_first_particle: i64,
@@ -6071,6 +6148,7 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: `tng_frame_set_particle_mapping_free`.
     pub(crate) fn frame_set_particle_mapping_free(&mut self) {
         let frame_set = &mut self.current_trajectory_frame_set;
 
@@ -6104,48 +6182,59 @@ impl Trajectory {
         Ok(name)
     }
 
+    /// C API: `tng_first_user_name_get`.
     pub fn first_user_name_get(&self, max_len: usize) -> Result<&str, TngError> {
         Self::validate_get_name_len(&self.first_user_name, "first user name", max_len)
     }
 
+    /// C API: `tng_first_program_name_get`.
     pub fn first_program_name_get(&self, max_len: usize) -> Result<&str, TngError> {
         Self::validate_get_name_len(&self.first_program_name, "first program name", max_len)
     }
 
+    /// C API: `tng_first_computer_name_get`.
     pub fn first_computer_name_get(&self, max_len: usize) -> Result<&str, TngError> {
         Self::validate_get_name_len(&self.first_computer_name, "first computer name", max_len)
     }
 
+    /// C API: `tng_forcefield_name_get`.
     pub fn forcefield_name_get(&self, max_len: usize) -> Result<&str, TngError> {
         Self::validate_get_name_len(&self.forcefield_name, "forcefield name", max_len)
     }
 
+    /// C API: `tng_medium_stride_length_get`.
     pub fn medium_stride_length_get(&self) -> i64 {
         self.medium_stride_length
     }
 
+    /// C API: `tng_long_stride_length_get`.
     pub fn long_stride_length_get(&self) -> i64 {
         self.long_stride_length
     }
 
+    /// C API: `tng_compression_precision_get`.
     pub fn compression_precision_get(&self) -> f64 {
         self.compression_precision
     }
 
+    /// C API: `tng_distance_unit_exponential_get`.
     pub fn distance_unit_exponential_get(&self) -> i64 {
         self.distance_unit_exponential
     }
 
+    /// C API: `tng_num_molecule_types_get`.
     pub(crate) fn num_molecules_types_get(&self) -> i64 {
         self.n_molecules
     }
 
+    /// C API: `tng_num_molecules_get`.
     pub(crate) fn num_molecules_get(&self) -> i64 {
         let cnt_list = self.molecule_cnt_list_get();
 
         cnt_list.iter().take(self.n_molecules as usize).sum()
     }
 
+    /// C API: `tng_num_particles_variable_get`.
     pub(crate) fn num_particles_variable_get(&self) -> bool {
         self.var_num_atoms
     }
@@ -6201,6 +6290,8 @@ impl Trajectory {
         molecule.n_chains
     }
 
+    /// C API: `tng_molecule_chain_of_index_get`.
+    ///
     /// Retrieve the [`crate::chain::Chain`] of a molecule with specified index in the list of chains.
     ///
     /// # Errors
@@ -6268,6 +6359,7 @@ impl Trajectory {
         Ok(&molecule.atoms[index])
     }
 
+    /// C API: `tng_chain_name_get`.
     pub(crate) fn chain_name_get<'a>(
         &'a self,
         chain: &'a Chain,
@@ -6276,11 +6368,15 @@ impl Trajectory {
         Self::validate_get_name_len(&chain.name, "chain name", max_len)
     }
 
+    /// C API: `tng_chain_num_residues_get`.
+    ///
     /// Get the number of residues in a molecule chain.
     pub(crate) fn chain_num_residues_get(&self, chain: &Chain) -> u64 {
         chain.n_residues
     }
 
+    /// C API: `tng_chain_residue_of_index_get`.
+    ///
     /// Retrieve the residue of a chain with specified index in the list of residues.
     pub(crate) fn chain_residue_of_index_get<'a>(
         &'a self,
@@ -6298,6 +6394,7 @@ impl Trajectory {
         Ok(&molecule.residues[residue_index])
     }
 
+    /// C API: `tng_chain_residue_find`.
     pub(crate) fn chain_residue_find(
         &self,
         chain: &Chain,
@@ -6320,6 +6417,7 @@ impl Trajectory {
         Err(TngError::NotFound("residue not found".to_string()))
     }
 
+    /// C API: `tng_residue_name_get`.
     pub(crate) fn residue_name_get<'a>(
         &'a self,
         residue: &'a Residue,
@@ -6328,6 +6426,7 @@ impl Trajectory {
         Self::validate_get_name_len(&residue.name, "residue name", max_len)
     }
 
+    /// C API: `tng_residue_num_atoms_get`.
     pub(crate) fn residue_num_atoms_get(&self, residue: &Residue) -> u64 {
         residue.n_atoms
     }
