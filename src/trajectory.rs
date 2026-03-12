@@ -3645,17 +3645,23 @@ impl Trajectory {
     /// C API: `tng_molecule_name_of_particle_nr_get`.
     ///
     /// Get the molecule name of real particle number (number in mol system)
-    pub fn molecule_name_of_particle_nr_get(&self, nr: i64) -> String {
+    pub fn molecule_name_of_particle_nr_get(
+        &self,
+        nr: i64,
+        max_len: usize,
+    ) -> Result<&str, TngError> {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut name = String::new();
+        let mut name = Err(TngError::NotFound(
+            "could not find molecule name".to_string(),
+        ));
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
                 continue;
             }
-            name = mol.name.clone();
+            name = Self::validate_get_name_len(&mol.name, "molecule name", max_len);
         }
         name
     }
@@ -3663,11 +3669,11 @@ impl Trajectory {
     /// C API: `tng_chain_name_of_particle_nr_get`.
     ///
     /// Get the chain name of real particle number (number in mol system)
-    pub fn chain_name_of_particle_nr_get(&self, nr: i64) -> String {
+    pub fn chain_name_of_particle_nr_get(&self, nr: i64, max_len: usize) -> Result<&str, TngError> {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut name = String::new();
+        let mut name = Err(TngError::NotFound("could not find chain name".to_string()));
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
@@ -3678,7 +3684,8 @@ impl Trajectory {
             let chain_index = &mol.residues[residue_index]
                 .chain_index
                 .expect("residue in chain");
-            name = mol.chains[*chain_index].name.clone();
+            name =
+                Self::validate_get_name_len(&mol.chains[*chain_index].name, "chain name", max_len);
         }
         name
     }
@@ -3686,11 +3693,17 @@ impl Trajectory {
     /// C API: `tng_residue_name_of_particle_nr_get`.
     ///
     /// Get the residue name of real particle number (number in mol system).
-    pub fn residue_name_of_particle_nr_get(&self, nr: i64) -> String {
+    pub fn residue_name_of_particle_nr_get(
+        &self,
+        nr: i64,
+        max_len: usize,
+    ) -> Result<&str, TngError> {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut name = String::new();
+        let mut name = Err(TngError::NotFound(
+            "could not find residue name".to_string(),
+        ));
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
@@ -3698,7 +3711,11 @@ impl Trajectory {
             }
             let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
             let residue_index = atom.residue_index.expect("atom in residue");
-            name = mol.residues[residue_index].name.clone();
+            name = Self::validate_get_name_len(
+                &mol.residues[residue_index].name,
+                "residue name",
+                max_len,
+            );
         }
         name
     }
@@ -3706,18 +3723,20 @@ impl Trajectory {
     /// C API: `tng_atom_name_of_particle_nr_get`.
     ///
     /// Get the atom name of real particle number (number in mol system).
-    pub fn atom_name_of_particle_nr_get(&self, nr: i64) -> String {
+    pub fn atom_name_of_particle_nr_get(&self, nr: i64, max_len: usize) -> Result<&str, TngError> {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut name = String::new();
+        let mut name = Err(TngError::NotFound(
+            "could not find residue name".to_string(),
+        ));
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
                 continue;
             }
             let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
-            name = atom.name.clone();
+            name = Self::validate_get_name_len(&atom.name, "atom name", max_len);
         }
         name
     }

@@ -440,6 +440,81 @@ mod integration {
             DISTANCE_UNIT_EXPONENTIAL, temp_int,
             "Distance unit exponential does not match when reading written file"
         );
+        // tng_test_molecules
+        let cnt = traj.num_molecules_types_get();
+        assert_eq!(cnt, 1, "Molecule reading error");
+
+        let cnt = traj.num_molecules_get();
+        assert_eq!(cnt, 200, "Molecule reading error");
+
+        let var_atoms = traj.num_particles_variable_get();
+        assert!(!var_atoms, "Molecule reading error");
+
+        let molecule = traj.molecule_of_index_get(0).unwrap();
+        traj.molecule_find(Some("water"), None).unwrap();
+
+        traj.molecule_name_get(molecule, MAX_STR_LEN).unwrap();
+
+        let cnt = traj.molecule_num_chains_get(molecule);
+        assert_eq!(cnt, 1, "Cannot get number of chains in molecule.");
+
+        let chain = traj.molecule_chain_of_index_get(molecule, 0).unwrap();
+
+        molecule
+            .chain_find("W", -1)
+            .expect("'W' chain to be present");
+
+        let cnt = traj.molecule_num_residues_get(molecule);
+        assert_eq!(cnt, 1, "Cannot get number of residues in molecule.");
+
+        traj.molecule_residue_of_index_get(molecule, 0).unwrap();
+
+        let cnt = traj.molecule_num_atoms_get(molecule);
+        assert_eq!(cnt, 3, "Cannot get number of atoms in molecule.");
+
+        let atom = traj.molecule_atom_of_index_get(molecule, 0).unwrap();
+
+        molecule.atom_find("O", -1).expect("'O' to be present");
+
+        traj.chain_name_get(chain, MAX_STR_LEN).unwrap();
+
+        let cnt = traj.chain_num_residues_get(chain);
+        assert_eq!(cnt, 1, "Cannot get number of residues in chain.");
+
+        let residue = traj.chain_residue_of_index_get(chain, 0).unwrap();
+
+        traj.chain_residue_find(chain, Some("WAT"), None).unwrap();
+
+        traj.residue_name_get(residue, MAX_STR_LEN).unwrap();
+
+        let cnt = traj.residue_num_atoms_get(residue);
+        assert_eq!(cnt, 3, "Cannot get number of atoms in residue.");
+
+        traj.residue_atom_of_index_get(residue, 0).unwrap();
+
+        traj.atom_name_get(atom, MAX_STR_LEN).unwrap();
+
+        traj.atom_type_get(atom, MAX_STR_LEN).unwrap();
+
+        let cnt = traj.molecule_id_of_particle_nr_get(0).unwrap();
+        assert_eq!(cnt, 1, "Cannot get molecule id of atom");
+
+        let cnt = traj.residue_id_of_particle_nr_get(0).unwrap();
+        assert_eq!(cnt, 0, "Cannot get residue id of atom");
+
+        let cnt = traj.global_residue_id_of_particle_nr_get(599).unwrap();
+        assert_eq!(cnt, 199, "Cannot get global residue id of atom");
+
+        traj.molecule_name_of_particle_nr_get(0, MAX_STR_LEN)
+            .unwrap();
+
+        traj.chain_name_of_particle_nr_get(0, MAX_STR_LEN).unwrap();
+
+        traj.residue_name_of_particle_nr_get(0, MAX_STR_LEN)
+            .unwrap();
+
+        traj.atom_name_of_particle_nr_get(0, MAX_STR_LEN).unwrap();
+        // ==========================
 
         // ==========================
     }
@@ -537,18 +612,6 @@ mod integration {
 
         // global_residue_id_of_particle_nr_get
         assert_eq!(traj.global_residue_id_of_particle_nr_get(599), Some(199));
-
-        // molecule_name_of_particle_nr_get
-        assert_eq!(traj.molecule_name_of_particle_nr_get(0), "water");
-
-        // chain_name_of_particle_nr_get
-        assert_eq!(traj.chain_name_of_particle_nr_get(0), "W");
-
-        // residue_name_of_particle_nr_get
-        assert_eq!(traj.residue_name_of_particle_nr_get(0), "WAT");
-
-        // atom_name_of_particle_nr_get
-        assert_eq!(traj.atom_name_of_particle_nr_get(0), "O");
 
         // molecule_alloc
         let mut molecule = Molecule::new();
