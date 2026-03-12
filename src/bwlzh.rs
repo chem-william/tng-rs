@@ -131,7 +131,10 @@ pub(crate) fn bwlzh_compress_gen(
                         *dst = src as u32;
                     }
                     noffsets = lz77_result.offsets.len();
-                    for (dst, &src) in offsets[..noffsets].iter_mut().zip(lz77_result.offsets.iter()) {
+                    for (dst, &src) in offsets[..noffsets]
+                        .iter_mut()
+                        .zip(lz77_result.offsets.iter())
+                    {
                         *dst = src as u32;
                     }
 
@@ -241,7 +244,10 @@ pub(crate) fn bwlzh_compress_gen(
                             // Store the huffman block
                             output[outdata
                                 ..outdata + usize::try_from(bwlzhhufflen).expect("usize from i32")]
-                                .copy_from_slice(&bwlzhhuff[..usize::try_from(bwlzhhufflen).expect("usize from i32")]);
+                                .copy_from_slice(
+                                    &bwlzhhuff
+                                        [..usize::try_from(bwlzhhufflen).expect("usize from i32")],
+                                );
                             outdata += usize::try_from(bwlzhhufflen).expect("usize from i32");
                         } else {
                             output[outdata] = 1;

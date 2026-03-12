@@ -9,10 +9,7 @@ fn init_logger() {
     });
 }
 
-use crate::{
-    bwlzh::ptngc_comp_conv_to_vals16,
-    ffi,
-};
+use crate::{bwlzh::ptngc_comp_conv_to_vals16, ffi};
 
 #[test]
 fn single_small_values() {

@@ -109,7 +109,6 @@ fn triplet() {
     assert_eq!(rust_output[..rust_output_length], c_output);
 }
 
-
 #[test]
 fn bwlzh1_low_speed() {
     let input = vec![5, -10, 42, -7, 0, -999];

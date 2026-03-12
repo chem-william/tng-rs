@@ -50,13 +50,11 @@ impl Molecule {
     /// This is exposed on [`Molecule`] rather than [`crate::trajectory::Trajectory`]
     /// because the molecule owns its chains in the Rust model.
     pub fn chain_find(&self, name: &str, id: i64) -> Option<&Chain> {
-        let chain_out = self.chains.iter().rev().find(|chain| {
+        self.chains.iter().rev().find(|chain| {
             let name_match = name.is_empty() || chain.name == name;
             let id_match = id == -1 || chain.id as i64 == id;
             name_match && id_match
-        });
-
-        chain_out
+        })
     }
 
     /// C API: `tng_molecule_atom_find`.
@@ -64,24 +62,20 @@ impl Molecule {
     /// This is exposed on [`Molecule`] rather than [`crate::trajectory::Trajectory`]
     /// because the molecule owns its atoms in the Rust model.
     pub fn atom_find(&self, name: &str, id: i64) -> Option<&Atom> {
-        let atom_out = self.atoms.iter().rev().find(|atom| {
+        self.atoms.iter().rev().find(|atom| {
             let name_match = name.is_empty() || atom.name == name;
             let id_match = id == -1 || atom.id == id;
             name_match && id_match
-        });
-
-        atom_out
+        })
     }
 
     /// No direct C equivalent. Closest C API: `tng_chain_residue_find`.
     pub fn residue_find(&self, name: &str, id: i64) -> Option<&Residue> {
-        let residue_out = self.residues.iter().rev().find(|residue| {
+        self.residues.iter().rev().find(|residue| {
             let name_match = name.is_empty() || residue.name == name;
             let id_match = id == -1 || residue.id as i64 == id;
             name_match && id_match
-        });
-
-        residue_out
+        })
     }
 
     /// C API: `tng_residue_atom_of_index_get`.

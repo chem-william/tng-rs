@@ -5251,7 +5251,9 @@ impl Trajectory {
 
         if self.block_header_read(&mut block).is_err() {
             self.input_file = temp;
-            return Err(TngError::Critical("Cannot read general info header.".to_string()));
+            return Err(TngError::Critical(
+                "Cannot read general info header.".to_string(),
+            ));
         };
 
         let output_file = self
@@ -5499,9 +5501,10 @@ impl Trajectory {
 
         for atom in &mut mol.atoms {
             if let Some(ri) = atom.residue_index
-                && ri >= insert_pos {
-                    atom.residue_index = Some(ri + 1);
-                }
+                && ri >= insert_pos
+            {
+                atom.residue_index = Some(ri + 1);
+            }
         }
 
         mol.n_residues += 1;
