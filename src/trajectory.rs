@@ -2182,7 +2182,7 @@ impl Trajectory {
                     let mut floats = Vec::new();
                     for chunk in data.chunks_exact(4) {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
-                        floats.push(f32::from_le_bytes(arr));
+                        floats.push(f32::from_ne_bytes(arr));
                     }
 
                     tng_compress_pos_float(
@@ -2200,7 +2200,7 @@ impl Trajectory {
                             chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
                             chunk[7],
                         ];
-                        doubles.push(f64::from_le_bytes(arr));
+                        doubles.push(f64::from_ne_bytes(arr));
                     }
                     tng_compress_pos(
                         &doubles,
@@ -2249,7 +2249,7 @@ impl Trajectory {
                     let mut floats = Vec::new();
                     for chunk in data.chunks_exact(4) {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
-                        floats.push(f32::from_le_bytes(arr));
+                        floats.push(f32::from_ne_bytes(arr));
                     }
 
                     let mut return_dest = tng_compress_pos_float(
@@ -2278,7 +2278,7 @@ impl Trajectory {
                             chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
                             chunk[7],
                         ];
-                        doubles.push(f64::from_le_bytes(arr));
+                        doubles.push(f64::from_ne_bytes(arr));
                     }
                     let mut return_dest = tng_compress_pos(
                         &doubles,
@@ -2306,7 +2306,7 @@ impl Trajectory {
                     let mut floats = Vec::new();
                     for chunk in data.chunks_exact(4) {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
-                        floats.push(f32::from_le_bytes(arr));
+                        floats.push(f32::from_ne_bytes(arr));
                     }
                     tng_compress_vel_float(
                         &floats,
@@ -2323,7 +2323,7 @@ impl Trajectory {
                             chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
                             chunk[7],
                         ];
-                        doubles.push(f64::from_le_bytes(arr));
+                        doubles.push(f64::from_ne_bytes(arr));
                     }
                     tng_compress_vel(
                         &doubles,
@@ -2361,7 +2361,7 @@ impl Trajectory {
                     let mut floats = Vec::new();
                     for chunk in data.chunks_exact(4) {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
-                        floats.push(f32::from_le_bytes(arr));
+                        floats.push(f32::from_ne_bytes(arr));
                     }
                     tng_compress_vel_float(
                         &floats,
@@ -2378,7 +2378,7 @@ impl Trajectory {
                             chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
                             chunk[7],
                         ];
-                        doubles.push(f64::from_le_bytes(arr));
+                        doubles.push(f64::from_ne_bytes(arr));
                     }
                     tng_compress_vel(
                         &doubles,
@@ -2417,7 +2417,7 @@ impl Trajectory {
                     let mut floats = Vec::new();
                     for chunk in data.chunks_exact(4) {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
-                        floats.push(f32::from_le_bytes(arr));
+                        floats.push(f32::from_ne_bytes(arr));
                     }
                     let mut return_dest = tng_compress_vel_float(
                         &floats,
@@ -2445,7 +2445,7 @@ impl Trajectory {
                             chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
                             chunk[7],
                         ];
-                        doubles.push(f64::from_le_bytes(arr));
+                        doubles.push(f64::from_ne_bytes(arr));
                     }
                     let mut return_dest = tng_compress_vel(
                         &doubles,
@@ -2472,7 +2472,7 @@ impl Trajectory {
                     let mut floats = Vec::new();
                     for chunk in data.chunks_exact(4) {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
-                        floats.push(f32::from_le_bytes(arr));
+                        floats.push(f32::from_ne_bytes(arr));
                     }
                     tng_compress_vel_float(
                         &floats,
@@ -2489,7 +2489,7 @@ impl Trajectory {
                             chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
                             chunk[7],
                         ];
-                        doubles.push(f64::from_le_bytes(arr));
+                        doubles.push(f64::from_ne_bytes(arr));
                     }
                     tng_compress_vel(
                         &doubles,
@@ -3974,21 +3974,21 @@ impl Trajectory {
                 .chunks_exact(8)
                 .map(|chunk| {
                     let arr = <[u8; 8]>::try_from(chunk).expect("Chunk should be 8 bytes");
-                    i64::from_le_bytes(arr) as f64
+                    i64::from_ne_bytes(arr) as f64
                 })
                 .collect(),
             DataType::Float => values
                 .chunks_exact(4)
                 .map(|chunk| {
                     let arr = <[u8; 4]>::try_from(chunk).expect("Chunk should be 4 bytes");
-                    f32::from_le_bytes(arr) as f64
+                    f32::from_ne_bytes(arr) as f64
                 })
                 .collect(),
             DataType::Double => values
                 .chunks_exact(8)
                 .map(|chunk| {
                     let arr = <[u8; 8]>::try_from(chunk).expect("Chunk should be 8 bytes");
-                    f64::from_le_bytes(arr)
+                    f64::from_ne_bytes(arr)
                 })
                 .collect(),
         };

@@ -181,7 +181,7 @@ mod integration {
         box_shape[0] = BOX_SHAPE_X;
         box_shape[4] = BOX_SHAPE_Y;
         box_shape[8] = BOX_SHAPE_Z;
-        let bytes: Vec<_> = box_shape.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let bytes: Vec<_> = box_shape.iter().flat_map(|f| f.to_ne_bytes()).collect();
         traj.add_data_block(
             BlockID::TrajBoxShape,
             "BOX SHAPE",
@@ -213,7 +213,7 @@ mod integration {
 
         let charges_bytes: Vec<_> = charges
             .iter()
-            .flat_map(|&f: &f32| f.to_le_bytes())
+            .flat_map(|&f: &f32| f.to_ne_bytes())
             .collect();
         traj.particle_data_block_add(
             BlockID::TrajPartialCharges,
@@ -244,7 +244,7 @@ mod integration {
             }
         }
 
-        let masses_bytes: Vec<_> = masses.iter().flat_map(|&f: &f32| f.to_le_bytes()).collect();
+        let masses_bytes: Vec<_> = masses.iter().flat_map(|&f: &f32| f.to_ne_bytes()).collect();
         traj.particle_data_block_add(
             BlockID::TrajMasses,
             "ATOM MASSES",
@@ -335,7 +335,7 @@ mod integration {
 
             let data_bytes: Vec<_> = data
                 .iter()
-                .flat_map(|&f: &f64| (f as f32).to_le_bytes())
+                .flat_map(|&f: &f64| (f as f32).to_ne_bytes())
                 .collect();
             traj.particle_data_block_add(
                 BlockID::TrajPositions,
@@ -369,7 +369,7 @@ mod integration {
             traj.particle_mapping_add(450, 150, &mapping).unwrap();
 
             // Add the positions in a data block
-            let data_bytes: Vec<_> = data.iter().flat_map(|&f: &f64| f.to_le_bytes()).collect();
+            let data_bytes: Vec<_> = data.iter().flat_map(|&f: &f64| f.to_ne_bytes()).collect();
             traj.particle_data_block_add(
                 BlockID::TrajPositions,
                 "POSITIONS",
