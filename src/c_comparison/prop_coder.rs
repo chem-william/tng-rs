@@ -71,9 +71,10 @@ proptest! {
         // Range restricted so positive_int(v) < 2^31 for triplet encoder safety.
         // otherwise, an infinite loop gets triggered in the C code and the Rust code
         // overflows.
+        // Array sizes must be divisible by 3 (representing 3D atom coordinates).
         vals in prop_oneof![
             prop::collection::vec(-1_073_741i32..=1_073_741i32, 30),
-            prop::collection::vec(-1_073_741i32..=1_073_741i32, 100),
+            prop::collection::vec(-1_073_741i32..=1_073_741i32, 99),
         ]
     ) {
         // XTC3 base_compress has a heap buffer overflow in C: base_buf is allocated as
