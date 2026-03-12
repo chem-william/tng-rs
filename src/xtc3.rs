@@ -530,13 +530,19 @@ pub(crate) fn ptngc_pack_array_xtc3(
     }
 
     large_index[0] = ptngc_find_magic_index(
-        (xtc3_context.maxint[0].wrapping_sub(xtc3_context.minint[0]).wrapping_add(1)) as u32,
+        (xtc3_context.maxint[0]
+            .wrapping_sub(xtc3_context.minint[0])
+            .wrapping_add(1)) as u32,
     );
     large_index[1] = ptngc_find_magic_index(
-        (xtc3_context.maxint[1].wrapping_sub(xtc3_context.minint[1]).wrapping_add(1)) as u32,
+        (xtc3_context.maxint[1]
+            .wrapping_sub(xtc3_context.minint[1])
+            .wrapping_add(1)) as u32,
     );
     large_index[2] = ptngc_find_magic_index(
-        (xtc3_context.maxint[2].wrapping_sub(xtc3_context.minint[2]).wrapping_add(1)) as u32,
+        (xtc3_context.maxint[2]
+            .wrapping_sub(xtc3_context.minint[2])
+            .wrapping_add(1)) as u32,
     );
     let max_large_index = *large_index.iter().max().expect("large_index to be init");
 
