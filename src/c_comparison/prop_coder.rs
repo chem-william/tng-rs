@@ -1,5 +1,4 @@
 use crate::{
-    bwlzh::ptngc_comp_to_bwt,
     coder::Coder,
     compress::{
         TNG_COMPRESS_ALGO_BWLZH1, TNG_COMPRESS_ALGO_BWLZH2, TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA,

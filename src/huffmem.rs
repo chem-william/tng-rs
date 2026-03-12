@@ -69,7 +69,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
 
     // Algorithm 0 stores the huffman dictionary directly (+ a code for
     // the algorithm) + lengths of the huffman buffer (4) and the huffman dictionary (3).
-    huffman_lengths[0] = nhuff + nhuffdict + 1 * 2 + 3 * 4 + 3 + 3;
+    huffman_lengths[0] = nhuff + nhuffdict + 2 + 3 * 4 + 3 + 3;
 
     // Next we try to compress the huffman dictionary using huffman coding ... (algorithm 1)
 
@@ -94,7 +94,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
         &mut huffdictunpack1,
         &mut nhuffdictunpack1,
     );
-    huffman_lengths[1] = nhuff + nhuff1 + nhuffdict1 + 1 * 2 + 3 * 4 + 3 + 3 + 3 + 3 + 3;
+    huffman_lengths[1] = nhuff + nhuff1 + nhuffdict1 + 2 + 3 * 4 + 3 + 3 + 3 + 3 + 3;
 
     // ... and rle + huffman coding ... (algorithm 2) Pack any repetitive patterns
     let huffdictrle = ptngc_comp_conv_to_rle(&huffdictunpack[..nhuffdictunpack], 1);
@@ -121,7 +121,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
         &mut nhuffdictunpack2,
     );
     let nhuffrle = huffdictrle.len();
-    huffman_lengths[2] = nhuff + nhuff2 + nhuffdict2 + 1 * 2 + 3 * 4 + 3 + 3 + 3 + 3 + 3 + 3;
+    huffman_lengths[2] = nhuff + nhuff2 + nhuffdict2 + 2 + 3 * 4 + 3 + 3 + 3 + 3 + 3 + 3;
 
     // Choose the best algorithm and output the data
     if (*chosen_algo == 0)

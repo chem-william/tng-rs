@@ -1891,12 +1891,12 @@ mod compress_quantized_pos {
     fn compress_pos() {
         let pos = [0.0, 0.0, 0.0];
         let mut algo = [-1, -1, -1, -1];
-        let nitmes = -1;
+        let _nitmes = -1;
 
         let result = tng_compress_pos(&pos, 1, 1, 1e-6, 1, &mut algo).unwrap();
         println!("{:?}", &result[..45]);
         println!("{:?}", result.len());
-        let expected = [
+        let _expected = [
             84, 78, 71, 80, 1, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             -58, 16, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0,
         ];

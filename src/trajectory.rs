@@ -748,7 +748,7 @@ impl Trajectory {
                 .expect("u64 from usize");
 
         // TODO: hash mode
-        let header_file_pos = self
+        let _header_file_pos = self
             .output_file
             .as_mut()
             .expect("init output_file")
@@ -1011,7 +1011,7 @@ impl Trajectory {
     }
 
     /// Read the meta information of a data block (particle or non-particle data).
-    fn data_block_meta_information_read(&mut self, block: &mut GenBlock) -> BlockMetaInfo {
+    fn data_block_meta_information_read(&mut self, _block: &mut GenBlock) -> BlockMetaInfo {
         let mut block_meta_info = BlockMetaInfo::default();
         let inp_file = self.input_file.as_mut().expect("init input_file");
 
@@ -1195,7 +1195,7 @@ impl Trajectory {
                 // - InvalidData    → data corrupt (Z_DATA_ERROR)
                 // - Other I/O errs → generic uncompress error
                 eprintln!("{}", e);
-                return Err(());
+                Err(())
                 // match e.kind() {
                 //     io::ErrorKind::UnexpectedEof => {
                 //         eprintln!("TNG library: Destination buffer too small. ");
@@ -1787,7 +1787,7 @@ impl Trajectory {
         block.name = Some("GENERAL INFO".to_string());
         block.id = BlockID::GeneralInfo;
         block.block_contents_size = self.general_info_block_len_calculate();
-        let header_file_pos = 0;
+        let _header_file_pos = 0;
         self.block_header_write(&mut block);
 
         // TODO: HASH
@@ -2014,7 +2014,7 @@ impl Trajectory {
         block.block_contents_size = self.frame_set_block_len_calculate();
 
         // TODO: hash mode - headeR_file_pos is only used for hash mode
-        let header_file_pos = self
+        let _header_file_pos = self
             .output_file
             .as_mut()
             .expect("init output_file")
@@ -2174,7 +2174,7 @@ impl Trajectory {
                 // they will be determined in tng_compress_pos/_float/
                 dest = if *data_type == DataType::Float {
                     debug_assert!(
-                        data.len() % 4 == 0,
+                        data.len().is_multiple_of(4),
                         "Float‐branch: data_bytes.len() must be exactly count * 4"
                     );
 
@@ -2602,7 +2602,7 @@ impl Trajectory {
                 data_mut.first_frame_with_data - self.current_trajectory_frame_set.first_frame;
         }
 
-        let mut frame_step = (n_frames - 1) / stride_length + 1;
+        let frame_step = (n_frames - 1) / stride_length + 1;
 
         let compression_precision = self.compression_precision;
         match data_mut.codec_id {
@@ -3165,7 +3165,7 @@ impl Trajectory {
                 ))
                 .expect("no error handling");
             self.block_header_read(&mut block);
-            let contents_start_pos = self.get_output_file_position();
+            let _contents_start_pos = self.get_output_file_position();
 
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file
@@ -3201,7 +3201,7 @@ impl Trajectory {
                 .expect("no error handling");
             self.block_header_read(&mut block);
 
-            let contents_start_pos = self.get_output_file_position();
+            let _contents_start_pos = self.get_output_file_position();
 
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file
@@ -3242,7 +3242,7 @@ impl Trajectory {
                 ))
                 .expect("no error handling");
             self.block_header_read(&mut block);
-            let contents_start_pos = self.get_output_file_position();
+            let _contents_start_pos = self.get_output_file_position();
 
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file
@@ -3333,7 +3333,7 @@ impl Trajectory {
                 .seek(SeekFrom::Current(
                     i64::try_from(
                         block.block_contents_size
-                            - u64::try_from(1 * size_of::<i64>() + 2 * size_of::<f64>())
+                            - u64::try_from(size_of::<i64>() + 2 * size_of::<f64>())
                                 .expect("u64 from usize"),
                     )
                     .expect("i64 from u64"),
@@ -5251,9 +5251,7 @@ impl Trajectory {
 
         if self.block_header_read(&mut block).is_err() {
             self.input_file = temp;
-            return Err(TngError::Critical(format!(
-                "Cannot read general info header."
-            )));
+            return Err(TngError::Critical("Cannot read general info header.".to_string()));
         };
 
         let output_file = self
@@ -5262,7 +5260,7 @@ impl Trajectory {
             .expect("just initialized output file");
 
         // TODO: hash mode
-        let contents_start_pos = output_file.stream_position().expect("no error handling");
+        let _contents_start_pos = output_file.stream_position().expect("no error handling");
         output_file
             .seek(SeekFrom::Current(
                 i64::try_from(
@@ -5500,11 +5498,10 @@ impl Trajectory {
         }
 
         for atom in &mut mol.atoms {
-            if let Some(ri) = atom.residue_index {
-                if ri >= insert_pos {
+            if let Some(ri) = atom.residue_index
+                && ri >= insert_pos {
                     atom.residue_index = Some(ri + 1);
                 }
-            }
         }
 
         mol.n_residues += 1;
@@ -5695,7 +5692,7 @@ impl Trajectory {
         }
 
         // If data values are supplied add that data to the data block
-        if let Some(ref new_data) = new_data {
+        if let Some(new_data) = new_data {
             // Allocate memory
             if is_particle_data {
                 data.allocate_particle_data_mem(

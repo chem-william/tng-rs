@@ -1,5 +1,5 @@
 use crate::{
-    bwlzh::{bwt_sort, inverse_bwt, ptngc_comp_to_bwt},
+    bwlzh::{inverse_bwt, ptngc_comp_to_bwt},
     ffi,
 };
 use proptest::prelude::*;

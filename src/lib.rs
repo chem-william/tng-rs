@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use rand::RngExt;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -164,11 +163,11 @@ mod integration {
         let mol_idx = traj.add_molecule("water");
         let chain_idx = traj.add_chain(mol_idx, "W");
         let residue_idx = traj.add_chain_residue(mol_idx, chain_idx, "WAT");
-        let o_idx = traj.add_residue_atom(mol_idx, residue_idx, "O", "O");
-        let h1_idx = traj.add_residue_atom(mol_idx, residue_idx, "HO1", "H");
-        let h2_idx = traj.add_residue_atom(mol_idx, residue_idx, "HO2", "H");
-        let bond_idx = traj.add_molecule_bond(mol_idx, 0, 1);
-        let bond_idx = traj.add_molecule_bond(mol_idx, 0, 2);
+        let _o_idx = traj.add_residue_atom(mol_idx, residue_idx, "O", "O");
+        let _h1_idx = traj.add_residue_atom(mol_idx, residue_idx, "HO1", "H");
+        let _h2_idx = traj.add_residue_atom(mol_idx, residue_idx, "HO2", "H");
+        let _bond_idx = traj.add_molecule_bond(mol_idx, 0, 1);
+        let _bond_idx = traj.add_molecule_bond(mol_idx, 0, 2);
 
         traj.set_molecule_cnt(mol_idx, 200);
         let count = traj.get_molecule_cnt(mol_idx);
@@ -239,7 +238,7 @@ mod integration {
             // 1.00800.
             match atom_type.chars().next().unwrap() {
                 'O' => masses[i as usize] = 16.00000,
-                'H' => masses[i as usize] = 1.008000,
+                'H' => masses[i as usize] = 1.008,
                 _ => unreachable!("failed to set partial charges"),
             }
         }
@@ -305,7 +304,7 @@ mod integration {
                 Compression::TNG
             };
 
-            for j in 0..n_frames_per_frame_set {
+            for _j in 0..n_frames_per_frame_set {
                 for k in 0..tot_n_mols {
                     let nr = k * 3;
                     // Move -1 to 1

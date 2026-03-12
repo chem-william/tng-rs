@@ -10,7 +10,7 @@ fn init_logger() {
 }
 
 use crate::{
-    bwlzh::{ptngc_comp_conv_from_vals16, ptngc_comp_conv_to_vals16},
+    bwlzh::ptngc_comp_conv_to_vals16,
     ffi,
 };
 
@@ -221,7 +221,7 @@ fn compression_efficiency() {
         (0x40000000, 3), // Large 3-chunk value -> 3 chunks
     ];
 
-    for (val, expected_chunks) in test_cases {
+    for (val, _expected_chunks) in test_cases {
         let vals = [val];
         let mut rust_vals16 = [0u32; 10];
 
