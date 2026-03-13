@@ -94,72 +94,8 @@ mod integration {
 
     const USE_HASH: bool = false;
 
-    #[test]
-    fn can_we_init_traj_with_time() {
-        let traj = Trajectory::new();
-        assert!(traj.time > 100);
-    }
-
-    // This is the main() test of src/tests/tng_io_testing.c
-    #[test]
-    fn test_read_write() {
-        let mut input_filename = std::env::current_dir().expect("able to get current working dir");
-        let mut output_filename = input_filename.clone();
-        input_filename.push(TEST_FILES_DIR);
-        input_filename.push("tng_example.tng");
-        output_filename.push(TEST_FILES_DIR);
-        output_filename.push("tng_example_out.tng");
-
-        let mut traj = Trajectory::new();
-
-        // Tell the library which files to open
-        traj.set_input_file(input_filename.as_path());
-        traj.set_output_file(output_filename.as_path());
-
-        // test_read_and_write_file
-        assert_eq!(traj.input_file_path, input_filename);
-        assert_eq!(traj.output_file_path, output_filename);
-
-        traj.file_headers_read(USE_HASH);
-        traj.file_headers_write(USE_HASH).unwrap();
-
-        while traj.frame_set_read_next().is_ok() {
-            traj.frame_set_write(USE_HASH).unwrap();
-        }
-        // ==========================
-
-        // test_get_box_data
-        let (box_data, _n_frames, _n_vpf, _dtype) = traj
-            .data_get(BlockID::TrajBoxShape)
-            .expect("Failed getting box shape");
-        assert!((box_data[0] - 50.0).abs() < 0.000001);
-        // ==========================
-
-        // tng_test_write_and_read_traj
-        // Use a fresh trajectory (matching C test structure)
-        let mut test_output = std::env::current_dir().expect("able to get current working dir");
-        test_output.push(TEST_FILES_DIR);
-        test_output.push("tng_test_out.tng");
-
-        let mut traj = Trajectory::new();
-        traj.set_output_file(test_output.as_path());
-
-        traj.set_medium_stride_length(MEDIUM_STRIDE_LEN).unwrap();
-        traj.set_long_stride_length(LONG_STRIDE_LEN).unwrap();
-
-        traj.set_first_user_name(USER_NAME);
-        traj.set_first_program_name(PROGRAM_NAME);
-        traj.set_first_computer_name(COMPUTER_NAME);
-        traj.set_forcefield_name(FORCEFIELD_NAME);
-
-        traj.compression_precision = COMPRESSION_PRECISION;
-
-        traj.distance_unit_exponential = DISTANCE_UNIT_EXPONENTIAL;
-
-        traj.set_time_per_frame(TIME_PER_FRAME).unwrap();
-
-        // Create molecules
-        // tng_test_setup_molecules
+    /// C API: tng_test_setup_molecules() in tng_io_testing.c:45
+    fn setup_molecules(traj: &mut Trajectory) {
         let mol_idx = traj.add_molecule("water");
         let chain_idx = traj.add_chain(mol_idx, "W");
         let residue_idx = traj.add_chain_residue(mol_idx, chain_idx, "WAT");
@@ -171,276 +107,11 @@ mod integration {
 
         traj.set_molecule_cnt(mol_idx, 200);
         let count = traj.get_molecule_cnt(mol_idx);
-
         assert_eq!(count, 200);
-        // ==========================
+    }
 
-        // Set the box shape
-        let mut box_shape = [0.0; 9];
-        box_shape[0] = BOX_SHAPE_X;
-        box_shape[4] = BOX_SHAPE_Y;
-        box_shape[8] = BOX_SHAPE_Z;
-        let bytes: Vec<_> = box_shape.iter().flat_map(|f| f.to_ne_bytes()).collect();
-        traj.add_data_block(
-            BlockID::TrajBoxShape,
-            "BOX SHAPE",
-            DataType::Double,
-            false,
-            1,
-            9,
-            1,
-            crate::data::Compression::Uncompressed,
-            Some(&bytes),
-        )
-        .unwrap();
-
-        // Set the partial charges (treat the water as TIP3P)
-        let n_particles = traj.get_num_particles();
-        let mut charges = Vec::with_capacity(3);
-        for i in 0..n_particles {
-            let atom_type = traj.atom_type_of_particle_nr_get(i);
-
-            // We only have water in the system. If the atom is oxygen set its
-            // partial charge to -0.834, if it's a hydrogen set its partial charge to
-            // 0.417
-            match atom_type.chars().next().unwrap() {
-                'O' => charges[i as usize] = -0.834,
-                'H' => charges[i as usize] = 0.417,
-                _ => unreachable!("failed to set partial charges"),
-            }
-        }
-
-        let charges_bytes: Vec<_> = charges
-            .iter()
-            .flat_map(|&f: &f32| f.to_ne_bytes())
-            .collect();
-        traj.particle_data_block_add(
-            BlockID::TrajPartialCharges,
-            "PARTIAL CHARGES",
-            DataType::Float,
-            false,
-            1,
-            1,
-            1,
-            0,
-            n_particles,
-            crate::data::Compression::Uncompressed,
-            Some(&charges_bytes),
-        )
-        .unwrap();
-
-        // Set atom masses
-        let mut masses = Vec::new();
-        for i in 0..n_particles {
-            let atom_type = traj.atom_type_of_particle_nr_get(i);
-            // We only have water in the system. If the atom is oxygen set its
-            // mass to 16.00000, if it's a hydrogen set its mass to
-            // 1.00800.
-            match atom_type.chars().next().unwrap() {
-                'O' => masses[i as usize] = 16.00000,
-                'H' => masses[i as usize] = 1.008,
-                _ => unreachable!("failed to set partial charges"),
-            }
-        }
-
-        let masses_bytes: Vec<_> = masses.iter().flat_map(|&f: &f32| f.to_ne_bytes()).collect();
-        traj.particle_data_block_add(
-            BlockID::TrajMasses,
-            "ATOM MASSES",
-            DataType::Float,
-            false,
-            1,
-            1,
-            1,
-            0,
-            n_particles,
-            crate::data::Compression::GZip,
-            Some(&masses_bytes),
-        )
-        .unwrap();
-
-        // Create a custom annotation data block
-        let annotation =
-            "This trajectory was generated from tng_io_testing. It is not a real MD trajectory.";
-        traj.add_data_block(
-            BlockID::TrajGeneralComments,
-            "COMMENTS",
-            DataType::Char,
-            false,
-            1,
-            1,
-            1,
-            crate::data::Compression::Uncompressed,
-            Some(annotation.as_bytes()),
-        )
-        .expect("Failed adding details annotation data block");
-
-        // Write file headers (includes non trajectory data blocks)
-        traj.file_headers_write(USE_HASH).unwrap();
-
-        let n_frames_per_frame_set = traj.get_num_frames_per_frame_set();
-        let mut data =
-            Vec::with_capacity(usize::try_from(n_particles * n_frames_per_frame_set * 3).unwrap());
-
-        let tot_n_mols = traj.get_num_molecules();
-        // Set initial coordinates
-        let mut rng = rand::rng();
-        let mut molpos = vec![0.0; tot_n_mols * 3];
-        for i in 0..tot_n_mols {
-            let nr = i * 3;
-            // Somewhat random coordinates (between 0 and 100),
-            // but not specifiying a random seed.
-            molpos[nr] = 100.0 * rng.random_range(0.0..1.0);
-            molpos[nr + 1] = 100.0 * rng.random_range(0.0..1.0);
-            molpos[nr + 2] = 100.0 * rng.random_range(0.0..1.0);
-        }
-
-        // Generate frame sets - each with 100 frames (by default)
-        for i in 0..N_FRAME_SETS {
-            data.clear();
-            let codec_id = if i < N_FRAME_SETS / 2 {
-                Compression::GZip
-            } else {
-                Compression::TNG
-            };
-
-            for _j in 0..n_frames_per_frame_set {
-                for k in 0..tot_n_mols {
-                    let nr = k * 3;
-                    // Move -1 to 1
-                    molpos[nr] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
-                    molpos[nr + 1] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
-                    molpos[nr + 2] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
-
-                    data.push(molpos[nr]);
-                    data.push(molpos[nr + 1]);
-                    data.push(molpos[nr + 2]);
-
-                    data.push(molpos[nr] + 1.0);
-                    data.push(molpos[nr + 1] + 1.0);
-                    data.push(molpos[nr + 2] + 1.0);
-
-                    data.push(molpos[nr] - 1.0);
-                    data.push(molpos[nr + 1] - 1.0);
-                    data.push(molpos[nr + 2] - 1.0);
-                }
-            }
-            traj.frame_set_with_time_new(
-                i * n_frames_per_frame_set,
-                n_frames_per_frame_set,
-                2e-15f64 * (i * n_frames_per_frame_set) as f64,
-            )
-            .expect("error creating frame set");
-
-            let data_bytes: Vec<_> = data
-                .iter()
-                .flat_map(|&f: &f64| (f as f32).to_ne_bytes())
-                .collect();
-            traj.particle_data_block_add(
-                BlockID::TrajPositions,
-                "POSITIONS",
-                DataType::Float,
-                true,
-                n_frames_per_frame_set,
-                3,
-                1,
-                0,
-                n_particles,
-                codec_id,
-                Some(&data_bytes),
-            )
-            .expect("error adding position data block");
-
-            traj.frame_set_particle_mapping_free();
-
-            // Setup particle mapping. Use 4 different mapping blocks with arbitrary
-            // mappings.
-            let mapping: Vec<_> = (0..150).collect();
-            traj.particle_mapping_add(0, 150, &mapping).unwrap();
-
-            let mapping = mapping.iter().map(|k| 599 - k).collect::<Vec<_>>();
-            traj.particle_mapping_add(150, 150, &mapping).unwrap();
-
-            let mapping = mapping.iter().map(|k| k + 150).collect::<Vec<_>>();
-            traj.particle_mapping_add(300, 150, &mapping).unwrap();
-
-            let mapping = mapping.iter().map(|k| 449 - k).collect::<Vec<_>>();
-            traj.particle_mapping_add(450, 150, &mapping).unwrap();
-
-            // Add the positions in a data block
-            let data_bytes: Vec<_> = data.iter().flat_map(|&f: &f64| f.to_ne_bytes()).collect();
-            traj.particle_data_block_add(
-                BlockID::TrajPositions,
-                "POSITIONS",
-                DataType::Float,
-                true,
-                n_frames_per_frame_set,
-                3,
-                1,
-                0,
-                n_particles,
-                Compression::Uncompressed,
-                Some(&data_bytes),
-            )
-            .unwrap();
-
-            traj.frame_set_write(USE_HASH)
-                .expect("error writing frame set");
-            dbg!(i);
-        }
-
-        let mut traj = Trajectory::new();
-        traj.set_input_file(test_output.as_path());
-
-        traj.file_headers_read(USE_HASH);
-
-        let temp_str = traj.first_user_name_get(MAX_STR_LEN).unwrap();
-        assert_eq!(
-            USER_NAME, temp_str,
-            "User name does not match when reading written file"
-        );
-
-        let temp_str = traj.first_program_name_get(MAX_STR_LEN).unwrap();
-        assert_eq!(
-            PROGRAM_NAME, temp_str,
-            "Program name does not match when reading written file"
-        );
-        let temp_str = traj.first_computer_name_get(MAX_STR_LEN).unwrap();
-        assert_eq!(
-            COMPUTER_NAME, temp_str,
-            "Computer name does not match when reading written file"
-        );
-
-        let temp_str = traj.forcefield_name_get(MAX_STR_LEN).unwrap();
-        assert_eq!(
-            FORCEFIELD_NAME, temp_str,
-            "Forcefield name does not match when reading written file"
-        );
-
-        let temp_int = traj.medium_stride_length_get();
-        assert_eq!(
-            MEDIUM_STRIDE_LEN, temp_int,
-            "Stride length does not match when reading written file"
-        );
-
-        let temp_int = traj.long_stride_length_get();
-        assert_eq!(
-            LONG_STRIDE_LEN, temp_int,
-            "Stride length does not match when reading written file"
-        );
-
-        let temp_double = traj.compression_precision_get();
-        assert_eq!(
-            COMPRESSION_PRECISION, temp_double,
-            "Compression precision does not match when reading written file"
-        );
-
-        let temp_int = traj.distance_unit_exponential_get();
-        assert_eq!(
-            DISTANCE_UNIT_EXPONENTIAL, temp_int,
-            "Distance unit exponential does not match when reading written file"
-        );
-        // tng_test_molecules
+    /// C API: tng_test_molecules() in tng_io_testing.c:141
+    fn check_molecules(traj: &mut Trajectory) {
         let cnt = traj.num_molecules_types_get();
         assert_eq!(cnt, 1, "Molecule reading error");
 
@@ -514,118 +185,336 @@ mod integration {
             .unwrap();
 
         traj.atom_name_of_particle_nr_get(0, MAX_STR_LEN).unwrap();
-        // ==========================
 
-        // ==========================
-    }
-
-    #[test]
-    fn it_works() {
-        let mut input_filename = std::env::current_dir().expect("able to get current working dir");
-        input_filename.push(TEST_FILES_DIR);
-        input_filename.push("tng_test.tng");
-        let mut traj = Trajectory::new();
-
-        // Tell the library which file to open
-        traj.set_input_file(input_filename.as_path());
-
-        // Read file headers
-        traj.file_headers_read(USE_HASH);
-
-        assert_eq!(traj.first_user_name, "USER 1");
-        assert_eq!(traj.first_program_name, "tng_testing");
-        assert_eq!(traj.first_computer_name, "Unknown computer");
-        assert_eq!(traj.forcefield_name, "No forcefield");
-        assert_eq!(traj.medium_stride_length, 5);
-        assert_eq!(traj.long_stride_length, 25);
-        assert_eq!(traj.compression_precision, 1000.0);
-        assert_eq!(traj.distance_unit_exponential, -9);
-
-        // Test molecule properties
-        assert_eq!(traj.n_molecules, 1);
-        assert_eq!(traj.molecule_cnt_list[0], 200);
-        assert!(!traj.var_num_atoms);
-        let molecule = &traj.molecules[0];
-
-        assert!(traj.find_molecule("water", -1).is_some());
-
-        assert_eq!(molecule.name, "water");
-
-        // num_chains_get
-        assert_eq!(molecule.n_chains, 1);
-
-        // chain_of_index_get
-        let _chain = &molecule.chains[0];
-
-        // chain_find
-        let chain = molecule
-            .chain_find("W", -1)
-            .expect("'W' chain to be present");
-
-        // num_residues_get
-        assert_eq!(molecule.n_residues, 1);
-
-        // residue_of_index_get
-        let _residue = &molecule.residues[0];
-
-        // num_atoms_get
-        assert_eq!(molecule.n_atoms, 3);
-
-        // atom_of_index_get
-        let _atom = &molecule.atoms[0];
-        molecule.atom_find("O", -1).expect("'O' to be present");
-
-        // chain_name_get
-        assert_eq!(&chain.name, "W");
-
-        // chain_num_residues_get
-        assert_eq!(chain.n_residues, 1);
-
-        // chain_residue_of_index_get
-        let _chain_residue = &molecule.residues[chain.residues_indices.0];
-
-        // chain_residue_find
-        let residue = molecule
-            .residue_find("WAT", -1)
-            .expect("residue on molecule");
-
-        // residue_name_get
-        assert_eq!(residue.name, "WAT");
-
-        // residue_num_atoms_get
-        assert_eq!(residue.n_atoms, 3);
-
-        // residue_atom_of_index_get
-        let atom_of_residue = molecule.residue_atom_of_index(0, residue);
-
-        // atom_name_get
-        assert_eq!(atom_of_residue.name, "O");
-
-        // atom_type_get
-        assert_eq!(atom_of_residue.atom_type, "O");
-
-        // molecule_id_of_particle_nr_get
-        assert_eq!(traj.molecule_id_of_particle_nr_get(0), Some(1));
-
-        // residue_id_of_particle_nr_get
-        assert_eq!(traj.residue_id_of_particle_nr_get(0), Some(0));
-
-        // global_residue_id_of_particle_nr_get
-        assert_eq!(traj.global_residue_id_of_particle_nr_get(599), Some(199));
-
-        // molecule_alloc
+        // tng_molecule_alloc + tng_molecule_name_set + tng_molecule_existing_add
         let mut molecule = Molecule::new();
         molecule.name = "TEST".to_string();
         traj.molecule_existing_add(molecule);
 
-        // molsystem_bonds_get
+        // tng_molsystem_bonds_get
         let (bonds, from_atoms, to_atoms) =
             traj.molsystem_bonds_get().expect("molsystem to have bonds");
         assert_eq!(bonds, 400);
         assert_eq!(from_atoms.len(), 400);
         assert_eq!(to_atoms.len(), 400);
+    }
 
-        // particle_data_get
+    /// C API: tng_test_read_and_write_file() in tng_io_testing.c:371
+    fn test_read_and_write_file(traj: &mut Trajectory) {
+        traj.file_headers_read(USE_HASH);
+        traj.file_headers_write(USE_HASH).unwrap();
+
+        while traj.frame_set_read_next().is_ok() {
+            traj.frame_set_write(USE_HASH).unwrap();
+        }
+    }
+
+    /// C API: tng_test_get_box_data() in tng_io_testing.c:926
+    fn test_get_box_data(traj: &mut Trajectory) {
+        let (box_data, _n_frames, _n_vpf, _dtype) = traj
+            .data_get(BlockID::TrajBoxShape)
+            .expect("Failed getting box shape");
+        // The X dimension in the example file is 50
+        assert!((box_data[0] - 50.0).abs() < 0.000001);
+    }
+
+    /// C API: tng_test_write_and_read_traj() in tng_io_testing.c:420
+    fn test_write_and_read_traj() -> Trajectory {
+        let mut test_output = std::env::current_dir().expect("able to get current working dir");
+        test_output.push(TEST_FILES_DIR);
+        test_output.push("tng_test_out.tng");
+
+        // === Write phase ===
+        {
+            let mut traj = Trajectory::new();
+            traj.set_output_file(test_output.as_path());
+
+            traj.set_medium_stride_length(MEDIUM_STRIDE_LEN).unwrap();
+            traj.set_long_stride_length(LONG_STRIDE_LEN).unwrap();
+
+            traj.set_first_user_name(USER_NAME);
+            traj.set_first_program_name(PROGRAM_NAME);
+            traj.set_first_computer_name(COMPUTER_NAME);
+            traj.set_forcefield_name(FORCEFIELD_NAME);
+
+            traj.compression_precision = COMPRESSION_PRECISION;
+            traj.distance_unit_exponential = DISTANCE_UNIT_EXPONENTIAL;
+            traj.set_time_per_frame(TIME_PER_FRAME).unwrap();
+
+            // Create molecules
+            setup_molecules(&mut traj);
+
+            // Set the box shape
+            let mut box_shape = [0.0; 9];
+            box_shape[0] = BOX_SHAPE_X;
+            box_shape[4] = BOX_SHAPE_Y;
+            box_shape[8] = BOX_SHAPE_Z;
+            let bytes: Vec<_> = box_shape.iter().flat_map(|f| f.to_ne_bytes()).collect();
+            traj.add_data_block(
+                BlockID::TrajBoxShape,
+                "BOX SHAPE",
+                DataType::Double,
+                false,
+                1,
+                9,
+                1,
+                Compression::Uncompressed,
+                Some(&bytes),
+            )
+            .unwrap();
+
+            // Set the partial charges (treat the water as TIP3P)
+            let n_particles = traj.get_num_particles();
+            let mut charges = Vec::with_capacity(3);
+            for i in 0..n_particles {
+                let atom_type = traj.atom_type_of_particle_nr_get(i);
+
+                // We only have water in the system. If the atom is oxygen set its
+                // partial charge to -0.834, if it's a hydrogen set its partial charge to
+                // 0.417
+                match atom_type.chars().next().unwrap() {
+                    'O' => charges[i as usize] = -0.834,
+                    'H' => charges[i as usize] = 0.417,
+                    _ => unreachable!("failed to set partial charges"),
+                }
+            }
+
+            let charges_bytes: Vec<_> = charges
+                .iter()
+                .flat_map(|&f: &f32| f.to_ne_bytes())
+                .collect();
+            traj.particle_data_block_add(
+                BlockID::TrajPartialCharges,
+                "PARTIAL CHARGES",
+                DataType::Float,
+                false,
+                1,
+                1,
+                1,
+                0,
+                n_particles,
+                Compression::Uncompressed,
+                Some(&charges_bytes),
+            )
+            .unwrap();
+
+            // Set atom masses
+            let mut masses = Vec::new();
+            for i in 0..n_particles {
+                let atom_type = traj.atom_type_of_particle_nr_get(i);
+                // We only have water in the system. If the atom is oxygen set its
+                // mass to 16.00000, if it's a hydrogen set its mass to
+                // 1.00800.
+                match atom_type.chars().next().unwrap() {
+                    'O' => masses[i as usize] = 16.00000,
+                    'H' => masses[i as usize] = 1.008,
+                    _ => unreachable!("failed to set atom masses"),
+                }
+            }
+
+            let masses_bytes: Vec<_> = masses.iter().flat_map(|&f: &f32| f.to_ne_bytes()).collect();
+            traj.particle_data_block_add(
+                BlockID::TrajMasses,
+                "ATOM MASSES",
+                DataType::Float,
+                false,
+                1,
+                1,
+                1,
+                0,
+                n_particles,
+                Compression::GZip,
+                Some(&masses_bytes),
+            )
+            .unwrap();
+
+            // Create a custom annotation data block
+            let annotation = "This trajectory was generated from tng_io_testing. It is not a real MD trajectory.";
+            traj.add_data_block(
+                BlockID::TrajGeneralComments,
+                "COMMENTS",
+                DataType::Char,
+                false,
+                1,
+                1,
+                1,
+                Compression::Uncompressed,
+                Some(annotation.as_bytes()),
+            )
+            .expect("Failed adding details annotation data block");
+
+            // Write file headers (includes non trajectory data blocks)
+            traj.file_headers_write(USE_HASH).unwrap();
+
+            let n_frames_per_frame_set = traj.get_num_frames_per_frame_set();
+            let mut data = Vec::with_capacity(
+                usize::try_from(n_particles * n_frames_per_frame_set * 3).unwrap(),
+            );
+
+            let tot_n_mols = traj.get_num_molecules();
+            // Set initial coordinates
+            let mut rng = rand::rng();
+            let mut molpos = vec![0.0; tot_n_mols * 3];
+            for i in 0..tot_n_mols {
+                let nr = i * 3;
+                // Somewhat random coordinates (between 0 and 100),
+                // but not specifiying a random seed.
+                molpos[nr] = 100.0 * rng.random_range(0.0..1.0);
+                molpos[nr + 1] = 100.0 * rng.random_range(0.0..1.0);
+                molpos[nr + 2] = 100.0 * rng.random_range(0.0..1.0);
+            }
+
+            // Generate frame sets - each with 100 frames (by default)
+            for i in 0..N_FRAME_SETS {
+                data.clear();
+                let codec_id = if i < N_FRAME_SETS / 2 {
+                    Compression::GZip
+                } else {
+                    Compression::TNG
+                };
+
+                for _j in 0..n_frames_per_frame_set {
+                    for k in 0..tot_n_mols {
+                        let nr = k * 3;
+                        // Move -1 to 1
+                        molpos[nr] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
+                        molpos[nr + 1] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
+                        molpos[nr + 2] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
+
+                        data.push(molpos[nr]);
+                        data.push(molpos[nr + 1]);
+                        data.push(molpos[nr + 2]);
+
+                        data.push(molpos[nr] + 1.0);
+                        data.push(molpos[nr + 1] + 1.0);
+                        data.push(molpos[nr + 2] + 1.0);
+
+                        data.push(molpos[nr] - 1.0);
+                        data.push(molpos[nr + 1] - 1.0);
+                        data.push(molpos[nr + 2] - 1.0);
+                    }
+                }
+                traj.frame_set_with_time_new(
+                    i * n_frames_per_frame_set,
+                    n_frames_per_frame_set,
+                    2e-15f64 * (i * n_frames_per_frame_set) as f64,
+                )
+                .expect("error creating frame set");
+
+                let data_bytes: Vec<_> = data
+                    .iter()
+                    .flat_map(|&f: &f64| (f as f32).to_ne_bytes())
+                    .collect();
+                traj.particle_data_block_add(
+                    BlockID::TrajPositions,
+                    "POSITIONS",
+                    DataType::Float,
+                    true,
+                    n_frames_per_frame_set,
+                    3,
+                    1,
+                    0,
+                    n_particles,
+                    codec_id,
+                    Some(&data_bytes),
+                )
+                .expect("error adding position data block");
+
+                traj.frame_set_particle_mapping_free();
+
+                // Setup particle mapping. Use 4 different mapping blocks with arbitrary
+                // mappings.
+                let mapping: Vec<_> = (0..150).collect();
+                traj.particle_mapping_add(0, 150, &mapping).unwrap();
+
+                let mapping = mapping.iter().map(|k| 599 - k).collect::<Vec<_>>();
+                traj.particle_mapping_add(150, 150, &mapping).unwrap();
+
+                let mapping = mapping.iter().map(|k| k + 150).collect::<Vec<_>>();
+                traj.particle_mapping_add(300, 150, &mapping).unwrap();
+
+                let mapping = mapping.iter().map(|k| 449 - k).collect::<Vec<_>>();
+                traj.particle_mapping_add(450, 150, &mapping).unwrap();
+
+                // Add the positions in a data block
+                let data_bytes: Vec<_> = data.iter().flat_map(|&f: &f64| f.to_ne_bytes()).collect();
+                traj.particle_data_block_add(
+                    BlockID::TrajPositions,
+                    "POSITIONS",
+                    DataType::Float,
+                    true,
+                    n_frames_per_frame_set,
+                    3,
+                    1,
+                    0,
+                    n_particles,
+                    Compression::Uncompressed,
+                    Some(&data_bytes),
+                )
+                .unwrap();
+
+                traj.frame_set_write(USE_HASH)
+                    .expect("error writing frame set");
+                dbg!(i);
+            }
+        } // write traj dropped here
+
+        // === Read-back phase (tng_io_testing.c:709-922) ===
+        let mut traj = Trajectory::new();
+        traj.set_input_file(test_output.as_path());
+
+        traj.file_headers_read(USE_HASH);
+
+        let temp_str = traj.first_user_name_get(MAX_STR_LEN).unwrap();
+        assert_eq!(
+            USER_NAME, temp_str,
+            "User name does not match when reading written file"
+        );
+
+        let temp_str = traj.first_program_name_get(MAX_STR_LEN).unwrap();
+        assert_eq!(
+            PROGRAM_NAME, temp_str,
+            "Program name does not match when reading written file"
+        );
+        let temp_str = traj.first_computer_name_get(MAX_STR_LEN).unwrap();
+        assert_eq!(
+            COMPUTER_NAME, temp_str,
+            "Computer name does not match when reading written file"
+        );
+
+        let temp_str = traj.forcefield_name_get(MAX_STR_LEN).unwrap();
+        assert_eq!(
+            FORCEFIELD_NAME, temp_str,
+            "Forcefield name does not match when reading written file"
+        );
+
+        let temp_int = traj.medium_stride_length_get();
+        assert_eq!(
+            MEDIUM_STRIDE_LEN, temp_int,
+            "Stride length does not match when reading written file"
+        );
+
+        let temp_int = traj.long_stride_length_get();
+        assert_eq!(
+            LONG_STRIDE_LEN, temp_int,
+            "Stride length does not match when reading written file"
+        );
+
+        let temp_double = traj.compression_precision_get();
+        assert_eq!(
+            COMPRESSION_PRECISION, temp_double,
+            "Compression precision does not match when reading written file"
+        );
+
+        let temp_int = traj.distance_unit_exponential_get();
+        assert_eq!(
+            DISTANCE_UNIT_EXPONENTIAL, temp_int,
+            "Distance unit exponential does not match when reading written file"
+        );
+
+        check_molecules(&mut traj);
+
+        // Validate masses (tng_io_testing.c:779-801)
         let (masses, _n_frames, _read_n_particles, _n_vpf, _dtype) = traj
             .particle_data_get(BlockID::TrajMasses)
             .expect("particle data");
@@ -638,6 +527,7 @@ mod integration {
         assert_approx_eq!(masses[1], 1.008);
         assert_approx_eq!(masses.last().unwrap(), 1.008);
 
+        // Read frame sets and validate prev/next file positions (tng_io_testing.c:804-842)
         let mut i = 0;
         loop {
             let result = traj.frame_set_read_next();
@@ -645,9 +535,7 @@ mod integration {
                 break;
             }
             let frame_set = &traj.current_trajectory_frame_set;
-            // temp_int
             let prev_frame_set_file_pos = frame_set.prev_frame_set_file_pos;
-            // temp_int2
             let next_frame_set_file_pos = frame_set.next_frame_set_file_pos;
 
             if i > 0 {
@@ -663,7 +551,7 @@ mod integration {
                     panic!("file position of next frame set not correct");
                 }
             } else if next_frame_set_file_pos != -1 {
-                panic!("file position of previouss next set not correct");
+                panic!("file position of next frame set not correct");
             }
             i += 1;
         }
@@ -673,8 +561,7 @@ mod integration {
         assert!(traj.frame_set_nr_find(N_FRAME_SETS * 3 / 10).is_ok());
         assert!(traj.frame_set_nr_find(N_FRAME_SETS * 3 / 4).is_ok());
 
-        // frame_set_get
-        // frame_set_frame_range_get
+        // frame_set_get / frame_set_frame_range_get
         let current_frame_set = &traj.current_trajectory_frame_set;
         let first_frame = current_frame_set.first_frame;
         assert_eq!(first_frame, 75 * traj.frame_set_n_frames);
@@ -703,109 +590,89 @@ mod integration {
         let result = traj.data_get_stride_length(BlockID::TrajPositions, 100);
         assert_eq!(result, Ok(1));
 
-        // // How many frames in the file?
-        // let mut tot_n_frames: i64 = 0;
-        // if tng_num_frames_get(&traj, &mut tot_n_frames) != TNG_SUCCESS {
-        //     eprintln!("Cannot determine the number of frames in the file");
-        //     tng_trajectory_destroy(traj);
-        //     exit(1);
-        // }
-        // println!("{} frames in file", tot_n_frames);
+        traj
+    }
 
-        // // Clamp last_frame
-        // if (last_frame as i64) > tot_n_frames - 1 {
-        //     last_frame = (tot_n_frames - 1) as i32;
-        // }
-        // let n_frames: i32 = last_frame - first_frame + 1;
+    /// C API: tng_test_get_positions_data() in tng_io_testing.c:953
+    /// TODO: Port from C
+    fn test_get_positions_data(_traj: &mut Trajectory) {
+        // TODO: port from tng_io_testing.c:953-1034
+        // - tng_particle_data_get for positions
+        // - validate n_values_per_frame == 3
+        // - validate all coordinates in range [-500, 500]
+        // - tng_particle_data_interval_get with invalid range (should fail)
+        // - tng_particle_data_interval_get with valid range
+        // - validate interval coordinates in range
+    }
 
-        // // Buffers for names (64 bytes each, zeroed)
-        // let mut atom_buf: [u8; 64] = [0; 64];
-        // let mut res_buf: [u8; 64] = [0; 64];
-        // let mut chain_buf: [u8; 64] = [0; 64];
+    /// C API: tng_test_utility_functions() in tng_io_testing.c:1036
+    /// TODO: Port from C
+    fn test_utility_functions(_traj: &mut Trajectory) {
+        // TODO: port from tng_io_testing.c:1036-1140
+        // - tng_util_trajectory_open (read mode)
+        // - tng_util_time_of_frame_get for frames 50 and 100
+        // - tng_util_num_frames_with_data_of_block_id_get
+        // - tng_util_pos_read_range
+        // - validate positions in range
+        // - tng_util_trajectory_next_frame_present_data_blocks_find
+        // - tng_util_frame_current_compression_get
+        // - tng_util_trajectory_close
+    }
 
-        // let got_atom = tng_atom_name_of_particle_nr_get(&traj, particle, &mut atom_buf);
-        // let got_res = tng_residue_name_of_particle_nr_get(&traj, particle, &mut res_buf);
-        // let got_chain = tng_chain_name_of_particle_nr_get(&traj, particle, &mut chain_buf);
+    /// C API: tng_test_append() in tng_io_testing.c:1143
+    /// TODO: Port from C
+    fn test_append(_traj: &mut Trajectory) {
+        // TODO: port from tng_io_testing.c:1143-1226
+        // - tng_util_trajectory_open (append mode)
+        // - set last_user_name, last_program_name, last_computer_name
+        // - tng_file_headers_write
+        // - tng_num_frames_get, tng_frame_set_of_frame_find
+        // - tng_util_vel_with_time_double_write
+        // - tng_util_trajectory_close
+    }
 
-        // if got_atom == TNG_SUCCESS && got_res == TNG_SUCCESS && got_chain == TNG_SUCCESS {
-        //     // Convert first null‐terminated segment of each buffer into a Rust &str
-        //     let atom_name = String::from_utf8_lossy(
-        //         &atom_buf[..atom_buf.iter().position(|&b| b == 0).unwrap_or(64)],
-        //     );
-        //     let res_name = String::from_utf8_lossy(
-        //         &res_buf[..res_buf.iter().position(|&b| b == 0).unwrap_or(64)],
-        //     );
-        //     let chain_name = String::from_utf8_lossy(
-        //         &chain_buf[..chain_buf.iter().position(|&b| b == 0).unwrap_or(64)],
-        //     );
-        //     println!("Particle: {} ({}: {})", atom_name, chain_name, res_name);
-        // } else {
-        //     println!("Particle name not found");
-        // }
+    /// C API: tng_test_copy_container() in tng_io_testing.c:1228
+    /// TODO: Port from C
+    fn test_copy_container(_traj: &mut Trajectory) {
+        // TODO: port from tng_io_testing.c:1228-1260
+        // - tng_util_trajectory_open (read mode)
+        // - tng_trajectory_init_from_src
+        // - tng_molecule_system_copy
+        // - close both trajectories
+    }
 
-        // // Prepare to receive a 3D Vec: frames × particles × values
-        // let mut positions: Vec<Vec<Vec<DataValues>>> = Vec::new();
-        // let mut n_particles: i64 = 0;
-        // let mut n_values_per_frame: i64 = 0;
-        // let mut data_type: char = '\0';
+    #[test]
+    fn tng_io_testing() {
+        // Test Read and write file (tng_io_testing.c:1296)
+        let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+        let mut output_filename = input_filename.clone();
+        input_filename.push(TEST_FILES_DIR);
+        input_filename.push("tng_example.tng");
+        output_filename.push(TEST_FILES_DIR);
+        output_filename.push("tng_example_out.tng");
 
-        // let rc = tng_particle_data_interval_get(
-        //     &traj,
-        //     TNG_TRAJ_POSITIONS,
-        //     first_frame,
-        //     last_frame,
-        //     TNG_USE_HASH,
-        //     &mut positions,
-        //     &mut n_particles,
-        //     &mut n_values_per_frame,
-        //     &mut data_type,
-        // );
+        let mut traj = Trajectory::new();
+        traj.set_input_file(input_filename.as_path());
+        traj.set_output_file(output_filename.as_path());
 
-        // if rc == TNG_SUCCESS {
-        //     if particle >= n_particles {
-        //         println!(
-        //             "Chosen particle out of range. Only {} particles in trajectory.",
-        //             n_particles
-        //         );
-        //     } else {
-        //         // For each frame, print the frame index + each value
-        //         for (frame_idx, frame_data) in positions.iter().enumerate() {
-        //             print!("{}", first_frame + frame_idx as i32);
-        //             // frame_data: Vec<Vec<DataValues>>, indexed by [particle][value_idx]
-        //             let particle_row = &frame_data[particle as usize];
-        //             for val in particle_row.iter() {
-        //                 match (data_type, val) {
-        //                     (TNG_INT_DATA, DataValues::Int(i)) => {
-        //                         print!("\t{}", i);
-        //                     }
-        //                     (TNG_FLOAT_DATA, DataValues::Float(f)) => {
-        //                         print!("\t{}", f);
-        //                     }
-        //                     (TNG_DOUBLE_DATA, DataValues::Double(d)) => {
-        //                         print!("\t{}", d);
-        //                     }
-        //                     _ => {}
-        //                 }
-        //                 println!();
-        //             }
-        //         }
-        //     }
-        // } else {
-        //     println!("Cannot read positions");
-        // }
+        test_read_and_write_file(&mut traj);
 
-        // // Free the positions memory
-        // if !positions.is_empty() {
-        //     tng_particle_data_values_free(
-        //         traj,
-        //         positions,
-        //         n_frames,
-        //         n_particles,
-        //         n_values_per_frame,
-        //         data_type,
-        //     );
-        // }
+        // tng_io_testing.c:1306
+        test_get_box_data(&mut traj);
 
-        // tng_trajectory_destroy(traj);
+        // tng_io_testing.c:1329
+        let mut traj = test_write_and_read_traj();
+
+        // tng_io_testing.c:1339
+        test_get_positions_data(&mut traj);
+
+        // TODO: tng_io_testing.c:1360
+        // test_utility_functions(&mut traj);
+
+        // TODO: tng_io_testing.c:1371
+        // test_append(&mut traj);
+
+        // TODO: tng_io_testing.c:1381
+        // test_copy_container(&mut traj);
     }
 }
