@@ -28,6 +28,7 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 
 const USE_HASH: bool = false;
+const SKIP_HASH: bool = false;
 
 fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
     let meta1 = file1.metadata()?;
@@ -585,7 +586,7 @@ impl Trajectory {
 
         block.version = utils::read_u64(inp_file, self.endianness64, self.input_swap64);
 
-        let new_pos = (start_pos as i128 + block.header_contents_size as i128)
+        let new_pos: u64 = (start_pos as i128 + block.header_contents_size as i128)
             .try_into()
             .expect("set new position when reading block header");
 
@@ -593,8 +594,11 @@ impl Trajectory {
             .as_ref()
             .expect("init input_file")
             .seek(SeekFrom::Start(new_pos))
-            // TODO
-            .expect("no error handling");
+            .map_err(|e| {
+                TngError::Critical(format!(
+                    "Cannot seek to position {new_pos} in block_header_read: {e}"
+                ))
+            })?;
         Ok(())
     }
 
@@ -607,7 +611,9 @@ impl Trajectory {
         let file_pos = start_pos - block.header_contents_size;
         self.current_trajectory_frame_set_input_file_pos =
             i64::try_from(file_pos).expect("u64 to i64");
-        // set_particle_mapping_free
+
+        self.frame_set_particle_mapping_free();
+
         let frame_set = &mut self.current_trajectory_frame_set;
         let inp_file = self.input_file.as_mut().expect("init input_file");
         frame_set.first_frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
@@ -719,6 +725,8 @@ impl Trajectory {
                 panic!()
             }
         }
+        self.current_trajectory_frame_set.mappings.push(mapping);
+
         self.input_file
             .as_ref()
             .expect("init input_file")
@@ -726,7 +734,7 @@ impl Trajectory {
             .expect("no error handling");
     }
 
-    /// WRite the atom mappings of the current trajectory frame set
+    /// Write the atom mappings of the current trajectory frame set
     /// `block` is a general block container
     /// `mapping_block_nr` is the index of the mapping block to write
     /// `hash_mode` is an option to decide whether to use the md5 hash or not
@@ -1531,7 +1539,7 @@ impl Trajectory {
     }
 
     /// Read one (the next) block (of any kind) from the input_file of [`Self`]
-    fn block_read_next(&mut self, block: &mut GenBlock) {
+    fn block_read_next(&mut self, block: &mut GenBlock, _hash_mode: bool) {
         match block.id {
             BlockID::TrajectoryFrameSet => self.frame_set_block_read(block),
             BlockID::ParticleMapping => self.trajectory_mapping_block_read(block),
@@ -1558,7 +1566,7 @@ impl Trajectory {
     }
 
     /// C API: `tng_file_headers_read`.
-    pub fn file_headers_read(&mut self, _hash_mode: bool) {
+    pub fn file_headers_read(&mut self, hash_mode: bool) {
         if self.input_file.is_some() {
             self.n_trajectory_frame_sets = 0;
 
@@ -1573,7 +1581,7 @@ impl Trajectory {
                 && block.id != BlockID::Unknown
                 && block.id != BlockID::TrajectoryFrameSet
             {
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, hash_mode);
                 prev_pos = self.get_input_file_position();
                 self.block_header_read(&mut block);
             }
@@ -3072,7 +3080,7 @@ impl Trajectory {
             panic!("Cannot read block header at pos {pos}");
         }
 
-        self.block_read_next(&mut block);
+        self.block_read_next(&mut block, SKIP_HASH);
 
         // Update `pos` if this is the earliest frame set so far (after `orig_pos`)
         if self.current_trajectory_frame_set_input_file_pos < pos
@@ -3878,7 +3886,7 @@ impl Trajectory {
         block_id: BlockID,
     ) -> Option<(Vec<f64>, i64, i64, i64, DataType)> {
         let (n_frames, n_particles, n_values_per_frame, data_type, values) =
-            self.gen_data_vector_get(true, block_id)?;
+            self.gen_data_get(true, block_id)?;
         Some((values, n_frames, n_particles, n_values_per_frame, data_type))
     }
 
@@ -3913,7 +3921,7 @@ impl Trajectory {
                 }
 
                 // Use hash by default (also TODO)
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, USE_HASH);
                 file_pos = self.get_input_file_position();
                 if file_pos < self.input_file_len {
                     self.block_header_read(&mut block);
@@ -4024,7 +4032,7 @@ impl Trajectory {
     ///
     /// Read one (the next) frame set, including particle mapping and related data blocks
     /// from the input_file of [`Self`]
-    pub fn frame_set_read_next(&mut self) -> Result<(), ()> {
+    pub fn frame_set_read_next(&mut self, hash_mode: bool) -> Result<(), ()> {
         self.input_file_init();
 
         let mut file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
@@ -4043,13 +4051,13 @@ impl Trajectory {
         } else {
             return Err(());
         }
-        self.frame_set_read()
+        self.frame_set_read(hash_mode)
         // Ok(())
     }
 
     /// Read one frame set, including all particle mapping blocks and data blocks, starting from
     /// the current file position
-    fn frame_set_read(&mut self) -> Result<(), ()> {
+    fn frame_set_read(&mut self, hash_mode: bool) -> Result<(), ()> {
         self.input_file_init();
         let mut file_pos = self.get_input_file_position();
         let mut block = GenBlock::new();
@@ -4065,7 +4073,7 @@ impl Trajectory {
             i64::try_from(file_pos).expect("u64 to i64");
 
         // TODO: make this fallible?
-        self.block_read_next(&mut block);
+        self.block_read_next(&mut block, hash_mode);
         if block.id != BlockID::Unknown {
             self.n_trajectory_frame_sets += 1;
             file_pos = self.get_input_file_position();
@@ -4080,7 +4088,7 @@ impl Trajectory {
                     BlockID::Unknown | BlockID::TrajectoryFrameSet => break,
                     _ => {}
                 }
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, hash_mode);
                 file_pos = self.get_input_file_position();
                 if file_pos < self.input_file_len {
                     self.block_header_read(&mut block);
@@ -4204,7 +4212,7 @@ impl Trajectory {
             panic!("cannot read block header at pos {file_pos}");
         }
 
-        self.block_read_next(&mut block);
+        self.block_read_next(&mut block, SKIP_HASH);
         count += 1;
 
         let long_stride_length = self.long_stride_length;
@@ -4231,7 +4239,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
             file_pos = self
                 .current_trajectory_frame_set
@@ -4258,7 +4266,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
             file_pos = self
                 .current_trajectory_frame_set
@@ -4282,7 +4290,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
 
             file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
@@ -4350,7 +4358,7 @@ impl Trajectory {
             panic!("cannot read block header at pos {file_pos}");
         }
 
-        self.block_read_next(&mut block);
+        self.block_read_next(&mut block, SKIP_HASH);
 
         if curr_nr == nr {
             return Ok(());
@@ -4380,7 +4388,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
                 if curr_nr == nr {
                     return Ok(());
                 }
@@ -4409,7 +4417,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
                 if curr_nr == nr {
                     return Ok(());
                 }
@@ -4435,7 +4443,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
                 if curr_nr == nr {
                     return Ok(());
                 }
@@ -4464,7 +4472,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
                 if curr_nr == nr {
                     return Ok(());
                 }
@@ -4493,7 +4501,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
                 if curr_nr == nr {
                     return Ok(());
                 }
@@ -4519,7 +4527,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
                 if curr_nr == nr {
                     return Ok(());
                 }
@@ -4546,7 +4554,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
                 if curr_nr == nr {
                     return Ok(());
                 }
@@ -4562,6 +4570,7 @@ impl Trajectory {
     /// particle mapping and data blocks matching the specified [`BlockID`]
     pub fn frame_set_read_current_only_data_from_block_id(
         &mut self,
+        hash_mode: bool,
         match_block_id: BlockID,
     ) -> Result<(), ()> {
         let mut found_flag = false;
@@ -4605,7 +4614,7 @@ impl Trajectory {
                 .expect("no error handling");
             // Otherwise read the frame set block
         } else {
-            self.block_read_next(&mut block);
+            self.block_read_next(&mut block, hash_mode);
         }
         file_pos = i64::try_from(self.get_input_file_position()).expect("i64 from u64");
 
@@ -4618,7 +4627,7 @@ impl Trajectory {
             && block.id != BlockID::Unknown
         {
             if block.id == match_block_id {
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, hash_mode);
                 file_pos = i64::try_from(self.get_input_file_position()).expect("i64 from u64");
                 found_flag = true;
                 if file_pos < i64::try_from(self.input_file_len).expect("i64 from u64") {
@@ -4659,6 +4668,7 @@ impl Trajectory {
     /// a specific block id from `input_file` of [`Self`]
     pub fn frame_set_read_next_only_data_from_block_id(
         &mut self,
+        hash_mode: bool,
         match_block_id: BlockID,
     ) -> Result<(), ()> {
         self.input_file_init();
@@ -4690,9 +4700,9 @@ impl Trajectory {
 
         self.current_trajectory_frame_set_input_file_pos = file_pos;
 
-        self.block_read_next(&mut block);
+        self.block_read_next(&mut block, hash_mode);
 
-        self.frame_set_read_current_only_data_from_block_id(match_block_id)
+        self.frame_set_read_current_only_data_from_block_id(hash_mode, match_block_id)
     }
 
     /// C API: `tng_data_block_name_get`.
@@ -4722,7 +4732,8 @@ impl Trajectory {
             if data_result.is_some() {
                 particle_block_data = false;
             } else {
-                let result = self.frame_set_read_current_only_data_from_block_id(match_block_id);
+                let result =
+                    self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id);
                 if result.is_err() {
                     return Err(());
                 }
@@ -4784,7 +4795,8 @@ impl Trajectory {
             if data_result.is_some() {
                 return Ok(FRAME_DEPENDENT);
             } else {
-                let result = self.frame_set_read_current_only_data_from_block_id(match_block_id);
+                let result =
+                    self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id);
                 if result.is_err() {
                     return Err(());
                 }
@@ -4832,7 +4844,8 @@ impl Trajectory {
             if let Some(data) = stat {
                 return Ok(data.n_values_per_frame);
             } else {
-                let stat = self.frame_set_read_current_only_data_from_block_id(match_block_id);
+                let stat =
+                    self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id);
                 if stat.is_err() {
                     return Err(());
                 }
@@ -4942,7 +4955,7 @@ impl Trajectory {
                 panic!("Cannot read block header at pos {file_pos}");
             }
 
-            self.block_read_next(&mut block);
+            self.block_read_next(&mut block, SKIP_HASH);
         }
 
         let frame_set = &self.current_trajectory_frame_set;
@@ -5006,7 +5019,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
         }
 
@@ -5042,7 +5055,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
 
             first_frame = max(self.current_trajectory_frame_set.first_frame, 0);
@@ -5075,7 +5088,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
 
             first_frame = max(self.current_trajectory_frame_set.first_frame, 0);
@@ -5103,7 +5116,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
 
             first_frame = max(self.current_trajectory_frame_set.first_frame, 0);
@@ -5136,7 +5149,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
 
             first_frame = max(self.current_trajectory_frame_set.first_frame, 0);
@@ -5169,7 +5182,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
 
             first_frame = max(self.current_trajectory_frame_set.first_frame, 0);
@@ -5197,7 +5210,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
 
             first_frame = max(self.current_trajectory_frame_set.first_frame, 0);
@@ -5226,7 +5239,7 @@ impl Trajectory {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
 
-                self.block_read_next(&mut block);
+                self.block_read_next(&mut block, SKIP_HASH);
             }
 
             first_frame = max(self.current_trajectory_frame_set.first_frame, 0);
@@ -5332,7 +5345,7 @@ impl Trajectory {
             panic!("Cannot read block header at pos {pos}");
         }
 
-        self.block_read_next(&mut block);
+        self.block_read_next(&mut block, SKIP_HASH);
     }
 
     /// C API: `tng_data_get_stride_length`.
@@ -5363,14 +5376,16 @@ impl Trajectory {
         if stat.is_none() {
             let stat = self.particle_data_find(match_block_id);
             if stat.is_none() {
-                let mut stat = self.frame_set_read_current_only_data_from_block_id(match_block_id);
+                let mut stat =
+                    self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id);
 
                 // If no specific frame was required read until this data block is found
                 if new_frame < 0 {
                     let mut file_pos = self.get_input_file_position();
 
                     while stat.is_err() && file_pos < self.input_file_len {
-                        stat = self.frame_set_read_next_only_data_from_block_id(match_block_id);
+                        stat = self
+                            .frame_set_read_next_only_data_from_block_id(USE_HASH, match_block_id);
                         file_pos = self.get_input_file_position();
                     }
                 }
@@ -5697,7 +5712,7 @@ impl Trajectory {
         let frame_set = &self.current_trajectory_frame_set;
         if block_type_flag && (n_frames > 1 || frame_set.n_frames == n_frames || stride_length > 1)
         {
-            data.dependency = FRAME_DEPENDENT;
+            data.dependency |= FRAME_DEPENDENT;
         }
         data.codec_id = codec_id;
         data.compression_multiplier = 1.0;
@@ -6495,5 +6510,13 @@ impl Trajectory {
         max_len: usize,
     ) -> Result<&'a str, TngError> {
         Self::validate_get_name_len(&atom.atom_type, "atom type", max_len)
+    }
+
+    fn gen_data_get(
+        &mut self,
+        is_particle_data: bool,
+        block_id: BlockID,
+    ) -> Option<(i64, i64, i64, DataType, Vec<f64>)> {
+        self.gen_data_vector_get(is_particle_data, block_id)
     }
 }

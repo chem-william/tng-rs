@@ -203,7 +203,7 @@ mod integration {
         traj.file_headers_read(USE_HASH);
         traj.file_headers_write(USE_HASH).unwrap();
 
-        while traj.frame_set_read_next().is_ok() {
+        while traj.frame_set_read_next(USE_HASH).is_ok() {
             traj.frame_set_write(USE_HASH).unwrap();
         }
     }
@@ -445,7 +445,6 @@ mod integration {
 
             traj.frame_set_write(USE_HASH)
                 .expect("error writing frame set");
-            dbg!(i);
         }
 
         // tng_io_testing.c:709-922
@@ -506,14 +505,12 @@ mod integration {
 
         check_molecules(&mut traj);
 
-        // TODO: The following checks match C's tng_test_write_and_read_traj
-        // (tng_io_testing.c:779-922) but are not yet working when reading back
-        // the Rust-written file. They DO work in read_c_generated_trajectory
-        // against the C-generated tng_test.tng fixture.
-        //
-        // Remaining to port:
-        // - particle_data_vector_get for masses (tng_io_testing.c:779-801)
-        // - frame set reading loop with prev/next validation (tng_io_testing.c:804-842)
+        // TODO: particle_data_vector_get for masses (tng_io_testing.c:779-801)
+
+        // Read all frame sets (tng_io_testing.c:804-842)
+        while traj.frame_set_read_next(USE_HASH).is_ok() {}
+
+        // TODO: remaining checks from tng_io_testing.c:844-922
         // - time_per_frame check
         // - frame_set_nr_find
         // - frame_set_read_current_only_data_from_block_id
@@ -526,7 +523,14 @@ mod integration {
 
     /// C API: tng_test_get_positions_data() in tng_io_testing.c:953
     /// TODO: Port from C
-    fn test_get_positions_data(_traj: &mut Trajectory) {
+    fn get_positions_data(traj: &mut Trajectory) {
+        let (values, n_frames, n_particles, n_values_per_frame, data_type) = traj
+            .particle_data_get(BlockID::TrajPositions)
+            .expect("failed getting particle positions");
+        assert_eq!(
+            n_values_per_frame, 3,
+            "Number of values per frame does not match expected value."
+        );
         // TODO: port from tng_io_testing.c:953-1034
         // - tng_particle_data_get for positions
         // - validate n_values_per_frame == 3
@@ -604,7 +608,7 @@ mod integration {
         let mut traj = test_write_and_read_traj(&mut traj);
 
         // tng_io_testing.c:1339
-        test_get_positions_data(&mut traj);
+        get_positions_data(&mut traj);
 
         // TODO: tng_io_testing.c:1360
         // test_utility_functions(&mut traj);
