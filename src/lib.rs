@@ -414,16 +414,17 @@ mod integration {
 
             // Setup particle mapping. Use 4 different mapping blocks with arbitrary
             // mappings.
-            let mapping: Vec<_> = (0..150).collect();
+            // C code rebuilds mapping array from scratch for each block
+            let mapping: Vec<i64> = (0..150).collect();
             traj.particle_mapping_add(0, 150, &mapping).unwrap();
 
-            let mapping = mapping.iter().map(|k| 599 - k).collect::<Vec<_>>();
+            let mapping: Vec<i64> = (0..150).map(|k| 599 - k).collect();
             traj.particle_mapping_add(150, 150, &mapping).unwrap();
 
-            let mapping = mapping.iter().map(|k| k + 150).collect::<Vec<_>>();
+            let mapping: Vec<i64> = (0..150).map(|k| k + 150).collect();
             traj.particle_mapping_add(300, 150, &mapping).unwrap();
 
-            let mapping = mapping.iter().map(|k| 449 - k).collect::<Vec<_>>();
+            let mapping: Vec<i64> = (0..150).map(|k| 449 - k).collect();
             traj.particle_mapping_add(450, 150, &mapping).unwrap();
 
             // Add the positions in a data block

@@ -1243,17 +1243,66 @@ impl Trajectory {
             false
         };
 
-        let maybe_data = if is_particle_data {
-            &mut self.particle_data_find(block.id)
-        } else {
-            &mut self.data_find(block.id)
-        };
-
         let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0;
 
+        // Use position-based lookup so we get a mutable reference into the
+        // actual vec, not a clone (the old `particle_data_find`/`data_find`
+        // returned clones, so writes to the found Data were lost).
+        enum FoundIn {
+            TrajVec(usize),
+            NonTrajVec(usize),
+        }
+
+        let found: Option<FoundIn> = if is_particle_data {
+            if is_traj_block {
+                self.current_trajectory_frame_set
+                    .tr_particle_data
+                    .iter()
+                    .position(|d| d.block_id == block.id)
+                    .map(FoundIn::TrajVec)
+            } else {
+                self.non_tr_particle_data
+                    .iter()
+                    .position(|d| d.block_id == block.id)
+                    .map(FoundIn::NonTrajVec)
+            }
+        } else if is_traj_block {
+            self.current_trajectory_frame_set
+                .tr_data
+                .iter()
+                .position(|d| d.block_id == block.id)
+                .map(FoundIn::TrajVec)
+                .or_else(|| {
+                    self.non_tr_data
+                        .iter()
+                        .position(|d| d.block_id == block.id)
+                        .map(FoundIn::NonTrajVec)
+                })
+        } else {
+            self.non_tr_data
+                .iter()
+                .position(|d| d.block_id == block.id)
+                .map(FoundIn::NonTrajVec)
+        };
+
         // If the block does not exist, create it
-        let data = if let Some(existing) = maybe_data {
-            existing
+        let data = if let Some(found_in) = found {
+            match found_in {
+                FoundIn::TrajVec(idx) => {
+                    if is_particle_data {
+                        &mut self.current_trajectory_frame_set.tr_particle_data[idx]
+                    } else {
+                        &mut self.current_trajectory_frame_set.tr_data[idx]
+                    }
+                }
+                FoundIn::NonTrajVec(idx) => {
+                    if is_particle_data {
+                        &mut self.non_tr_particle_data[idx]
+                    } else {
+                        &mut self.non_tr_data[idx]
+                    }
+                }
+            }
         } else {
             if is_particle_data {
                 self.particle_data_block_create(is_traj_block);
@@ -1398,7 +1447,7 @@ impl Trajectory {
                     let first_dim_values = &mut strings_3d[i as usize];
 
                     for j in meta_info.num_first_particle
-                        ..meta_info.num_first_particle + self.n_particles
+                        ..meta_info.num_first_particle + meta_info.block_n_particles
                     {
                         let second_dim_values = &mut first_dim_values[j as usize];
                         for k in 0..meta_info.n_values {
@@ -1696,10 +1745,11 @@ impl Trajectory {
         // in C, `char` is 1 byte, so in Rust we use `u8`
         length += size_of::<u8>() * 2;
         length += size_of_val(&data.n_values_per_frame);
-        length += size_of_val(&data.codec_id);
+        // codec_id is written as u64, not as Compression enum size
+        length += size_of::<u64>();
 
         if is_particle_data {
-            length += size_of_val(&num_first_particle)
+            length += size_of_val(&num_first_particle) + size_of_val(&n_particles);
         }
         if stride_length > 1 {
             length += size_of_val(&data.first_frame_with_data) + size_of_val(&data.stride_length);
@@ -3982,11 +4032,12 @@ impl Trajectory {
                         .particle_mapping_get_real_particle(frame_set, j)
                         .expect("from particle frame to real numbering");
 
-                    let src_base = ((i * n_values_per_frame + j * n_values_per_frame)
-                        * i64::try_from(size).expect("size to i64"))
+                    let size_i64 = i64::try_from(size).expect("size to i64");
+                    let src_base = ((i * n_particles + j) * n_values_per_frame
+                        * size_i64)
                         as usize;
-                    let dst_base = ((i * n_values_per_frame + mapping * n_values_per_frame)
-                        * i64::try_from(size).expect("size to i64"))
+                    let dst_base = ((i * n_particles + mapping) * n_values_per_frame
+                        * size_i64)
                         as usize;
 
                     values[dst_base..dst_base + byte_per_particle]
