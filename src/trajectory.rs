@@ -440,7 +440,7 @@ impl Trajectory {
 
     /// C API: `tng_num_particles_get`.
     pub fn get_num_particles(&self) -> i64 {
-        if self.var_num_atoms {
+        if !self.var_num_atoms {
             self.n_particles
         } else {
             self.current_trajectory_frame_set.n_particles
@@ -1164,12 +1164,11 @@ impl Trajectory {
 
     // We don't bother to estimate the max bound of the compression as Rust has dynamic arrays (Vec)
     // which C doesn't thus needing to pre-allocate the maximum amount.
-    fn gzip_compress(data: &[u8], len: usize) -> Result<usize, ()> {
+    fn gzip_compress(data: &[u8], len: usize) -> Result<Vec<u8>, ()> {
         let mut encoder = ZlibEncoder::new(Vec::with_capacity(len), flate2::Compression::default());
         encoder.write_all(data).map_err(|_| ())?;
 
-        let compressed = encoder.finish().map_err(|_| ())?;
-        Ok(compressed.len())
+        encoder.finish().map_err(|_| ())
     }
 
     fn gzip_uncompress(
@@ -2187,16 +2186,16 @@ impl Trajectory {
         n_particles: i64,
         data_type: &DataType,
         data: &[u8],
-    ) -> Result<i64, ()> {
+    ) -> Result<Vec<u8>, ()> {
         let dest;
 
         let mut algo_find_n_frames = -1;
-        if block.id != BlockID::TrajPositions || block.id != BlockID::TrajVelocities {
+        if block.id != BlockID::TrajPositions && block.id != BlockID::TrajVelocities {
             eprintln!("Can only compress positions and velocities with the TNG method");
             return Err(());
         }
 
-        if *data_type != DataType::Float || *data_type != DataType::Double {
+        if *data_type != DataType::Float && *data_type != DataType::Double {
             eprintln!("Data type not supported");
             return Err(());
         }
@@ -2215,7 +2214,7 @@ impl Trajectory {
             // the best one without storing it
             if n_frames == 1 && self.frame_set_n_frames > 1 {
                 let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                let mut alt_algo = vec![0; nalgo * size_of_val(&compress_algo_pos)];
+                let mut alt_algo = vec![0; nalgo];
 
                 // If we have already determined the initial coding and
                 // initial coding parameter do not determine them again
@@ -2272,29 +2271,24 @@ impl Trajectory {
 
                 // If there had been no algorithm determined before keep the initial coding
                 // and initial coding parameter so that they won't have to be determined again.
-                if !compress_algo_pos.is_empty() {
-                    let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                    *compress_algo_pos = vec![0; nalgo * size_of_val(compress_algo_pos)];
+                if compress_algo_pos.is_empty() {
+                    *compress_algo_pos = vec![0; nalgo];
                     compress_algo_pos[0] = alt_algo[0];
                     compress_algo_pos[1] = alt_algo[1];
                     compress_algo_pos[2] = -1;
                     compress_algo_pos[3] = -1;
                 }
             // TODO: is it a bug in the original code that it checks twice for the compress_algo_pos?
-            } else if !compress_algo_pos.is_empty()
+            } else if compress_algo_pos.is_empty()
                 || compress_algo_pos[2] == -1
                 || compress_algo_pos[2] == -1
             {
                 algo_find_n_frames = if n_frames > 6 { 5 } else { n_frames };
 
                 // If the algorithm parameters are -1 they will be determined during the compression.
-                if !compress_algo_pos.is_empty() {
+                if compress_algo_pos.is_empty() {
                     let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                    *compress_algo_pos = vec![0; nalgo * size_of_val(compress_algo_pos)];
-                    compress_algo_pos[0] = -1;
-                    compress_algo_pos[1] = -1;
-                    compress_algo_pos[2] = -1;
-                    compress_algo_pos[3] = -1;
+                    *compress_algo_pos = vec![-1; nalgo];
                 }
 
                 dest = if *data_type == DataType::Float {
@@ -2399,7 +2393,7 @@ impl Trajectory {
             // the best one without storing it
             if n_frames == 1 && self.frame_set_n_frames > 1 {
                 let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                let mut alt_algo = vec![0; nalgo * size_of_val(compress_algo_vel)];
+                let mut alt_algo = vec![0; nalgo];
 
                 // If we have already determined the initial coding and
                 // initial coding parameter do not determine them again
@@ -2441,7 +2435,7 @@ impl Trajectory {
                     tng_compress_vel(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
-                        usize::try_from(algo_find_n_frames).expect("usize from i64"),
+                        usize::try_from(n_frames).expect("usize from i64"),
                         d_precision,
                         0,
                         &mut alt_algo,
@@ -2450,8 +2444,7 @@ impl Trajectory {
                 // If there had been no algorithm determined before keep the initial coding
                 // and initial coding parameter so that they won't have to be determined again
                 if compress_algo_vel.is_empty() {
-                    let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                    *compress_algo_vel = vec![0; nalgo * size_of_val(compress_algo_vel)];
+                    *compress_algo_vel = vec![0; nalgo];
                     compress_algo_vel[0] = alt_algo[0];
                     compress_algo_vel[1] = alt_algo[1];
                     compress_algo_vel[2] = -1;
@@ -2467,7 +2460,7 @@ impl Trajectory {
                 // If the algorithm parameters are -1 they will be determined during the compression
                 if compress_algo_vel.is_empty() {
                     let nalgo = usize::try_from(tng_compress_nalgo()).expect("usize from u64");
-                    *compress_algo_vel = vec![-1; nalgo * size_of_val(compress_algo_vel)];
+                    *compress_algo_vel = vec![-1; nalgo];
                 }
 
                 dest = if *data_type == DataType::Float {
@@ -2564,7 +2557,7 @@ impl Trajectory {
             return Err(());
         }
 
-        Ok(i64::try_from(dest.unwrap().len()).expect("i64"))
+        dest.ok_or(())
     }
 
     fn tng_uncompress() {
@@ -2927,8 +2920,9 @@ impl Trajectory {
                         &cloned_data.data_type,
                         &contents,
                     ) {
-                        Ok(compressed_len) => {
-                            block_data_len = usize::try_from(compressed_len).expect("usize")
+                        Ok(compressed) => {
+                            block_data_len = compressed.len();
+                            contents = compressed;
                         }
                         Err(_) => {
                             error!("Could not write TNG compressed block data.");
@@ -2950,20 +2944,23 @@ impl Trajectory {
                             };
                             data_mut.codec_id = Compression::Uncompressed;
                             self.data_block_write(
-                                // output_file,
                                 block,
                                 block_index,
                                 is_particle_data,
                                 mapping,
                                 hash_mode,
                             );
+                            return;
                         }
                     }
                     self.compress_algo_pos = compress_algo_pos;
                     self.compress_algo_vel = compress_algo_vel;
                 }
                 Compression::GZip => match Self::gzip_compress(&contents, contents.len()) {
-                    Ok(compressed_len) => block_data_len = compressed_len,
+                    Ok(compressed) => {
+                        block_data_len = compressed.len();
+                        contents = compressed;
+                    }
                     Err(_) => {
                         error!("Could not write gzipped block data.");
                         // TODO: is there a way to get rid of this reborrow?
@@ -2984,8 +2981,11 @@ impl Trajectory {
             }
 
             if block_data_len != full_data_len {
-                block.block_contents_size -=
-                    u64::try_from(full_data_len - block_data_len).expect("u64 to usize");
+                block.block_contents_size = block
+                    .block_contents_size
+                    .checked_sub(u64::try_from(full_data_len).expect("usize to u64"))
+                    .expect("block contents size to include uncompressed data length")
+                    + u64::try_from(block_data_len).expect("usize to u64");
 
                 let file = self.output_file.as_mut().expect("init output_file");
 
@@ -4033,12 +4033,9 @@ impl Trajectory {
                         .expect("from particle frame to real numbering");
 
                     let size_i64 = i64::try_from(size).expect("size to i64");
-                    let src_base = ((i * n_particles + j) * n_values_per_frame
-                        * size_i64)
-                        as usize;
-                    let dst_base = ((i * n_particles + mapping) * n_values_per_frame
-                        * size_i64)
-                        as usize;
+                    let src_base = ((i * n_particles + j) * n_values_per_frame * size_i64) as usize;
+                    let dst_base =
+                        ((i * n_particles + mapping) * n_values_per_frame * size_i64) as usize;
 
                     values[dst_base..dst_base + byte_per_particle]
                         .copy_from_slice(&unwrapped_values[src_base..src_base + byte_per_particle]);

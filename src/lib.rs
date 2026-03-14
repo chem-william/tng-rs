@@ -255,7 +255,7 @@ mod integration {
 
         // Set the partial charges (treat the water as TIP3P)
         let n_particles = traj.get_num_particles();
-        let mut charges = Vec::with_capacity(3);
+        let mut charges = vec![0.0_f32; usize::try_from(n_particles).expect("i64 to usize")];
         for i in 0..n_particles {
             let atom_type = traj.atom_type_of_particle_nr_get(i);
 
@@ -289,7 +289,7 @@ mod integration {
         .unwrap();
 
         // Set atom masses
-        let mut masses = Vec::new();
+        let mut masses = vec![0.0_f32; usize::try_from(n_particles).expect("i64 to usize")];
         for i in 0..n_particles {
             let atom_type = traj.atom_type_of_particle_nr_get(i);
             // We only have water in the system. If the atom is oxygen set its
@@ -338,20 +338,21 @@ mod integration {
         traj.file_headers_write(USE_HASH).unwrap();
 
         let n_frames_per_frame_set = traj.get_num_frames_per_frame_set();
-        let mut data =
-            Vec::with_capacity(usize::try_from(n_particles * n_frames_per_frame_set * 3).unwrap());
+        let mut data = Vec::with_capacity(
+            usize::try_from(n_particles * n_frames_per_frame_set * 3).expect("i64 to usize"),
+        );
 
         let tot_n_mols = traj.get_num_molecules();
         // Set initial coordinates
         let mut rng = rand::rng();
-        let mut molpos = vec![0.0; tot_n_mols * 3];
+        let mut molpos = vec![0.0_f32; tot_n_mols * 3];
         for i in 0..tot_n_mols {
             let nr = i * 3;
             // Somewhat random coordinates (between 0 and 100),
             // but not specifiying a random seed.
-            molpos[nr] = 100.0 * rng.random_range(0.0..1.0);
-            molpos[nr + 1] = 100.0 * rng.random_range(0.0..1.0);
-            molpos[nr + 2] = 100.0 * rng.random_range(0.0..1.0);
+            molpos[nr] = 100.0 * rng.random_range(0.0_f32..1.0_f32);
+            molpos[nr + 1] = 100.0 * rng.random_range(0.0_f32..1.0_f32);
+            molpos[nr + 2] = 100.0 * rng.random_range(0.0_f32..1.0_f32);
         }
 
         // Generate frame sets - each with 100 frames (by default)
@@ -367,9 +368,9 @@ mod integration {
                 for k in 0..tot_n_mols {
                     let nr = k * 3;
                     // Move -1 to 1
-                    molpos[nr] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
-                    molpos[nr + 1] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
-                    molpos[nr + 2] += 2.0 * (rng.random_range(0.0..1.0) - 1.0);
+                    molpos[nr] += 2.0 * (rng.random_range(0.0_f32..1.0_f32) - 1.0);
+                    molpos[nr + 1] += 2.0 * (rng.random_range(0.0_f32..1.0_f32) - 1.0);
+                    molpos[nr + 2] += 2.0 * (rng.random_range(0.0_f32..1.0_f32) - 1.0);
 
                     data.push(molpos[nr]);
                     data.push(molpos[nr + 1]);
@@ -391,25 +392,6 @@ mod integration {
             )
             .expect("error creating frame set");
 
-            let data_bytes: Vec<_> = data
-                .iter()
-                .flat_map(|&f: &f64| (f as f32).to_ne_bytes())
-                .collect();
-            traj.particle_data_block_add(
-                BlockID::TrajPositions,
-                "POSITIONS",
-                DataType::Float,
-                true,
-                n_frames_per_frame_set,
-                3,
-                1,
-                0,
-                n_particles,
-                codec_id,
-                Some(&data_bytes),
-            )
-            .expect("error adding position data block");
-
             traj.frame_set_particle_mapping_free();
 
             // Setup particle mapping. Use 4 different mapping blocks with arbitrary
@@ -428,7 +410,7 @@ mod integration {
             traj.particle_mapping_add(450, 150, &mapping).unwrap();
 
             // Add the positions in a data block
-            let data_bytes: Vec<_> = data.iter().flat_map(|&f: &f64| f.to_ne_bytes()).collect();
+            let data_bytes: Vec<_> = data.iter().flat_map(|&f| f.to_ne_bytes()).collect();
             traj.particle_data_block_add(
                 BlockID::TrajPositions,
                 "POSITIONS",
@@ -439,7 +421,7 @@ mod integration {
                 1,
                 0,
                 n_particles,
-                Compression::Uncompressed,
+                codec_id,
                 Some(&data_bytes),
             )
             .unwrap();
@@ -525,13 +507,27 @@ mod integration {
     /// C API: tng_test_get_positions_data() in tng_io_testing.c:953
     /// TODO: Port from C
     fn get_positions_data(traj: &mut Trajectory) {
-        let (values, n_frames, n_particles, n_values_per_frame, data_type) = traj
+        let (values, n_frames, n_particles, n_values_per_frame, _data_type) = traj
             .particle_data_get(BlockID::TrajPositions)
             .expect("failed getting particle positions");
         assert_eq!(
             n_values_per_frame, 3,
             "Number of values per frame does not match expected value."
         );
+        let n_frames = n_frames as usize;
+        let n_particles = n_particles as usize;
+        let n_values_per_frame = n_values_per_frame as usize;
+        for i in 0..n_frames {
+            for j in 0..n_particles {
+                for k in 0..n_values_per_frame {
+                    let value = values[(i * n_particles + j) * n_values_per_frame + k];
+                    assert!(
+                        value >= -500.0 && value <= 500.0,
+                        "Coordinates not in range at frame {i}, particle {j}, component {k}: {value}"
+                    );
+                }
+            }
+        }
         // TODO: port from tng_io_testing.c:953-1034
         // - tng_particle_data_get for positions
         // - validate n_values_per_frame == 3
