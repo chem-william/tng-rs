@@ -1176,45 +1176,24 @@ impl Trajectory {
         compressed_len: u64,
         uncompressed_len: usize,
     ) -> Result<Vec<u8>, ()> {
-        let mut output = vec![0u8; uncompressed_len];
-
         let cursor = &data[..compressed_len as usize];
         let mut decoder = ZlibDecoder::new(cursor);
-        // let mut reader = decoder.take(uncompressed_len as u64);
-        // match reader.read(&mut output) {
-        match decoder.read_exact(&mut output) {
-            Ok(()) => {
-                // if bytes_read != uncompressed_len {
-                //     // C’s `uncompress` updates new_len to the actual decompressed size.
-                //     // If it doesn’t match the expected `uncompressed_len`, that’s an error.
-                //     eprintln!(
-                //         "Expected {} bytes, but uncompressed {} bytes.\n",
-                //         uncompressed_len, bytes_read
-                //     );
-                //     panic!();
-                // }
-                // Drop the old buffer and replace it with `dest`.
+        let mut output = Vec::with_capacity(uncompressed_len);
+        match decoder.read_to_end(&mut output) {
+            Ok(_) => {
+                if output.len() != uncompressed_len {
+                    eprintln!(
+                        "Expected {} bytes, but uncompressed {} bytes.",
+                        uncompressed_len,
+                        output.len()
+                    );
+                    return Err(());
+                }
                 Ok(output)
             }
             Err(e) => {
-                // Map common I/O errors to C’s zlib error messages:
-                // - UnexpectedEof  → buffer too small (Z_BUF_ERROR)
-                // - InvalidData    → data corrupt (Z_DATA_ERROR)
-                // - Other I/O errs → generic uncompress error
                 eprintln!("{}", e);
                 Err(())
-                // match e.kind() {
-                //     io::ErrorKind::UnexpectedEof => {
-                //         eprintln!("TNG library: Destination buffer too small. ");
-                //     }
-                //     io::ErrorKind::InvalidData => {
-                //         eprintln!("TNG library: Data corrupt. ");
-                //     }
-                //     _ => {
-                //         eprintln!("TNG library: Error uncompressing gzipped data. ");
-                //     }
-                // }
-                // TngStatus::Failure
             }
         }
     }
@@ -1229,6 +1208,7 @@ impl Trajectory {
     ) -> Result<(), ()> {
         // we pull what we need early from the current_trajectory_frame_set to avoid the borrow checker
         let frame_set_n_particles = self.current_trajectory_frame_set.n_particles;
+        let frame_set_n_frames = self.current_trajectory_frame_set.n_frames;
 
         let size = meta_info.datatype.get_size();
 
@@ -1331,32 +1311,33 @@ impl Trajectory {
                     .last_mut()
                     .expect("available element on non_tr_data")
             };
-            data.block_id = block.id;
-            data.block_name = block.name.as_ref().expect("block to have a name").clone();
-            data.data_type = meta_info.datatype;
             data.values = None;
-
             // from c - FIXME: Memory leak from strings
             data.strings = None;
             data.n_frames = 0;
-            data.dependency = 0;
-            if is_particle_data {
-                data.dependency |= PARTICLE_DEPENDENT;
-            }
-
-            if is_traj_block
-                && (meta_info.n_frames > 1
-                    || frame_set.n_frames == meta_info.n_frames
-                    || meta_info.stride_length > 1)
-            {
-                data.dependency |= FRAME_DEPENDENT;
-            }
-            data.codec_id = meta_info.codec_id;
-            data.compression_multiplier = meta_info.multiplier;
-            data.last_retrieved_frame = -1;
 
             data
         };
+
+        // These fields must be updated regardless of whether the block is new or existing
+        data.block_id = block.id;
+        data.block_name = block.name.as_ref().expect("block to have a name").clone();
+        data.data_type = meta_info.datatype;
+        data.codec_id = meta_info.codec_id;
+        data.compression_multiplier = meta_info.multiplier;
+        data.stride_length = meta_info.stride_length;
+        data.last_retrieved_frame = -1;
+        data.dependency = 0;
+        if is_particle_data {
+            data.dependency |= PARTICLE_DEPENDENT;
+        }
+        if is_traj_block
+            && (meta_info.n_frames > 1
+                || frame_set_n_frames == meta_info.n_frames
+                || meta_info.stride_length > 1)
+        {
+            data.dependency |= FRAME_DEPENDENT;
+        }
 
         let tot_n_particles = if is_particle_data {
             if is_traj_block && self.var_num_atoms {
