@@ -1553,7 +1553,9 @@ impl Trajectory {
         let current_pos = self.get_input_file_position();
         let remaining_len = block.block_contents_size - (current_pos - start_pos);
 
-        self.data_read(block, meta_info, remaining_len);
+        self.data_read(block, meta_info, remaining_len)
+            // TODO
+            .expect("error handling");
 
         // TODO: handle md5 hash
 
@@ -2790,7 +2792,7 @@ impl Trajectory {
 
             let mut contents = vec![0; full_data_len];
             if let Some(values) = cloned_data.values {
-                contents = values.clone();
+                contents[..full_data_len].copy_from_slice(&values[..full_data_len]);
 
                 // If writing TNG compressed data the endianness is taken into account by
                 // the compression routines. TNG compressed data is always written as little endian
@@ -4081,7 +4083,6 @@ impl Trajectory {
             return Err(());
         }
         self.frame_set_read(hash_mode)
-        // Ok(())
     }
 
     /// Read one frame set, including all particle mapping blocks and data blocks, starting from

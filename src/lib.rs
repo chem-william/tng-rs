@@ -522,7 +522,7 @@ mod integration {
                 for k in 0..n_values_per_frame {
                     let value = values[(i * n_particles + j) * n_values_per_frame + k];
                     assert!(
-                        value >= -500.0 && value <= 500.0,
+                        (-500.0..=500.0).contains(&value),
                         "Coordinates not in range at frame {i}, particle {j}, component {k}: {value}"
                     );
                 }
