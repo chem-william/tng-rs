@@ -172,6 +172,7 @@ pub(crate) fn readbits(ptr: &mut &[u8], bitptr: &mut i32, nbits: i32) -> u32 {
     debug!("Read nbits={nbits}");
 
     while nbits != 0 {
+        nbits -= 1;
         val <<= 1;
         val |= ((extract_mask & thisval as u32) != 0) as u32;
         *bitptr += 1;
@@ -184,8 +185,6 @@ pub(crate) fn readbits(ptr: &mut &[u8], bitptr: &mut i32, nbits: i32) -> u32 {
                 thisval = ptr[0];
             }
         }
-
-        nbits -= 1;
     }
 
     debug!("val={val}");

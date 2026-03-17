@@ -548,7 +548,12 @@ impl Coder {
     }
 
     // C API: Ptngc_unpack_array_xtc2
-    pub(crate) fn unpack_array_xtc2<'a>(&self, packed: &'a [u8], output: &'a mut [i32], length: i32) {
+    pub(crate) fn unpack_array_xtc2<'a>(
+        &self,
+        packed: &'a [u8],
+        output: &'a mut [i32],
+        length: i32,
+    ) {
         let mut output_counter = 0;
         let mut ptr = packed;
         let mut bitptr = 0;
