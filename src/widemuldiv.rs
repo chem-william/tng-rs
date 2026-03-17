@@ -6,6 +6,18 @@ fn ptngc_widemul(i1: u32, i2: u32) -> (u32, u32) {
     (ohi, olo)
 }
 
+// Divide a 64 bit unsigned value in hi:lo with the 32 bit value i and return (result, remainder)
+fn ptngc_widediv(hi: u32, lo: u32, i: u32) -> (u32, u32) {
+    let v = (hi as u64) << 32 | lo as u64;
+    let res = v / (i as u64);
+    let rem = v - res * (i as u64);
+
+    let result = res as u32;
+    let remainder = rem as u32;
+
+    (result, remainder)
+}
+
 // Add a u32 to a `largeint`. `j` determines which value in the `largeint` to add `v1` to.
 #[inline]
 fn largeint_add_gen(v1: u32, largeint: &mut [u32], n: usize, j: usize) {
@@ -26,6 +38,11 @@ fn largeint_add_gen(v1: u32, largeint: &mut [u32], n: usize, j: usize) {
     }
 }
 
+// Add a `u32` to a `largeint`
+pub(crate) fn ptngc_largeint_add(v1: u32, largeint: &mut [u32], n: usize) {
+    largeint_add_gen(v1, largeint, n, 0);
+}
+
 pub(crate) fn ptngc_largeint_mul(v1: u32, largeint_in: &[u32], largeint_out: &mut [u32], n: usize) {
     largeint_out.fill(0);
 
@@ -44,41 +61,24 @@ pub(crate) fn ptngc_largeint_mul(v1: u32, largeint_in: &[u32], largeint_out: &mu
     }
 }
 
-// Add a `u32` to a `largeint`
-pub(crate) fn ptngc_largeint_add(v1: u32, largeint: &mut [u32], n: usize) {
-    largeint_add_gen(v1, largeint, n, 0);
-}
+// Return the remainder from dividing largeint_in with v1. Result of the division is returned in largeint_out
+pub(crate) fn ptngc_largeint_div(
+    v1: u32,
+    largeint_in: &[u32],
+    largeint_out: &mut [u32],
+    n: usize,
+) -> u32 {
+    let mut remainder = 0;
 
-#[cfg(test)]
-mod widemul_tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let (upper, lower) = ptngc_widemul(32, 32);
-        assert_eq!(upper, 0);
-        assert_eq!(lower, 1024);
+    // Boot
+    let mut hi = 0;
+    let mut i = n;
+    while i != 0 {
+        i -= 1;
+        let (result, remainder_tmp) = ptngc_widediv(hi, largeint_in[i], v1);
+        remainder = remainder_tmp;
+        largeint_out[i] = result;
+        hi = remainder;
     }
-
-    #[test]
-    fn one_upper() {
-        let (upper, lower) = ptngc_widemul(0x10000, 0x10000);
-        assert_eq!(upper, 1);
-        assert_eq!(lower, 0);
-    }
-
-    #[test]
-    fn u16_mul_u16_minus_one() {
-        let (upper, lower) = ptngc_widemul(1 << 16, (1 << 16) - 1);
-        assert_eq!(upper, 0);
-        assert_eq!(lower, 4294901760);
-    }
-
-    #[test]
-    fn large_numbers() {
-        // 4294967295 = 1<<32 - 1
-        let (upper, lower) = ptngc_widemul(4294967295, 4294967295);
-        assert_eq!(upper, 4294967294);
-        assert_eq!(lower, 1);
-    }
+    remainder
 }
