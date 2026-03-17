@@ -211,7 +211,7 @@ impl Coder {
     }
 
     // C API: Ptngc_unpack_array coder.c line 592
-    fn unpack_array(
+    pub(crate) fn unpack_array(
         &self,
         packed: &[u8],
         output: &mut [i32],
@@ -559,7 +559,7 @@ impl Coder {
         let mut bitptr = 0;
         let mut ntriplets_left = length / 3;
         let mut swapatoms = false;
-        let mut runlength = 0;
+        let mut runlength: i32 = 0;
         let mut compress_buffer = [0; 18 * 4]; // Holds compressed result for 3 large ints or up to 18 small ints
         let mut encode_ints = [0; 21]; // Up to 3 large + 18 small ints can be encoded at once
 
@@ -576,7 +576,7 @@ impl Coder {
             readbits(&mut ptr, &mut bitptr, 8),
         ];
         // Read small index
-        let mut small_index = readbits(&mut ptr, &mut bitptr, 8);
+        let mut small_index = readbits(&mut ptr, &mut bitptr, 8) as i32;
 
         let large_nbits = compute_magic_bits(large_index);
 
@@ -617,21 +617,22 @@ impl Coder {
 
                 if instr != INSTR_ONLY_LARGE {
                     // The same base is used for the small changes
-                    let small_idx = [small_index; 3];
+                    let small_idx = [small_index as u32; 3];
 
                     // Clear the compress buffer
                     compress_buffer.fill(0);
 
-                    // Get the small values
+                    // Get the small values — encoder always sends INSTR_BASE_RUNLENGTH
+                    // before any INSTR_DEFAULT/INSTR_ONLY_SMALL, so runlength >= 1 here
                     readmanybits(
                         &mut ptr,
                         &mut bitptr,
-                        MAGIC_BITS[small_index as usize][runlength - 1] as i32,
+                        MAGIC_BITS[small_index as usize][(runlength - 1) as usize] as i32,
                         &mut compress_buffer,
                     );
                     trajcoder_base_decompress(
                         &compress_buffer,
-                        3 * runlength as i32,
+                        3 * runlength,
                         &small_idx,
                         &mut encode_ints,
                     );
@@ -680,7 +681,7 @@ impl Coder {
                     // Output small values
                     debug!("Prevcoord before unpacking of small: {prevcoord:?}");
 
-                    for i in 0..runlength {
+                    for i in 0..runlength as usize {
                         let v = [
                             unpositive_int(encode_ints[i * 3]),
                             unpositive_int(encode_ints[i * 3 + 1]),
@@ -707,7 +708,7 @@ impl Coder {
                         output[output_counter] = prevcoord[2] + minint[2];
                         output_counter += 1;
                     }
-                    ntriplets_left -= runlength as i32;
+                    ntriplets_left -= runlength;
                 }
             } else if instr == INSTR_LARGE_RLE {
                 let mut large_ints = [0; 3];
@@ -725,11 +726,11 @@ impl Coder {
                     );
                     trajcoder_base_decompress(&compress_buffer, 3, &large_index, &mut encode_ints);
                     large_ints.copy_from_slice(&encode_ints[..3]);
-                    output[output_counter] = prevcoord[0] + minint[0];
+                    output[output_counter] = large_ints[0] + minint[0];
                     output_counter += 1;
-                    output[output_counter] = prevcoord[1] + minint[1];
+                    output[output_counter] = large_ints[1] + minint[1];
                     output_counter += 1;
-                    output[output_counter] = prevcoord[2] + minint[2];
+                    output[output_counter] = large_ints[2] + minint[2];
                     output_counter += 1;
                     prevcoord.copy_from_slice(&large_ints);
                 }
@@ -742,10 +743,10 @@ impl Coder {
                     runlength = 6;
                 } else {
                     let ichange = code % 3;
-                    runlength = code as usize / 3 + 1;
+                    runlength = code / 3 + 1;
                     change = ichange - 1;
                 }
-                small_index += change as u32;
+                small_index += change;
             } else if instr == INSTR_FLIP {
                 swapatoms = !swapatoms;
             } else if instr == INSTR_LARGE_BASE_CHANGE {
@@ -754,7 +755,7 @@ impl Coder {
                 if (ichange & 0x2_u32) != 0 {
                     change = -change;
                 }
-                small_index += change as u32;
+                small_index += change;
             } else {
                 panic!("BUG! Encoded unknown instruction");
             }

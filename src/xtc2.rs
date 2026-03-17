@@ -416,7 +416,7 @@ pub(crate) fn read_instruction(ptr: &mut &[u8], bitptr: &mut i32) -> i32 {
         if bits == 0 {
             instr = INSTR_BASE_RUNLENGTH;
         } else {
-            bits = readbits(ptr, bitptr, 1);
+            bits = readbits(ptr, bitptr, 2);
             instr = match bits {
                 0 => INSTR_ONLY_LARGE,
                 1 => INSTR_ONLY_SMALL,

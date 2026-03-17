@@ -268,6 +268,15 @@ unsafe extern "C" {
         natoms: c_int,
         speed: c_int,
     ) -> *mut u8;
+    pub fn Ptngc_unpack_array(
+        coder: *mut Coder,
+        packed: *mut u8,
+        output: *mut c_int,
+        length: c_int,
+        coding: c_int,
+        coding_parameter: c_int,
+        natoms: c_int,
+    ) -> c_int;
 }
 
 // ---------------------------------------------------------------------------
