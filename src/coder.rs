@@ -1,12 +1,18 @@
+use log::debug;
+
 use crate::{
     bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_get_buflen},
     compress::{
         TNG_COMPRESS_ALGO_BWLZH1, TNG_COMPRESS_ALGO_BWLZH2, TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA,
         TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE, TNG_COMPRESS_ALGO_POS_XTC2,
         TNG_COMPRESS_ALGO_POS_XTC3, TNG_COMPRESS_ALGO_STOPBIT, TNG_COMPRESS_ALGO_TRIPLET,
+        TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER,
     },
-    xtc2::ptngc_pack_array_xtc2,
-    xtc3::{positive_int, ptngc_pack_array_xtc3},
+    xtc2::{
+        INSTR_DEFAULT, INSTR_ONLY_LARGE, INSTR_ONLY_SMALL, INSTRNAMES, compute_magic_bits,
+        ptngc_pack_array_xtc2, read_instruction, readbits, readmanybits,
+    },
+    xtc3::{positive_int, ptngc_pack_array_xtc3, unpositive_int},
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -203,6 +209,41 @@ impl Coder {
         self.out8bits(output);
     }
 
+    // C API: Ptngc_unpack_array coder.c line 592
+    fn unpack_array(
+        &self,
+        packed: &[u8],
+        output: &mut [i32],
+        length: i32,
+        coding: i32,
+        coding_parameter: i32,
+        n_atoms: i32,
+    ) {
+        match coding {
+            TNG_COMPRESS_ALGO_STOPBIT | TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER => {
+                self.unpack_array_stop_bits(packed, output, length, coding_parameter)
+            }
+
+            TNG_COMPRESS_ALGO_TRIPLET
+            | TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA
+            | TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE => {
+                self.unpack_array_triplet(packed, output, length, coding_parameter)
+            }
+            TNG_COMPRESS_ALGO_POS_XTC2 => self.unpack_array_xtc2(packed, output, length),
+            // TNG_COMPRESS_ALGO_BWLZH1 | TNG_COMPRESS_ALGO_BWLZH2 => {
+            //     self.unpack_array_bwlzh(packed, length, coding_parameter)
+            // }
+            // TNG_COMPRESS_ALGO_POS_XTC3 => self.unpack_array_xtc3(
+            //     packed,
+            //     length,
+            //     coding_parameterpacked,
+            //     length,
+            //     coding_parameter,
+            // ),
+            _ => unreachable!("unpack array got unknown coding"),
+        }
+    }
+
     fn pack_triplet(
         &mut self,
         s: &[u32],
@@ -379,6 +420,189 @@ impl Coder {
             *coding_parameter = new_parameter;
             *length = best_length;
             false
+        }
+    }
+
+    pub(crate) fn unpack_array_stop_bits<'a>(
+        &self,
+        packed: &'a [u8],
+        output: &'a mut [i32],
+        length: i32,
+        coding_parameter: i32,
+    ) {
+        let mut extract_mask = 0x80;
+        let ptr = packed;
+        let mut ptr_count = 0;
+
+        for i in 0..length {
+            let mut pattern = 0;
+            let mut numbits = coding_parameter;
+            let mut bit;
+            let mut insert_mask = (1u32).checked_shl((numbits - 1) as u32).unwrap_or(0);
+            // let mut insert_mask = 1u32 << (numbits - 1);
+            let mut inserted_bits = numbits;
+
+            loop {
+                for _ in 0..numbits {
+                    bit = ptr[ptr_count] & extract_mask;
+                    if bit > 0 {
+                        pattern |= insert_mask;
+                    }
+                    insert_mask >>= 1;
+                    extract_mask >>= 1;
+                    if extract_mask == 0 {
+                        extract_mask = 0x80;
+                        ptr_count += 1;
+                    }
+                }
+                // Check stop bit
+                bit = ptr[ptr_count] & extract_mask;
+                extract_mask >>= 1;
+                if extract_mask == 0 {
+                    extract_mask = 0x80;
+                    ptr_count += 1;
+                }
+                if bit > 0 {
+                    numbits >>= 1;
+                    if numbits < 1 {
+                        numbits = 1;
+                    }
+                    inserted_bits += numbits;
+                    insert_mask = 1u32 << (inserted_bits - 1);
+                }
+                if bit == 0 {
+                    break;
+                }
+            }
+            let mut s = (pattern).div_ceil(2) as i32;
+            if pattern % 2 == 0 {
+                s = -s;
+            }
+            output[i as usize] = s;
+        }
+    }
+
+    fn unpack_array_triplet<'a>(
+        &self,
+        packed: &'a [u8],
+        output: &'a mut [i32],
+        length: i32,
+        coding_parameter: i32,
+    ) {
+        let mut extract_mask = 0x80;
+        let mut max_base = 1u32 << coding_parameter;
+        let mut maxbits = coding_parameter;
+        let ptr = packed;
+        let intmax =
+            (ptr[0] as u32) << 24 | (ptr[1] as u32) << 16 | (ptr[2] as u32) << 8 | ptr[3] as u32;
+        let mut ptr_count = 4;
+
+        while intmax >= max_base {
+            max_base *= 2;
+            maxbits += 1;
+        }
+
+        for i in 0..(length / 3) {
+            // Find base
+            let mut jbase = 0;
+            let mut bit;
+            for _ in 0..2 {
+                bit = ptr[ptr_count] & extract_mask;
+                jbase <<= 1;
+                if bit != 0 {
+                    jbase |= 1u32;
+                }
+                extract_mask >>= 1;
+                if extract_mask == 0 {
+                    extract_mask = 0x80;
+                    ptr_count += 1;
+                }
+            }
+            let numbits = if jbase == 3 {
+                maxbits
+            } else {
+                coding_parameter + jbase as i32
+            };
+            for j in 0..3 {
+                let mut pattern = 0;
+                for _ in 0..numbits {
+                    bit = ptr[ptr_count] & extract_mask;
+                    pattern <<= 1;
+                    if bit != 0 {
+                        pattern |= 1u32;
+                    }
+                    extract_mask >>= 1;
+                    if extract_mask == 0 {
+                        extract_mask = 0x80;
+                        ptr_count += 1;
+                    }
+                }
+                let mut s = pattern.div_ceil(2) as i32;
+                if pattern % 2 == 0 {
+                    s = -s;
+                }
+                output[(i * 3 + j) as usize] = s;
+            }
+        }
+    }
+
+    // C API: Ptngc_unpack_array_xtc2
+    fn unpack_array_xtc2<'a>(&self, packed: &'a [u8], output: &'a mut [i32], length: i32) {
+        let mut ptr = packed;
+        let mut bitptr = 0;
+        let mut ntriplets_left = length / 3;
+        let mut compress_buffer = [0; 18 * 4]; // Holds compressed result for 3 large ints or up to 18 small ints
+        let encode_ints = [0; 21]; // Up to 3 large + 18 small ints can be encoded at once
+
+        // Read min integers
+        let minint = [
+            unpositive_int(readbits(&mut ptr, &mut bitptr, 32) as i32),
+            unpositive_int(readbits(&mut ptr, &mut bitptr, 32) as i32),
+            unpositive_int(readbits(&mut ptr, &mut bitptr, 32) as i32),
+        ];
+        // Read large indices
+        let large_index = [
+            readbits(&mut ptr, &mut bitptr, 8),
+            readbits(&mut ptr, &mut bitptr, 8),
+            readbits(&mut ptr, &mut bitptr, 8),
+        ];
+        // Read small index
+        let small_index = readbits(&mut ptr, &mut bitptr, 8);
+
+        let large_nbits = compute_magic_bits(large_index);
+
+        debug!(
+            "Minimum integers: {} {} {}",
+            minint[0], minint[1], minint[2]
+        );
+        debug!(
+            "Large indices: {} {} {}",
+            large_index[0], large_index[1], large_index[2]
+        );
+        debug!("Small index: {small_index}");
+        debug!("large_nbits={large_nbits}");
+
+        // Initial prevcoord is the minimum integers
+        let prevcoord = minint;
+
+        while ntriplets_left != 0 {
+            let instr = read_instruction(&mut ptr, &mut bitptr);
+            debug!("Decoded instruction {}", INSTRNAMES[instr as usize]);
+
+            if instr == INSTR_DEFAULT || instr == INSTR_ONLY_LARGE || instr == INSTR_ONLY_SMALL {
+                let large_ints = [0; 3];
+                if instr != INSTR_ONLY_SMALL {
+                    // Clear the compress buffer
+                    compress_buffer = [0; 18 * 4];
+                    // Get the large value
+                    readmanybits(
+                        &mut ptr,
+                        &mut bitptr,
+                        large_nbits as i32,
+                        &mut compress_buffer,
+                    );
+                }
+            }
         }
     }
 }

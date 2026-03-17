@@ -1,6 +1,6 @@
 use crate::{
     coder::Coder,
-    widemuldiv::{ptngc_largeint_add, ptngc_largeint_mul},
+    widemuldiv::{ptngc_largeint_add, ptngc_largeint_div, ptngc_largeint_mul},
     xtc3::{self, positive_int},
 };
 use log::{self, debug};

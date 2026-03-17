@@ -7,8 +7,10 @@ use crate::TngError;
 use crate::atom::Atom;
 use crate::bond::Bond;
 use crate::chain::Chain;
+use crate::coder::Coder;
 use crate::compress::{
-    tng_compress_pos, tng_compress_pos_float, tng_compress_vel, tng_compress_vel_float,
+    MAGIC_INT_POS, MAGIC_INT_VEL, readbufferfix, tng_compress_pos, tng_compress_pos_float,
+    tng_compress_vel, tng_compress_vel_float,
 };
 use crate::data::{Compression, Data, DataType};
 use crate::gen_block::{BlockID, GenBlock};
@@ -1373,9 +1375,12 @@ impl Trajectory {
             let actual_contents = match data.codec_id {
                 Compression::Uncompressed => unreachable!(),
                 Compression::XTC => todo!("XTC compression not implemented yet"),
-                Compression::TNG => todo!("TNG is todo"),
+                Compression::TNG => {
+                    Trajectory::tng_uncompress(block, &meta_info.datatype, &contents, full_data_len)
+                        .unwrap()
+                }
                 Compression::GZip => {
-                    Trajectory::gzip_uncompress(&contents, block_data_len, full_data_len)?
+                    Trajectory::gzip_uncompress(&contents, block_data_len, full_data_len).unwrap()
                 }
             };
             (actual_contents, full_data_len)
@@ -2548,8 +2553,35 @@ impl Trajectory {
         dest.ok_or(())
     }
 
-    fn tng_uncompress() {
-        unimplemented!("tng/lib_io.c 4326")
+    fn tng_uncompress(
+        block: &GenBlock,
+        data_type: &DataType,
+        data: &[u8],
+        uncompressed_len: usize,
+    ) -> Result<Vec<u8>, TngError> {
+        if block.id != BlockID::TrajPositions && block.id != BlockID::TrajVelocities {
+            return Err(TngError::Constraint(
+                "Can only uncompress positions and velocities with the TNG method".to_string(),
+            ));
+        }
+
+        let f_dest = vec![0.0; uncompressed_len];
+        let d_dest = vec![0.0; uncompressed_len];
+        match *data_type {
+            DataType::Float => {
+                let result = compress_uncompress_float(data, &f_dest);
+            }
+            DataType::Double => {
+                let result = compress_uncompress(data);
+            }
+            DataType::Char | DataType::Int => {
+                return Err(TngError::Constraint(format!(
+                    "Data type not supported. Got {data_type:?}"
+                )));
+            }
+        }
+
+        Ok(vec![0; 0])
     }
 
     /// Write a data block (particle or non-particle data)
@@ -6554,4 +6586,90 @@ impl Trajectory {
     ) -> Option<(i64, i64, i64, DataType, Vec<f64>)> {
         self.gen_data_vector_get(is_particle_data, block_id)
     }
+}
+
+fn compress_uncompress(data: &[u8]) {
+    todo!()
+}
+
+fn compress_uncompress_float(data: &[u8], posvel: &[f32]) -> Result<(), TngError> {
+    let magic_int = u32::from(readbufferfix(data, 4));
+
+    match magic_int {
+        MAGIC_INT_POS => compress_uncompress_pos_float(data, posvel),
+        // MAGIC_INT_VEL => compress_uncompress_vel_float(data, posvel),
+        _ => {
+            return Err(TngError::Constraint(format!(
+                "found the wrong magic int when decompressing. Found {magic_int}"
+            )));
+        }
+    };
+
+    Ok(())
+}
+
+fn compress_uncompress_pos_float(data: &[u8], pos: &[f32]) -> Result<(u32, u32), TngError> {
+    let (prec_hi, prec_lo) = compress_uncompress_pos_gen(data, None, Some(pos), None)?;
+    Ok((prec_hi, prec_lo))
+}
+
+fn compress_uncompress_pos_gen(
+    data: &[u8],
+    posd: Option<&[f64]>,
+    posf: Option<&[f32]>,
+    posi: Option<&[i32]>,
+) -> Result<(u32, u32), TngError> {
+    let mut bufloc = 0;
+
+    // Magic integer for positions
+    let magic_int = u32::from(readbufferfix(&data[bufloc..], 4));
+    bufloc += 4;
+
+    if magic_int != MAGIC_INT_POS {
+        return Err(TngError::Constraint(format!(
+            "Expected MAGIC_INT_POS, got {magic_int}"
+        )));
+    }
+
+    // Number of atoms
+    let natoms = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+
+    // Number of frames
+    let nframes = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+
+    // Initial coding
+    let initial_coding = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+
+    // Initial coding parameter
+    let initial_coding_parameter = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+
+    // Coding
+    let coding = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+
+    // Precision
+    let prec_lo = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+    let prec_hi = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+
+    // Allocate the memory for the quantized positions
+    // let quant = Vec<_>::with_capacity(u32::from(natoms) as usize * u32::from(nframes) as usize * 3);
+    // The data block length
+    let length = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+    // The initial frame
+    let coder = Coder::default();
+    // let rval =
+
+    Ok((0, 0))
+}
+
+fn compress_uncompress_vel_float(data: &[u8], vel: &[i32]) -> Result<(), TngError> {
+    todo!();
+    // let (prec_hi, prec_lo) = compress_uncompress_vel_gen(data, None, None, vel)?
 }
