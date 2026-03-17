@@ -30,8 +30,8 @@ pub(crate) const TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE: i32 = TNG_COMPRESS_ALGO_B
 pub(crate) const TNG_COMPRESS_ALGO_MAX: i32 = 11;
 
 // This becomes TNGP for positions (little endian) and TNGV for velocities. In ASCII
-const MAGIC_INT_POS: u32 = 0x50474E54;
-const MAGIC_INT_VEL: u32 = 0x56474E54;
+pub(crate) const MAGIC_INT_POS: u32 = 0x50474E54;
+pub(crate) const MAGIC_INT_VEL: u32 = 0x56474E54;
 
 /// Default to relatively fast compression. For very good compression it makes sense
 /// to choose speed = 4 or speed = 5.
@@ -627,6 +627,27 @@ fn bufferfix(buf: &mut [u8], v: FixT, num: usize) {
         v >>= 8;
         c = (v & 0xFF) as u8;
     }
+}
+
+pub(crate) fn readbufferfix(buf: &[u8], num: i32) -> FixT {
+    let mut num = num;
+
+    let mut cnt = 0;
+    let mut b: u8;
+    let mut shift = 0;
+    let mut f = FixT::from(0);
+    loop {
+        b = buf[cnt];
+        cnt += 1;
+        f |= (FixT::from(b as u32) & FixT::from(0xFF)) << FixT::from(shift);
+        shift += 8;
+
+        num -= 1;
+        if num == 0 {
+            break;
+        }
+    }
+    f
 }
 
 /// Perform position compression from the quantized data

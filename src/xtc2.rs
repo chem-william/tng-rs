@@ -126,18 +126,18 @@ const MAGIC_BITS: [[u32; 8]; MAX_MAGIC] = [
 ];
 
 /* Sequence instructions */
-const INSTR_DEFAULT: usize = 0;
-const INSTR_BASE_RUNLENGTH: usize = 1;
-const INSTR_ONLY_LARGE: usize = 2;
-const INSTR_ONLY_SMALL: usize = 3;
-const INSTR_LARGE_BASE_CHANGE: usize = 4;
-const INSTR_FLIP: usize = 5;
-const INSTR_LARGE_RLE: usize = 6;
+pub(crate) const INSTR_DEFAULT: i32 = 0;
+pub(crate) const INSTR_BASE_RUNLENGTH: i32 = 1;
+pub(crate) const INSTR_ONLY_LARGE: i32 = 2;
+pub(crate) const INSTR_ONLY_SMALL: i32 = 3;
+pub(crate) const INSTR_LARGE_BASE_CHANGE: i32 = 4;
+pub(crate) const INSTR_FLIP: i32 = 5;
+pub(crate) const INSTR_LARGE_RLE: i32 = 6;
 
 const MAXINSTR: usize = 7;
 
 // TODO: enable compile-time feature
-const INSTRNAMES: [&str; MAXINSTR] = [
+pub(crate) const INSTRNAMES: [&str; MAXINSTR] = [
     "large+small",
     "base+run",
     "large",
@@ -162,6 +162,50 @@ const SEQ_INSTR: [[u32; 2]; MAXINSTR] = [
              large atoms are in the following sequence: 3-18. (2 is
              more efficiently coded with two large instructions. */
 ];
+
+pub(crate) fn readbits(ptr: &mut &[u8], bitptr: &mut i32, nbits: i32) -> u32 {
+    let mut nbits = nbits;
+    let mut val = 0u32;
+    let mut extract_mask = 0x80_u32 >> *bitptr;
+    let mut thisval = ptr[0];
+
+    debug!("Read nbits={nbits}");
+
+    while nbits != 0 {
+        val <<= 1;
+        val |= ((extract_mask & thisval as u32) != 0) as u32;
+        *bitptr += 1;
+        extract_mask >>= 1;
+        if extract_mask == 0 {
+            extract_mask = 0x80_u32;
+            *ptr = &ptr[1..];
+            *bitptr = 0;
+            if nbits != 0 {
+                thisval = ptr[0];
+            }
+        }
+
+        nbits -= 1;
+    }
+
+    debug!("val={val}");
+
+    val
+}
+
+pub(crate) fn readmanybits(ptr: &mut &[u8], bitptr: &mut i32, mut nbits: i32, buffer: &mut [u8]) {
+    let mut buf_idx = 0;
+    while nbits >= 8 {
+        buffer[buf_idx] = readbits(ptr, bitptr, 8) as u8;
+        debug!("Read value {:02x}", buffer[buf_idx]);
+        buf_idx += 1;
+        nbits -= 8;
+    }
+    if nbits != 0 {
+        buffer[buf_idx] = readbits(ptr, bitptr, nbits) as u8;
+        debug!("Read value {:02x}", buffer[buf_idx]);
+    }
+}
 
 pub(crate) const fn ptngc_magic(i: usize) -> u32 {
     MAGIC[i]
@@ -320,12 +364,80 @@ fn trajcoder_base_compress(input: &[i32], n: usize, index: &[u32], result: &mut 
     }
 }
 
-fn write_instruction(coder: &mut Coder, instr: usize, output: &mut Vec<u8>) {
+/// The opposite of [`base_compress`]
+pub(crate) fn trajcoder_base_decompress(input: &[u8], n: i32, index: &[i32], output: &mut [i32]) {
+    // Convert the sequence of bytes to a largeint
+    let mut largeint = [0; 19];
+    let mut largeint_tmp = [0; 19];
+    for i in 0..18 {
+        let mut shift = 0;
+        for j in 0..4 {
+            largeint[i] |= (input[i * 4 + j] as u32) << shift;
+            shift += 8;
+        }
+    }
+    largeint[18] = 0;
+    debug!("Largeint");
+    debug!("{largeint:?}");
+
+    for i in (0..n).rev() {
+        let remainder = ptngc_largeint_div(
+            MAGIC[index[(i % 3) as usize] as usize],
+            &largeint,
+            &mut largeint_tmp,
+            19,
+        );
+        debug!("Remainder: {remainder}");
+
+        largeint = largeint_tmp;
+        output[i as usize] = remainder as i32;
+    }
+}
+
+fn write_instruction(coder: &mut Coder, instr: i32, output: &mut Vec<u8>) {
     debug!(
         "INSTR: {} ({} bits)",
-        INSTRNAMES[instr], SEQ_INSTR[instr][1]
+        INSTRNAMES[instr as usize], SEQ_INSTR[instr as usize][1]
     );
-    coder.ptngc_writebits(SEQ_INSTR[instr][0], SEQ_INSTR[instr][1], output);
+    coder.ptngc_writebits(
+        SEQ_INSTR[instr as usize][0],
+        SEQ_INSTR[instr as usize][1],
+        output,
+    );
+}
+
+pub(crate) fn read_instruction(ptr: &mut &[u8], bitptr: &mut i32) -> i32 {
+    let mut bits = readbits(ptr, bitptr, 1);
+
+    let instr;
+    if bits != 0 {
+        instr = INSTR_DEFAULT;
+    } else {
+        bits = readbits(ptr, bitptr, 1);
+        if bits == 0 {
+            instr = INSTR_BASE_RUNLENGTH;
+        } else {
+            bits = readbits(ptr, bitptr, 1);
+            instr = match bits {
+                0 => INSTR_ONLY_LARGE,
+                1 => INSTR_ONLY_SMALL,
+                2 => INSTR_LARGE_BASE_CHANGE,
+                3 => {
+                    bits = readbits(ptr, bitptr, 1);
+                    if bits == 0 {
+                        INSTR_FLIP
+                    } else {
+                        INSTR_LARGE_RLE
+                    }
+                }
+                _ => {
+                    debug!("bits was unmatched with instruction. Got bits={bits}");
+                    -1
+                }
+            };
+        }
+    }
+    instr
 }
 
 pub(crate) fn ptngc_pack_array_xtc2(
@@ -1010,7 +1122,7 @@ fn insert_batch(
 }
 
 // Compute number of bits required to store values using three different bases in the index array
-fn compute_magic_bits(index: [u32; 3]) -> u32 {
+pub(crate) fn compute_magic_bits(index: [u32; 3]) -> u32 {
     let mut largeint = [0; 4];
     let mut largeint_tmp = [0; 4];
 

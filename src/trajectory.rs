@@ -1175,26 +1175,22 @@ impl Trajectory {
         data: &[u8],
         compressed_len: u64,
         uncompressed_len: usize,
-    ) -> Result<Vec<u8>, ()> {
+    ) -> Result<Vec<u8>, TngError> {
         let cursor = &data[..compressed_len as usize];
         let mut decoder = ZlibDecoder::new(cursor);
         let mut output = Vec::with_capacity(uncompressed_len);
         match decoder.read_to_end(&mut output) {
             Ok(_) => {
                 if output.len() != uncompressed_len {
-                    eprintln!(
+                    return Err(TngError::Constraint(format!(
                         "Expected {} bytes, but uncompressed {} bytes.",
                         uncompressed_len,
                         output.len()
-                    );
-                    return Err(());
+                    )));
                 }
                 Ok(output)
             }
-            Err(e) => {
-                eprintln!("{}", e);
-                Err(())
-            }
+            Err(e) => Err(TngError::Constraint(format!("{e}"))),
         }
     }
 
@@ -2160,6 +2156,15 @@ impl Trajectory {
         std::mem::size_of::<i64>() * (2 + usize::try_from(n_particles).expect("usize from i64"))
     }
 
+    /// .
+    ///
+    /// # Panics
+    ///
+    /// Panics if .
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if .
     fn tng_compress(
         &self,
         compress_algo_pos: &mut Vec<i32>,

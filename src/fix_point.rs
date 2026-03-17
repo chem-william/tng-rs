@@ -1,3 +1,5 @@
+use std::ops::{BitAnd, BitOr, BitOrAssign, Shl};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FixT(u32);
 
@@ -65,6 +67,36 @@ impl From<u32> for FixT {
 impl From<FixT> for u32 {
     fn from(f: FixT) -> u32 {
         f.0
+    }
+}
+
+impl BitAnd for FixT {
+    type Output = Self;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        FixT::from(self.0 & rhs.0)
+    }
+}
+
+impl Shl for FixT {
+    type Output = Self;
+
+    fn shl(self, rhs: Self) -> Self::Output {
+        FixT::from(self.0 << rhs.0)
+    }
+}
+
+impl BitOr for FixT {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        FixT::from(self.0 | rhs.0)
+    }
+}
+
+impl BitOrAssign for FixT {
+    fn bitor_assign(&mut self, rhs: Self) {
+        FixT::from(self.0 | rhs.0);
     }
 }
 
