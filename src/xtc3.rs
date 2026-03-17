@@ -93,7 +93,7 @@ impl Default for Xtc3Context {
 }
 
 // Modifies three integer values for better compression of water
-pub(crate) fn swap_ints(input: &[i32], output: &mut [i32]) {
+pub(crate) fn swap_ints(input: &[i32; 3], output: &mut [i32; 3]) {
     output[0] = input[0] + input[1];
     output[1] = -input[1];
     output[2] = input[1] + input[2];

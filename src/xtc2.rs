@@ -30,7 +30,7 @@ const MAGIC: [u32; MAX_MAGIC] = [
     3408917801,
 ];
 
-const MAGIC_BITS: [[u32; 8]; MAX_MAGIC] = [
+pub(crate) const MAGIC_BITS: [[u32; 8]; MAX_MAGIC] = [
     [3, 6, 9, 12, 15, 18, 21, 24],
     [5, 10, 15, 20, 24, 29, 34, 39],
     [6, 12, 18, 24, 30, 36, 42, 48],
@@ -365,7 +365,7 @@ fn trajcoder_base_compress(input: &[i32], n: usize, index: &[u32], result: &mut 
 }
 
 /// The opposite of [`base_compress`]
-pub(crate) fn trajcoder_base_decompress(input: &[u8], n: i32, index: &[i32], output: &mut [i32]) {
+pub(crate) fn trajcoder_base_decompress(input: &[u8], n: i32, index: &[u32], output: &mut [i32]) {
     // Convert the sequence of bytes to a largeint
     let mut largeint = [0; 19];
     let mut largeint_tmp = [0; 19];

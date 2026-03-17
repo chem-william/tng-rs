@@ -9,10 +9,11 @@ use crate::{
         TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER,
     },
     xtc2::{
-        INSTR_DEFAULT, INSTR_ONLY_LARGE, INSTR_ONLY_SMALL, INSTRNAMES, compute_magic_bits,
-        ptngc_pack_array_xtc2, read_instruction, readbits, readmanybits,
+        INSTR_BASE_RUNLENGTH, INSTR_DEFAULT, INSTR_FLIP, INSTR_LARGE_BASE_CHANGE, INSTR_LARGE_RLE,
+        INSTR_ONLY_LARGE, INSTR_ONLY_SMALL, INSTRNAMES, MAGIC_BITS, compute_magic_bits,
+        ptngc_pack_array_xtc2, read_instruction, readbits, readmanybits, trajcoder_base_decompress,
     },
-    xtc3::{positive_int, ptngc_pack_array_xtc3, unpositive_int},
+    xtc3::{positive_int, ptngc_pack_array_xtc3, swap_ints, unpositive_int},
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -482,7 +483,7 @@ impl Coder {
         }
     }
 
-    fn unpack_array_triplet<'a>(
+    pub(crate) fn unpack_array_triplet<'a>(
         &self,
         packed: &'a [u8],
         output: &'a mut [i32],
@@ -547,12 +548,15 @@ impl Coder {
     }
 
     // C API: Ptngc_unpack_array_xtc2
-    fn unpack_array_xtc2<'a>(&self, packed: &'a [u8], output: &'a mut [i32], length: i32) {
+    pub(crate) fn unpack_array_xtc2<'a>(&self, packed: &'a [u8], output: &'a mut [i32], length: i32) {
+        let mut output_counter = 0;
         let mut ptr = packed;
         let mut bitptr = 0;
         let mut ntriplets_left = length / 3;
+        let mut swapatoms = false;
+        let mut runlength = 0;
         let mut compress_buffer = [0; 18 * 4]; // Holds compressed result for 3 large ints or up to 18 small ints
-        let encode_ints = [0; 21]; // Up to 3 large + 18 small ints can be encoded at once
+        let mut encode_ints = [0; 21]; // Up to 3 large + 18 small ints can be encoded at once
 
         // Read min integers
         let minint = [
@@ -567,7 +571,7 @@ impl Coder {
             readbits(&mut ptr, &mut bitptr, 8),
         ];
         // Read small index
-        let small_index = readbits(&mut ptr, &mut bitptr, 8);
+        let mut small_index = readbits(&mut ptr, &mut bitptr, 8);
 
         let large_nbits = compute_magic_bits(large_index);
 
@@ -583,17 +587,17 @@ impl Coder {
         debug!("large_nbits={large_nbits}");
 
         // Initial prevcoord is the minimum integers
-        let prevcoord = minint;
+        let mut prevcoord = minint;
 
         while ntriplets_left != 0 {
             let instr = read_instruction(&mut ptr, &mut bitptr);
             debug!("Decoded instruction {}", INSTRNAMES[instr as usize]);
 
             if instr == INSTR_DEFAULT || instr == INSTR_ONLY_LARGE || instr == INSTR_ONLY_SMALL {
-                let large_ints = [0; 3];
+                let mut large_ints = [0; 3];
                 if instr != INSTR_ONLY_SMALL {
                     // Clear the compress buffer
-                    compress_buffer = [0; 18 * 4];
+                    compress_buffer.fill(0);
                     // Get the large value
                     readmanybits(
                         &mut ptr,
@@ -601,8 +605,156 @@ impl Coder {
                         large_nbits as i32,
                         &mut compress_buffer,
                     );
+                    trajcoder_base_decompress(&compress_buffer, 3, &large_index, &mut encode_ints);
+                    large_ints.copy_from_slice(&encode_ints[..3]);
+                    debug!("large ints: {large_ints:?}");
                 }
+
+                if instr != INSTR_ONLY_LARGE {
+                    // The same base is used for the small changes
+                    let small_idx = [small_index; 3];
+
+                    // Clear the compress buffer
+                    compress_buffer.fill(0);
+
+                    // Get the small values
+                    readmanybits(
+                        &mut ptr,
+                        &mut bitptr,
+                        MAGIC_BITS[small_index as usize][runlength - 1] as i32,
+                        &mut compress_buffer,
+                    );
+                    trajcoder_base_decompress(
+                        &compress_buffer,
+                        3 * runlength as i32,
+                        &small_idx,
+                        &mut encode_ints,
+                    );
+                }
+
+                if instr == INSTR_DEFAULT {
+                    // Check for swapped atoms
+                    if swapatoms {
+                        // Unswap the atoms
+                        for i in 0..3 {
+                            let mut out = [0; 3];
+                            let inp = [
+                                large_ints[i],
+                                unpositive_int(encode_ints[i]),
+                                unpositive_int(encode_ints[3 + i]),
+                            ];
+                            swap_ints(&inp, &mut out);
+                            large_ints[i] = out[0];
+                            encode_ints[i] = positive_int(out[1]) as i32;
+                            encode_ints[3 + i] = positive_int(out[2]) as i32;
+                        }
+                    }
+                }
+                // Output result
+                if instr != INSTR_ONLY_SMALL {
+                    // Output large values
+                    output[output_counter] = large_ints[0] + minint[0];
+                    output_counter += 1;
+                    output[output_counter] = large_ints[1] + minint[1];
+                    output_counter += 1;
+                    output[output_counter] = large_ints[2] + minint[2];
+                    output_counter += 1;
+
+                    prevcoord = large_ints;
+                    debug!("Prevcoord after unpacking of large: {prevcoord:?}");
+                    debug!(
+                        "VALUE: {} {} {} {}",
+                        length / 3 - ntriplets_left,
+                        prevcoord[0] + minint[0],
+                        prevcoord[1] + minint[1],
+                        prevcoord[2] + minint[2]
+                    );
+                    ntriplets_left -= 1;
+                }
+                if instr != INSTR_ONLY_LARGE {
+                    // Output small values
+                    debug!("Prevcoord before unpacking of small: {prevcoord:?}");
+
+                    for i in 0..runlength {
+                        let v = [
+                            unpositive_int(encode_ints[i * 3]),
+                            unpositive_int(encode_ints[i * 3 + 1]),
+                            unpositive_int(encode_ints[i * 3 + 2]),
+                        ];
+                        prevcoord[0] += v[0];
+                        prevcoord[1] += v[1];
+                        prevcoord[2] += v[2];
+
+                        debug!("Prevcoord after unpacking of small: {prevcoord:?}");
+                        debug!("Unpacked small values: {v:?} {prevcoord:?}");
+                        debug!(
+                            "VALUE: {} {} {} {}",
+                            length / 3 - (ntriplets_left - i as i32),
+                            prevcoord[0] + minint[0],
+                            prevcoord[1] + minint[1],
+                            prevcoord[2] + minint[2]
+                        );
+
+                        output[output_counter] = prevcoord[0] + minint[0];
+                        output_counter += 1;
+                        output[output_counter] = prevcoord[1] + minint[1];
+                        output_counter += 1;
+                        output[output_counter] = prevcoord[2] + minint[2];
+                        output_counter += 1;
+                    }
+                    ntriplets_left -= runlength as i32;
+                }
+            } else if instr == INSTR_LARGE_RLE {
+                let mut large_ints = [0; 3];
+                // How many large atoms in this sequence?
+                let n = (readbits(&mut ptr, &mut bitptr, 4) + 3) as i32; // 3-18 large atoms
+                for _ in 0..n as usize {
+                    // Clear the compress buffer
+                    compress_buffer.fill(0);
+                    // Get the large value
+                    readmanybits(
+                        &mut ptr,
+                        &mut bitptr,
+                        large_nbits as i32,
+                        &mut compress_buffer,
+                    );
+                    trajcoder_base_decompress(&compress_buffer, 3, &large_index, &mut encode_ints);
+                    large_ints.copy_from_slice(&encode_ints[..3]);
+                    output[output_counter] = prevcoord[0] + minint[0];
+                    output_counter += 1;
+                    output[output_counter] = prevcoord[1] + minint[1];
+                    output_counter += 1;
+                    output[output_counter] = prevcoord[2] + minint[2];
+                    output_counter += 1;
+                    prevcoord.copy_from_slice(&large_ints);
+                }
+                ntriplets_left -= n;
+            } else if instr == INSTR_BASE_RUNLENGTH {
+                let code = readbits(&mut ptr, &mut bitptr, 4) as i32;
+                let change;
+                if code == 15 {
+                    change = 0;
+                    runlength = 6;
+                } else {
+                    let ichange = code % 3;
+                    runlength = code as usize / 3 + 1;
+                    change = ichange - 1;
+                }
+                small_index += change as u32;
+            } else if instr == INSTR_FLIP {
+                swapatoms = !swapatoms;
+            } else if instr == INSTR_LARGE_BASE_CHANGE {
+                let ichange = readbits(&mut ptr, &mut bitptr, 2);
+                let mut change = (ichange & 0x1_u32) as i32 + 1;
+                if (ichange & 0x2_u32) != 0 {
+                    change = -change;
+                }
+                small_index += change as u32;
+            } else {
+                panic!("BUG! Encoded unknown instruction");
             }
+            debug!("Number of triplets left is {ntriplets_left}");
         }
+        // return 0;
     }
 }
