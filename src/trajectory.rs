@@ -6670,7 +6670,7 @@ fn compress_uncompress_pos_gen(
         natoms * 3,
         initial_coding,
         initial_coding_parameter,
-        natoms,
+        natoms as usize,
     );
 
     Ok((0, 0))

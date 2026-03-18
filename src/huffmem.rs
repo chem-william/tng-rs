@@ -241,17 +241,17 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     }
 }
 
+fn read3le(data: &[u8], offset: usize) -> i32 {
+    (data[offset] as i32) | ((data[offset + 1] as i32) << 8) | ((data[offset + 2] as i32) << 16)
+}
+
 pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals: &mut [u32]) {
     let isvals16 = huffman[0] as i32;
     let algo = huffman[1] as i32;
     let mut nvals16 = i32::from_le_bytes(huffman[2..2 + 4].try_into().expect("error handling"));
     let nvals = i32::from_le_bytes(huffman[6..6 + 4].try_into().expect("error handling"));
     let nhuff = i32::from_le_bytes(huffman[10..10 + 4].try_into().expect("error handling"));
-    let ndict = i32::from_le_bytes(
-        huffman[17 + nhuff as usize..17 + nhuff as usize + 3]
-            .try_into()
-            .expect("error handling"),
-    );
+    let ndict = read3le(huffman, 17 + nhuff as usize);
 
     let mut owner_vals16 = vec![0_u32; nvals16 as usize];
     let mut vals16 = owner_vals16.as_mut_slice();
@@ -262,11 +262,7 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals:
 
     match algo {
         0 => {
-            let nhuffdict = i32::from_le_bytes(
-                huffman[14 + nhuff as usize..14 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
+            let nhuffdict = read3le(huffman, 14 + nhuff as usize);
             ptngc_comp_conv_from_huffman(
                 &huffman[14..],
                 &mut vals16,
@@ -279,32 +275,16 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals:
         1 => {
             let mut huffdictunpack = vec![0; 0x20005];
             // First the dictionary needs to be uncompressed
-            let nhuffdictunpack = i32::from_le_bytes(
-                huffman[14 + nhuff as usize..14 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
-            let nhuff1 = i32::from_le_bytes(
-                huffman[20 + nhuff as usize..20 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
-            let nhuffdict1 = i32::from_le_bytes(
-                huffman[23 + nhuff as usize..23 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
-            let ndict1 = i32::from_le_bytes(
-                huffman[26 + nhuff as usize..26 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
+            let nhuffdictunpack = read3le(huffman, 14 + nhuff as usize);
+            let nhuff1 = read3le(huffman, 20 + nhuff as usize);
+            let nhuffdict1 = read3le(huffman, 23 + nhuff as usize);
+            let ndict1 = read3le(huffman, 26 + nhuff as usize);
             ptngc_comp_conv_from_huffman(
                 &huffman[(29 + nhuff) as usize..],
                 &mut huffdictunpack,
                 nhuffdictunpack,
                 ndict1 as usize,
-                Some(&huffman[(29 + nhuff) as usize..]),
+                Some(&huffman[(29 + nhuff + nhuff1) as usize..]),
                 None,
             );
             // Then decompress the "real" data
@@ -314,38 +294,18 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals:
                 nvals16,
                 ndict as usize,
                 None,
-                None,
+                Some(&mut huffdictunpack),
             );
         }
         2 => {
             // let mut huffdictunpack = vec![0; 0x20005];
             let mut huffdictrle = vec![0; 3 * 0x20005 + 3];
             // First the dictionary needs to be uncompressed
-            let nhuffdictunpack = i32::from_le_bytes(
-                huffman[14 + nhuff as usize..14 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
-            let nhuffrle = i32::from_le_bytes(
-                huffman[20 + nhuff as usize..20 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
-            let nhuff2 = i32::from_le_bytes(
-                huffman[23 + nhuff as usize..23 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
-            let nhuffdict2 = i32::from_le_bytes(
-                huffman[26 + nhuff as usize..26 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
-            let ndict2 = i32::from_le_bytes(
-                huffman[29 + nhuff as usize..29 + nhuff as usize + 3]
-                    .try_into()
-                    .expect("error handling"),
-            );
+            let nhuffdictunpack = read3le(huffman, 14 + nhuff as usize);
+            let nhuffrle = read3le(huffman, 20 + nhuff as usize);
+            let nhuff2 = read3le(huffman, 23 + nhuff as usize);
+            let nhuffdict2 = read3le(huffman, 26 + nhuff as usize);
+            let ndict2 = read3le(huffman, 29 + nhuff as usize);
             ptngc_comp_conv_from_huffman(
                 &huffman[(32 + nhuff) as usize..],
                 &mut huffdictrle,

@@ -14,7 +14,9 @@ use crate::{
         INSTR_ONLY_LARGE, INSTR_ONLY_SMALL, INSTRNAMES, MAGIC_BITS, compute_magic_bits,
         ptngc_pack_array_xtc2, read_instruction, readbits, readmanybits, trajcoder_base_decompress,
     },
-    xtc3::{positive_int, ptngc_pack_array_xtc3, swap_ints, unpositive_int},
+    xtc3::{
+        positive_int, ptngc_pack_array_xtc3, ptngc_unpack_array_xtc3, swap_ints, unpositive_int,
+    },
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -216,10 +218,10 @@ impl Coder {
         packed: &'a [u8],
         output: &'a mut [i32],
         length: i32,
-        n_atoms: i32,
+        n_atoms: usize,
     ) -> Result<(), TngError> {
         let n = length;
-        let nframes = n / n_atoms / 3;
+        let nframes = n as usize / n_atoms / 3;
         let mut pval = vec![0u32; n as usize];
         let mut cnt = 0;
         let most_negative = (packed[0] as u32
@@ -249,7 +251,7 @@ impl Coder {
         length: i32,
         coding: i32,
         coding_parameter: i32,
-        n_atoms: i32,
+        n_atoms: usize,
     ) -> Result<(), TngError> {
         match coding {
             TNG_COMPRESS_ALGO_STOPBIT | TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER => {
@@ -265,13 +267,7 @@ impl Coder {
             TNG_COMPRESS_ALGO_BWLZH1 | TNG_COMPRESS_ALGO_BWLZH2 => {
                 self.unpack_array_bwlzh(packed, output, length, n_atoms)
             }
-            // TNG_COMPRESS_ALGO_POS_XTC3 => self.unpack_array_xtc3(
-            //     packed,
-            //     length,
-            //     coding_parameterpacked,
-            //     length,
-            //     coding_parameter,
-            // ),
+            TNG_COMPRESS_ALGO_POS_XTC3 => ptngc_unpack_array_xtc3(packed, output, length, n_atoms),
             _ => unreachable!("unpack array got unknown coding"),
         }
     }

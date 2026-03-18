@@ -79,7 +79,7 @@ fn rust_run_unpack(packed: &[u8], length: i32, coding: i32, coding_parameter: i3
         length,
         coding,
         coding_parameter,
-        length / 3,
+        (length / 3) as usize,
     );
     output
 }
@@ -279,7 +279,6 @@ proptest! {
 
 proptest! {
     #[test]
-    #[ignore = "unpack_array_xtc3 not yet implemented"]
     fn unpack_xtc3_matches_c(vals in xtc3_vals()) {
         assert_unpack_matches_c(&vals, TNG_COMPRESS_ALGO_POS_XTC3, 1)?;
     }
@@ -287,7 +286,6 @@ proptest! {
 
 proptest! {
     #[test]
-    #[ignore = "unpack_array_xtc3 not yet implemented"]
     fn xtc3_pack_unpack_cross(vals in xtc3_vals()) {
         assert_pack_unpack_cross(&vals, TNG_COMPRESS_ALGO_POS_XTC3, 1)?;
     }
@@ -295,7 +293,6 @@ proptest! {
 
 proptest! {
     #[test]
-    #[ignore = "unpack_array_bwlzh not yet implemented"]
     fn unpack_bwlzh1_matches_c(vals in unpack_vals()) {
         assert_unpack_matches_c(&vals, TNG_COMPRESS_ALGO_BWLZH1, 9)?;
     }
@@ -303,7 +300,6 @@ proptest! {
 
 proptest! {
     #[test]
-    #[ignore = "unpack_array_bwlzh not yet implemented"]
     fn bwlzh1_pack_unpack_cross(vals in unpack_vals()) {
         assert_pack_unpack_cross(&vals, TNG_COMPRESS_ALGO_BWLZH1, 9)?;
     }
@@ -311,7 +307,6 @@ proptest! {
 
 proptest! {
     #[test]
-    #[ignore = "unpack_array_bwlzh not yet implemented"]
     fn unpack_bwlzh2_matches_c(vals in unpack_vals()) {
         assert_unpack_matches_c(&vals, TNG_COMPRESS_ALGO_BWLZH2, 9)?;
     }
@@ -319,7 +314,6 @@ proptest! {
 
 proptest! {
     #[test]
-    #[ignore = "unpack_array_bwlzh not yet implemented"]
     fn bwlzh2_pack_unpack_cross(vals in unpack_vals()) {
         assert_pack_unpack_cross(&vals, TNG_COMPRESS_ALGO_BWLZH2, 9)?;
     }

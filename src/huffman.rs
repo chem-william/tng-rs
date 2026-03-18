@@ -357,7 +357,7 @@ pub(crate) fn ptngc_comp_conv_from_huffman(
             | huffman_dict_unpacked[1] << 8
             | huffman_dict_unpacked[2] << 16;
         let mut j = 0;
-        for i in 0..maxdict as usize {
+        for i in 0..=maxdict as usize {
             if huffman_dict_unpacked[3 + i] != 0 {
                 codelength[j].length = huffman_dict_unpacked[3 + i] as usize;
                 codelength[j].dict = i as u32;
@@ -373,7 +373,7 @@ pub(crate) fn ptngc_comp_conv_from_huffman(
         huffman_ptr = &huffman_ptr[3..];
         bitptr = 0;
         let mut j = 0;
-        for i in 0..maxdict {
+        for i in 0..=maxdict {
             let bit = readbits(&mut huffman_ptr, &mut bitptr, 1);
 
             if bit != 0 {
@@ -387,7 +387,7 @@ pub(crate) fn ptngc_comp_conv_from_huffman(
     }
 
     // Sort codes wrt length/value
-    codelength.sort_by_key(|item| Reverse(item.length));
+    codelength.sort_by_key(|item| item.length);
     // Canonicalize codes.
     let mut code = 0;
     for i in 0..ndict {

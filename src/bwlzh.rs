@@ -420,7 +420,8 @@ fn bwlzh_decompress_gen(input: &[u8], nvals: i32, vals: &mut [u32]) {
                     } else {
                         debug!("Reading offset block.");
                         for i in 0..noffsets as usize {
-                            offsets[i] = (input[inpdata] as u32) | ((input[inpdata + 1] as u32) << 8);
+                            offsets[i] =
+                                (input[inpdata] as u32) | ((input[inpdata + 1] as u32) << 8);
                             inpdata += 2;
                         }
                     }
@@ -469,7 +470,11 @@ fn bwlzh_decompress_gen(input: &[u8], nvals: i32, vals: &mut [u32]) {
 
         // Inverse BWT
         debug!("Inverse BWT.");
-        ptngc_comp_from_bwt(&bwt[..nvals16 as usize], bwt_index as usize, &mut vals16[..nvals16 as usize]);
+        ptngc_comp_from_bwt(
+            &bwt[..nvals16 as usize],
+            bwt_index as usize,
+            &mut vals16[..nvals16 as usize],
+        );
 
         // Decode vals16 -> output vals
         debug!("Decompressing vals16 block.");

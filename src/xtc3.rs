@@ -1,6 +1,7 @@
 use crate::{
-    bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_get_buflen},
-    widemuldiv::{ptngc_largeint_add, ptngc_largeint_mul},
+    TngError,
+    bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_decompress, bwlzh_get_buflen},
+    widemuldiv::{ptngc_largeint_add, ptngc_largeint_div, ptngc_largeint_mul},
     xtc2::{ptngc_find_magic_index, ptngc_magic},
 };
 
@@ -58,6 +59,7 @@ const BASEINTERVAL: usize = 8;
 #[derive(Debug)]
 struct Xtc3Context {
     instructions: Vec<u32>,
+    ninstr: i32,
     rle: Vec<u32>,
     large_direct: Vec<u32>,
     large_intra_delta: Vec<u32>,
@@ -77,6 +79,7 @@ impl Default for Xtc3Context {
     fn default() -> Self {
         Self {
             instructions: Vec::new(),
+            ninstr: 0,
             rle: Vec::new(),
             large_direct: Vec::new(),
             large_intra_delta: Vec::new(),
@@ -1221,6 +1224,304 @@ pub(crate) fn ptngc_pack_array_xtc3(
         );
     }
     (output, outdata)
+}
+
+fn decompress_bwlzh_block(ptr: &mut &[u8], nvals: usize, vals: &mut Vec<u32>) {
+    let bwlzh_buf_len = u32::from_le_bytes(ptr[..4].try_into().expect("error handling")) as usize;
+    *ptr = &ptr[4..];
+    vals.resize(nvals, 0);
+    bwlzh_decompress(*ptr, nvals as i32, vals);
+    *ptr = &ptr[bwlzh_buf_len..];
+}
+
+fn decompress_base_block(ptr: &mut &[u8], nvals: usize, vals: &mut Vec<u32>) {
+    let base_buf_len = u32::from_le_bytes(ptr[..4].try_into().expect("error handling")) as usize;
+    *ptr = &ptr[4..];
+    vals.resize(nvals, 0);
+    base_decompress(&ptr[..base_buf_len], nvals, vals);
+    *ptr = &ptr[base_buf_len..];
+}
+
+fn base_decompress(input: &[u8], len: usize, output: &mut [u32]) {
+    let maxbasevals = (input[0] as u16 | ((input[1] as u16) << 8)) as usize;
+    let baseinterval = input[2] as usize;
+    let mut input = &input[3..];
+
+    let mut largeint = vec![0u32; maxbasevals + 1];
+    let mut largeint_tmp = vec![0u32; maxbasevals + 1];
+
+    for ixyz in 0..3 {
+        let mut nvals_left = len / 3;
+        let mut outvals = ixyz;
+        let mut basegiven = 0usize;
+        let mut base = 0u32;
+        let mut numbytes = 0usize;
+
+        while nvals_left > 0 {
+            if basegiven == 0 {
+                base = u32::from_le_bytes(input[..4].try_into().expect("error handling"));
+                input = &input[4..];
+                basegiven = baseinterval;
+                numbytes = base_bytes(base, maxbasevals);
+            }
+            basegiven -= 1;
+
+            if nvals_left < maxbasevals {
+                numbytes = base_bytes(base, nvals_left);
+            }
+
+            largeint.fill(0);
+
+            if numbytes / 4 < maxbasevals + 1 {
+                for j in 0..numbytes {
+                    let ilarge = j / 4;
+                    let ibyte = j % 4;
+                    largeint[ilarge] |= (input[j] as u32) << (ibyte * 8);
+                }
+            }
+            input = &input[numbytes..];
+
+            let n = maxbasevals.min(nvals_left);
+            for i in (0..n).rev() {
+                output[outvals + i * 3] =
+                    ptngc_largeint_div(base, &largeint, &mut largeint_tmp, maxbasevals + 1);
+                largeint[..maxbasevals + 1].copy_from_slice(&largeint_tmp[..maxbasevals + 1]);
+            }
+            outvals += n * 3;
+            nvals_left -= n;
+        }
+    }
+}
+
+fn unpack_one_large(
+    ctx: &Xtc3Context,
+    ilargedir: &mut usize,
+    ilargeintra: &mut usize,
+    ilargeinter: &mut usize,
+    prevcoord: &mut [i32; 3],
+    minint: &[i32; 3],
+    output: &mut [i32],
+    outdata: usize,
+    didswap: bool,
+    natoms: usize,
+    current_large_type: i32,
+) {
+    let mut large_ints = [0i32; 3];
+    if current_large_type == 0 && !ctx.large_direct.is_empty() {
+        large_ints[0] = ctx.large_direct[*ilargedir] as i32 + minint[0];
+        large_ints[1] = ctx.large_direct[*ilargedir + 1] as i32 + minint[1];
+        large_ints[2] = ctx.large_direct[*ilargedir + 2] as i32 + minint[2];
+        *ilargedir += 3;
+    } else if current_large_type == 1 && !ctx.large_intra_delta.is_empty() {
+        large_ints[0] = unpositive_int(ctx.large_intra_delta[*ilargeintra] as i32) + prevcoord[0];
+        large_ints[1] =
+            unpositive_int(ctx.large_intra_delta[*ilargeintra + 1] as i32) + prevcoord[1];
+        large_ints[2] =
+            unpositive_int(ctx.large_intra_delta[*ilargeintra + 2] as i32) + prevcoord[2];
+        *ilargeintra += 3;
+    } else if !ctx.large_inter_delta.is_empty() {
+        let swap_offset = if didswap { 3 } else { 0 };
+        let base = outdata - natoms * 3 + swap_offset;
+        large_ints[0] = unpositive_int(ctx.large_inter_delta[*ilargeinter] as i32) + output[base];
+        large_ints[1] =
+            unpositive_int(ctx.large_inter_delta[*ilargeinter + 1] as i32) + output[base + 1];
+        large_ints[2] =
+            unpositive_int(ctx.large_inter_delta[*ilargeinter + 2] as i32) + output[base + 2];
+        *ilargeinter += 3;
+    }
+    *prevcoord = large_ints;
+    output[outdata] = large_ints[0];
+    output[outdata + 1] = large_ints[1];
+    output[outdata + 2] = large_ints[2];
+}
+
+pub(crate) fn ptngc_unpack_array_xtc3(
+    packed: &[u8],
+    output: &mut [i32],
+    length: i32,
+    n_atoms: usize,
+) -> Result<(), TngError> {
+    let mut xtc3_context = Xtc3Context::default();
+    let mut ptr = packed;
+    let mut minint = [0i32; 3];
+
+    for i in 0..3 {
+        minint[i] = unpositive_int(i32::from_le_bytes(
+            ptr[..4].try_into().expect("error handling"),
+        ));
+        ptr = &ptr[4..];
+    }
+
+    xtc3_context.ninstr = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
+    ptr = &ptr[4..];
+    if xtc3_context.ninstr != 0 {
+        decompress_bwlzh_block(
+            &mut ptr,
+            xtc3_context.ninstr as usize,
+            &mut xtc3_context.instructions,
+        );
+    }
+
+    let nrle = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
+    ptr = &ptr[4..];
+    if nrle != 0 {
+        decompress_bwlzh_block(&mut ptr, nrle as usize, &mut xtc3_context.rle);
+    }
+
+    let nlargedir = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
+    ptr = &ptr[4..];
+    if nlargedir != 0 {
+        let use_bwlzh = ptr[0] == 1;
+        ptr = &ptr[1..];
+        if use_bwlzh {
+            decompress_bwlzh_block(&mut ptr, nlargedir as usize, &mut xtc3_context.large_direct);
+        } else {
+            decompress_base_block(&mut ptr, nlargedir as usize, &mut xtc3_context.large_direct);
+        }
+    }
+
+    let nlargeintra = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
+    ptr = &ptr[4..];
+    if nlargeintra != 0 {
+        let use_bwlzh = ptr[0] == 1;
+        ptr = &ptr[1..];
+        if use_bwlzh {
+            decompress_bwlzh_block(
+                &mut ptr,
+                nlargeintra as usize,
+                &mut xtc3_context.large_intra_delta,
+            );
+        } else {
+            decompress_base_block(
+                &mut ptr,
+                nlargeintra as usize,
+                &mut xtc3_context.large_intra_delta,
+            );
+        }
+    }
+
+    let nlargeinter = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
+    ptr = &ptr[4..];
+    if nlargeinter != 0 {
+        let use_bwlzh = ptr[0] == 1;
+        ptr = &ptr[1..];
+        if use_bwlzh {
+            decompress_bwlzh_block(
+                &mut ptr,
+                nlargeinter as usize,
+                &mut xtc3_context.large_inter_delta,
+            );
+        } else {
+            decompress_base_block(
+                &mut ptr,
+                nlargeinter as usize,
+                &mut xtc3_context.large_inter_delta,
+            );
+        }
+    }
+
+    let nsmallintra = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
+    ptr = &ptr[4..];
+    if nsmallintra != 0 {
+        let use_bwlzh = ptr[0] == 1;
+        ptr = &ptr[1..];
+        if use_bwlzh {
+            decompress_bwlzh_block(&mut ptr, nsmallintra as usize, &mut xtc3_context.smallintra);
+        } else {
+            decompress_base_block(&mut ptr, nsmallintra as usize, &mut xtc3_context.smallintra);
+        }
+    }
+
+    // Initial prevcoord is the minimum integers.
+    let mut prevcoord = [minint[0], minint[1], minint[2]];
+    let mut ntriplets_left = length / 3;
+    let mut outdata = 0usize;
+    let mut swapatoms = false;
+    let mut runlength = 0usize;
+    let mut current_large_type = 0i32;
+    let mut iinstr = 0usize;
+    let mut irle = 0usize;
+    let mut ilargedir = 0usize;
+    let mut ilargeintra = 0usize;
+    let mut ilargeinter = 0usize;
+    let mut ismallintra = 0usize;
+
+    while ntriplets_left > 0 && iinstr < xtc3_context.ninstr as usize {
+        let instr = xtc3_context.instructions[iinstr];
+        iinstr += 1;
+
+        if instr == INSTR_DEFAULT || instr == INSTR_ONLY_LARGE || instr == INSTR_ONLY_SMALL {
+            if instr != INSTR_ONLY_SMALL {
+                let didswap = instr == INSTR_DEFAULT && swapatoms;
+                unpack_one_large(
+                    &xtc3_context,
+                    &mut ilargedir,
+                    &mut ilargeintra,
+                    &mut ilargeinter,
+                    &mut prevcoord,
+                    &minint,
+                    output,
+                    outdata,
+                    didswap,
+                    n_atoms,
+                    current_large_type,
+                );
+                ntriplets_left -= 1;
+                outdata += 3;
+            }
+            if instr != INSTR_ONLY_LARGE {
+                for i in 0..runlength {
+                    prevcoord[0] += unpositive_int(xtc3_context.smallintra[ismallintra] as i32);
+                    prevcoord[1] += unpositive_int(xtc3_context.smallintra[ismallintra + 1] as i32);
+                    prevcoord[2] += unpositive_int(xtc3_context.smallintra[ismallintra + 2] as i32);
+                    ismallintra += 3;
+                    output[outdata + i * 3] = prevcoord[0];
+                    output[outdata + i * 3 + 1] = prevcoord[1];
+                    output[outdata + i * 3 + 2] = prevcoord[2];
+                }
+                if instr == INSTR_DEFAULT && swapatoms {
+                    for i in 0..3 {
+                        output.swap(outdata - 3 + i, outdata + i);
+                    }
+                }
+                ntriplets_left -= runlength as i32;
+                outdata += runlength * 3;
+            }
+        } else if instr == INSTR_LARGE_RLE && irle < xtc3_context.rle.len() {
+            let large_rle = xtc3_context.rle[irle] as usize;
+            irle += 1;
+            for _ in 0..large_rle {
+                unpack_one_large(
+                    &xtc3_context,
+                    &mut ilargedir,
+                    &mut ilargeintra,
+                    &mut ilargeinter,
+                    &mut prevcoord,
+                    &minint,
+                    output,
+                    outdata,
+                    false,
+                    n_atoms,
+                    current_large_type,
+                );
+                ntriplets_left -= 1;
+                outdata += 3;
+            }
+        } else if instr == INSTR_SMALL_RUNLENGTH && irle < xtc3_context.rle.len() {
+            runlength = xtc3_context.rle[irle] as usize;
+            irle += 1;
+        } else if instr == INSTR_FLIP {
+            swapatoms = !swapatoms;
+        } else if instr == INSTR_LARGE_DIRECT {
+            current_large_type = 0;
+        } else if instr == INSTR_LARGE_INTRA_DELTA {
+            current_large_type = 1;
+        } else if instr == INSTR_LARGE_INTER_DELTA {
+            current_large_type = 2;
+        }
+    }
+
+    Ok(())
 }
 
 fn base_or_bwlzh_output(
