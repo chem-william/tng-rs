@@ -10,7 +10,7 @@ fn init_logger() {
 }
 
 use crate::{
-    bwlzh::{bwt_sort, inverse_bwt, ptngc_comp_to_bwt},
+    bwlzh::{bwt_sort, ptngc_comp_from_bwt, ptngc_comp_to_bwt},
     ffi,
 };
 
@@ -41,7 +41,7 @@ fn roundtrip_bwt(vals: &[u32]) {
     );
 
     let mut recovered = vec![0; vals.len()];
-    inverse_bwt(&rust_output, rust_index, &mut recovered);
+    ptngc_comp_from_bwt(&rust_output, rust_index, &mut recovered);
     assert_eq!(
         recovered, vals,
         "BWT roundtrip recovery for the Rust part failed for input: {vals:?}",

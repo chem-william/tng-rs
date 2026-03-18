@@ -1,5 +1,5 @@
 use crate::{
-    bwlzh::{inverse_bwt, ptngc_comp_to_bwt},
+    bwlzh::{ptngc_comp_from_bwt, ptngc_comp_to_bwt},
     ffi,
 };
 use proptest::prelude::*;
@@ -32,7 +32,7 @@ proptest! {
         let mut transformed = vec![0u32; vals.len()];
         let index = ptngc_comp_to_bwt(&vals, vals.len(), &mut transformed);
         let mut recovered = vec![0u32; vals.len()];
-        inverse_bwt(&transformed, index, &mut recovered);
+        ptngc_comp_from_bwt(&transformed, index, &mut recovered);
         prop_assert_eq!(recovered, vals);
     }
 }

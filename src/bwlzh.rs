@@ -5,10 +5,11 @@ use log::debug;
 use crate::{
     huffmem::{
         ptngc_comp_get_huff_algo_name, ptngc_comp_huff_buflen, ptngc_comp_huff_compress_verbose,
+        ptngc_comp_huff_decompress,
     },
-    lz77::ptngc_comp_to_lz77,
-    mtf::ptngc_comp_conv_to_mtf_partial3,
-    rle::ptngc_comp_conv_to_rle,
+    lz77::{ptngc_comp_from_lz77, ptngc_comp_to_lz77},
+    mtf::{ptngc_comp_conv_from_mtf_partial3, ptngc_comp_conv_to_mtf_partial3},
+    rle::{ptngc_comp_conv_from_rle, ptngc_comp_conv_to_rle},
     utils::copy_bytes,
 };
 const MAX_VALS_PER_BLOCK: usize = 200000;
@@ -315,19 +316,18 @@ pub(crate) fn bwlzh_compress_gen(
     outdata
 }
 
-fn bwlzh_decompress_gen(input: &mut [u8], nvals: i32, vals: &mut [u8]) {
+fn bwlzh_decompress_gen(input: &[u8], nvals: i32, vals: &mut [u32]) {
     let mut max_vals_per_block = MAX_VALS_PER_BLOCK as i32;
+    let mut bwlzhhufflen;
     let mut inpdata = 0;
 
-    let total_len = MAX_VALS_PER_BLOCK * 18;
-    let mut tmpmem = vec![0u32; total_len];
-    let bwlzhhuff = vec![0; ptngc_comp_huff_buflen(3 * nvals as usize)];
-    let (mut vals16, mut rest) = tmpmem.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-    let (mut bwt, mut rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-    let (mut mtf, mut rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-    let (mut rle, mut rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-    let (mut offsets, mut lens) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-    // TODO: enable feature flag "partial-mtf3"
+    let mut vals16 = vec![0u32; MAX_VALS_PER_BLOCK * 3];
+    let mut bwt = vec![0u32; MAX_VALS_PER_BLOCK * 3];
+    let mut mtf = vec![0u32; MAX_VALS_PER_BLOCK * 3];
+    let mut rle = vec![0u32; MAX_VALS_PER_BLOCK * 3];
+    let mut offsets = vec![0u32; MAX_VALS_PER_BLOCK * 3];
+    let mut lens = vec![0u32; MAX_VALS_PER_BLOCK * 3];
+    let mut mtf3 = vec![0u8; MAX_VALS_PER_BLOCK * 3 * 3];
 
     debug!("Number of input values: {nvals}");
 
@@ -345,8 +345,6 @@ fn bwlzh_decompress_gen(input: &mut [u8], nvals: i32, vals: &mut [u8]) {
     let mut valstart = 0;
 
     while valsleft != 0 {
-        let valsnew;
-        let reducealgo;
         // Read the number of real values in this block
         let thisvals = i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
         inpdata += 4;
@@ -368,36 +366,128 @@ fn bwlzh_decompress_gen(input: &mut [u8], nvals: i32, vals: &mut [u8]) {
                 "Allocating more memory: {} B",
                 (max_vals_per_block as usize * 15 * size_of::<u32>()) as i32
             );
-            tmpmem = vec![0u32; total_len];
-            (vals16, rest) = tmpmem.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-            (bwt, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-            (mtf, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-            (rle, rest) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-            (offsets, lens) = rest.split_at_mut(MAX_VALS_PER_BLOCK * 3);
-            // TODO: enable feature flag "partial-mtf3"
+            let new_size = max_vals_per_block as usize * 3;
+            vals16.resize(new_size, 0);
+            bwt.resize(new_size, 0);
+            mtf.resize(new_size, 0);
+            rle.resize(new_size, 0);
+            offsets.resize(new_size, 0);
+            lens.resize(new_size, 0);
+            mtf3.resize(max_vals_per_block as usize * 3 * 3, 0);
         }
 
-        // TODO: enable feature flag "partial-mtf3"
-        reducealgo = input[inpdata] as i32;
-        inpdata += 1;
+        for imtfinner in 0..3 {
+            debug!("Doing partial MTF: {imtfinner}");
 
-        // Read the number of huffman values in this block
-        let nrle = i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
-        inpdata += 4;
+            let reducealgo = input[inpdata] as i32;
+            inpdata += 1;
 
-        // Read the size of the huffman block
-        let bwlzhhufflen = i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
-        inpdata += 4;
+            // Read the number of huffman values in this block
+            let nrle = i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
+            inpdata += 4;
 
-        debug!("Decompressing huffman block of length {bwlzhhufflen}");
+            // Read the size of the huffman block
+            bwlzhhufflen = i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
+            inpdata += 4;
 
-        // Decompress the huffman block
-        ptngc_comp_huff_decompress(&input[inpdata..], bwlzhhufflen, rle);
-        inpdata += bwlzhhufflen;
+            debug!("Decompressing huffman block of length {bwlzhhufflen}");
+
+            // Decompress the huffman block
+            ptngc_comp_huff_decompress(&input[inpdata..], bwlzhhufflen, &mut rle);
+            inpdata += bwlzhhufflen as usize;
+
+            // LZ77
+            if reducealgo == 1 {
+                let offstore;
+                // Read the number of huffman values in this block
+                let noffsets = i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
+                inpdata += 4;
+
+                if noffsets > 0 {
+                    // How are the offsets stored
+                    offstore = input[inpdata] as i32;
+                    inpdata += 1;
+                    if offstore == 0 {
+                        // Read the size of the huffman block
+                        bwlzhhufflen =
+                            i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
+                        inpdata += 4;
+                        debug!("Decompressing offset huffman block.");
+
+                        // Decompress the huffman block
+                        ptngc_comp_huff_decompress(&input[inpdata..], bwlzhhufflen, &mut offsets);
+                        inpdata += bwlzhhufflen as usize;
+                    } else {
+                        debug!("Reading offset block.");
+                        for i in 0..noffsets as usize {
+                            offsets[i] = (input[inpdata] as u32) | ((input[inpdata + 1] as u32) << 8);
+                            inpdata += 2;
+                        }
+                    }
+                }
+
+                // Read the number of huffman values in this block.
+                let nlens = i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
+                inpdata += 4;
+                // Read the size of the huffman block.
+                bwlzhhufflen = i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
+                inpdata += 4;
+
+                debug!("Decompressing length huffman block.");
+
+                // Decompress the huffman block
+                ptngc_comp_huff_decompress(&input[inpdata..], bwlzhhufflen, &mut lens);
+                inpdata += bwlzhhufflen as usize;
+
+                debug!("Decompressing LZ77");
+
+                ptngc_comp_from_lz77(
+                    &rle[..nrle as usize],
+                    &lens[..nlens as usize],
+                    &offsets[..noffsets as usize],
+                    &mut mtf[..nvals16 as usize],
+                    nvals16 as usize,
+                );
+            } else if reducealgo == 0 {
+                // RLE
+                debug!("Decompressing rle block");
+                let result = ptngc_comp_conv_from_rle(&rle[..nrle as usize], nvals16 as usize);
+                mtf[..nvals16 as usize].copy_from_slice(&result[..nvals16 as usize]);
+            }
+
+            for i in 0..nvals16 as usize {
+                mtf3[imtfinner * nvals16 as usize + i] = mtf[i] as u8;
+            }
+        }
+
+        // Inverse MTF
+        debug!("Inverse MTF.");
+        ptngc_comp_conv_from_mtf_partial3(
+            &mtf3[..nvals16 as usize * 3],
+            &mut bwt[..nvals16 as usize],
+        );
+
+        // Inverse BWT
+        debug!("Inverse BWT.");
+        ptngc_comp_from_bwt(&bwt[..nvals16 as usize], bwt_index as usize, &mut vals16[..nvals16 as usize]);
+
+        // Decode vals16 -> output vals
+        debug!("Decompressing vals16 block.");
+        let valsnew = ptngc_comp_conv_from_vals16(
+            &vals16[..nvals16 as usize],
+            nvals16 as usize,
+            &mut vals[valstart..],
+        );
+
+        if valsnew != thisvals {
+            panic!("BWLZH: Block contained different number of values than expected.");
+        }
+
+        valstart += thisvals as usize;
     }
 }
 
-pub(crate) fn bwlzh_decompress(input: &mut [u8], nvals: i32, vals: &mut [u8]) {
+pub(crate) fn bwlzh_decompress(input: &[u8], nvals: i32, vals: &mut [u32]) {
     bwlzh_decompress_gen(input, nvals, vals)
 }
 
@@ -521,7 +611,7 @@ pub(crate) fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) 
 /// Burrows-Wheeler inverse transform
 ///
 /// c version: Ptngc_comp_from_bwt
-pub(crate) fn inverse_bwt(input: &[u32], index: usize, vals: &mut [u32]) {
+pub(crate) fn ptngc_comp_from_bwt(input: &[u32], index: usize, vals: &mut [u32]) {
     // Straightforward from the Burrows-Wheeler paper (page 13).
     let nvals = input.len();
     let mut c = vec![0u32; 0x10000];

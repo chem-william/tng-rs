@@ -1,11 +1,11 @@
 use crate::{
-    bwlzh::{N_HUFFMAN_ALGO, ptngc_comp_conv_to_vals16},
+    bwlzh::{N_HUFFMAN_ALGO, ptngc_comp_conv_from_vals16, ptngc_comp_conv_to_vals16},
     dict::ptngc_comp_make_dict_hist,
     huffman::{
         HUFFMAN_DICT_CAP, HUFFMAN_DICT_UNPACKED_CAP, ptngc_comp_conv_from_huffman,
         ptngc_comp_conv_to_huffman,
     },
-    rle::ptngc_comp_conv_to_rle,
+    rle::{ptngc_comp_conv_from_rle, ptngc_comp_conv_to_rle},
 };
 
 pub(crate) const fn ptngc_comp_huff_buflen(nvals: usize) -> usize {
@@ -243,7 +243,6 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
 
 pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals: &mut [u32]) {
     let isvals16 = huffman[0] as i32;
-    let mut vals16 = None;
     let algo = huffman[1] as i32;
     let mut nvals16 = i32::from_le_bytes(huffman[2..2 + 4].try_into().expect("error handling"));
     let nvals = i32::from_le_bytes(huffman[6..6 + 4].try_into().expect("error handling"));
@@ -254,20 +253,127 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals:
             .expect("error handling"),
     );
 
-    if isvals16 == 0 {
-        vals16 = Some(vec![0_u32; nvals16 as usize].as_slice());
-    } else {
-        vals16 = Some(vals);
+    let mut owner_vals16 = vec![0_u32; nvals16 as usize];
+    let mut vals16 = owner_vals16.as_mut_slice();
+    if isvals16 != 0 {
+        vals16 = vals;
         nvals16 = nvals;
     }
 
-    if algo == 0 {
-        let nhuffdict = i32::from_le_bytes(
-            huffman[14 + nhuff as usize..14 + nhuff as usize + 3]
-                .try_into()
-                .expect("error handling"),
-        );
-        ptngc_comp_conv_from_huffman();
+    match algo {
+        0 => {
+            let nhuffdict = i32::from_le_bytes(
+                huffman[14 + nhuff as usize..14 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            ptngc_comp_conv_from_huffman(
+                &huffman[14..],
+                &mut vals16,
+                nvals16,
+                ndict as usize,
+                Some(&huffman[(20 + nhuff) as usize..]),
+                None,
+            );
+        }
+        1 => {
+            let mut huffdictunpack = vec![0; 0x20005];
+            // First the dictionary needs to be uncompressed
+            let nhuffdictunpack = i32::from_le_bytes(
+                huffman[14 + nhuff as usize..14 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            let nhuff1 = i32::from_le_bytes(
+                huffman[20 + nhuff as usize..20 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            let nhuffdict1 = i32::from_le_bytes(
+                huffman[23 + nhuff as usize..23 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            let ndict1 = i32::from_le_bytes(
+                huffman[26 + nhuff as usize..26 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            ptngc_comp_conv_from_huffman(
+                &huffman[(29 + nhuff) as usize..],
+                &mut huffdictunpack,
+                nhuffdictunpack,
+                ndict1 as usize,
+                Some(&huffman[(29 + nhuff) as usize..]),
+                None,
+            );
+            // Then decompress the "real" data
+            ptngc_comp_conv_from_huffman(
+                &huffman[14..],
+                &mut vals16,
+                nvals16,
+                ndict as usize,
+                None,
+                None,
+            );
+        }
+        2 => {
+            // let mut huffdictunpack = vec![0; 0x20005];
+            let mut huffdictrle = vec![0; 3 * 0x20005 + 3];
+            // First the dictionary needs to be uncompressed
+            let nhuffdictunpack = i32::from_le_bytes(
+                huffman[14 + nhuff as usize..14 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            let nhuffrle = i32::from_le_bytes(
+                huffman[20 + nhuff as usize..20 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            let nhuff2 = i32::from_le_bytes(
+                huffman[23 + nhuff as usize..23 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            let nhuffdict2 = i32::from_le_bytes(
+                huffman[26 + nhuff as usize..26 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            let ndict2 = i32::from_le_bytes(
+                huffman[29 + nhuff as usize..29 + nhuff as usize + 3]
+                    .try_into()
+                    .expect("error handling"),
+            );
+            ptngc_comp_conv_from_huffman(
+                &huffman[(32 + nhuff) as usize..],
+                &mut huffdictrle,
+                nhuffrle,
+                ndict2 as usize,
+                Some(&huffman[(32 + nhuff + nhuff2) as usize..]),
+                None,
+            );
+            // Then uncompress the rle data
+            let mut huffdictunpack =
+                ptngc_comp_conv_from_rle(&huffdictrle, nhuffdictunpack as usize);
+            // Then decompress the "real" data
+            ptngc_comp_conv_from_huffman(
+                &huffman[14..],
+                &mut vals16,
+                nvals16,
+                ndict as usize,
+                None,
+                Some(&mut huffdictunpack),
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    // Do I need to convert from vals16?
+    if isvals16 == 0 {
+        let shadowed_vals16 = vals16.iter().map(|x| *x).collect::<Vec<u32>>();
+        let _ = ptngc_comp_conv_from_vals16(&shadowed_vals16, nvals16 as usize, vals);
     }
 }
 

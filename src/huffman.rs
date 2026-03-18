@@ -135,6 +135,7 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
         }
 
         // Sort the leafs wrt probability
+        // C API: Ptngc_merge_sort();
         htree.sort_by_key(|item| Reverse(item.prob()));
 
         // Build the tree
@@ -341,19 +342,17 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
 
 pub(crate) fn ptngc_comp_conv_from_huffman(
     huffman: &[u8],
-    vals: &[u32],
+    vals: &mut [u32],
     nvals: i32,
     ndict: usize,
-    huffman_dict: &[u8],
-    huffman_dictlen: &mut usize,
-    huffman_dict_unpacked: &mut [u32],
-    huffman_dict_unpackedlen: &mut usize,
+    huffman_dict: Option<&[u8]>,
+    huffman_dict_unpacked: Option<&mut [u32]>,
 ) {
     let mut codelength = vec![CodeLength::default(); ndict];
     let mut bitptr;
 
     let maxdict;
-    if !huffman_dict_unpacked.is_empty() {
+    if let Some(huffman_dict_unpacked) = huffman_dict_unpacked {
         maxdict = huffman_dict_unpacked[0]
             | huffman_dict_unpacked[1] << 8
             | huffman_dict_unpacked[2] << 16;
@@ -368,10 +367,9 @@ pub(crate) fn ptngc_comp_conv_from_huffman(
             }
         }
     } else {
-        let mut huffman_ptr = huffman_dict;
-        maxdict = huffman_dict_unpacked[0]
-            | huffman_dict_unpacked[1] << 8
-            | huffman_dict_unpacked[2] << 16;
+        let mut huffman_ptr = huffman_dict.unwrap();
+        maxdict =
+            huffman_ptr[0] as u32 | (huffman_ptr[1] as u32) << 8 | (huffman_ptr[2] as u32) << 16;
         huffman_ptr = &huffman_ptr[3..];
         bitptr = 0;
         let mut j = 0;
@@ -389,7 +387,34 @@ pub(crate) fn ptngc_comp_conv_from_huffman(
     }
 
     // Sort codes wrt length/value
-    unimplemented!("line 595 compression/huffman.c");
+    codelength.sort_by_key(|item| Reverse(item.length));
+    // Canonicalize codes.
+    let mut code = 0;
+    for i in 0..ndict {
+        codelength[i].code = code;
+        if i < (ndict - 1) {
+            code = (code + 1) << (codelength[i + 1].length - codelength[i].length);
+        }
+    }
+
+    // Decompress data
+    let mut huffman_ptr = huffman;
+    bitptr = 0;
+    for i in 0..nvals as usize {
+        let mut len = codelength[0].length;
+        let mut symbol = readbits(&mut huffman_ptr, &mut bitptr, len as i32);
+        let mut j = 0;
+        while symbol != codelength[j].code {
+            j += 1;
+            let newlen = codelength[j].length;
+            if newlen != len {
+                symbol <<= newlen - len;
+                symbol |= readbits(&mut huffman_ptr, &mut bitptr, (newlen - len) as i32);
+                len = newlen;
+            }
+        }
+        vals[i] = codelength[j].dict;
+    }
 }
 
 fn flush_8bits(combine: &mut u32, output: &mut [u8], output_index: &mut usize, bitptr: &mut usize) {

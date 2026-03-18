@@ -1,3 +1,5 @@
+use log::debug;
+
 const BASE_SIZE: usize = 0x20000;
 const NUM_PREVIOUS: usize = 4;
 const MAX_LEN: usize = 0xFFFF;
@@ -149,6 +151,50 @@ pub fn ptngc_comp_to_lz77(vals: &[u32]) -> Lz77Result {
         data: data[..ndat].to_vec(),
         lengths: lengths[..nlen].to_vec(),
         offsets: offsets[..noff].to_vec(),
+    }
+}
+
+pub(crate) fn ptngc_comp_from_lz77(
+    data: &[u32],
+    // ndata: usize,
+    len: &[u32],
+    // nlens: usize,
+    offsets: &[u32],
+    // noffsets: usize,
+    vals: &mut [u32],
+    nvals: usize,
+) {
+    let mut i = 0;
+    let mut joff = 0;
+    let mut jdat = 0;
+    let mut jlen = 0;
+
+    while i < nvals {
+        let v = data[jdat];
+        jdat += 1;
+        if v < 2 {
+            let mut offset = 1;
+            let length = len[jlen] as i32;
+            jlen += 1;
+            debug!("len={length} off={offset} i={i}");
+
+            if v == 1 {
+                offset = offsets[joff];
+                joff += 1;
+            }
+
+            for _ in 0..length {
+                vals[i] = vals[i - offset as usize];
+                if i >= nvals {
+                    panic!("too many vals");
+                }
+
+                i += 1;
+            }
+        } else {
+            vals[i] = v - 2;
+            i += 1;
+        }
     }
 }
 

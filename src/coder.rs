@@ -2,7 +2,7 @@ use log::debug;
 
 use crate::{
     TngError,
-    bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_get_buflen},
+    bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_decompress, bwlzh_get_buflen},
     compress::{
         TNG_COMPRESS_ALGO_BWLZH1, TNG_COMPRESS_ALGO_BWLZH2, TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA,
         TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE, TNG_COMPRESS_ALGO_POS_XTC2,
@@ -220,15 +220,14 @@ impl Coder {
     ) -> Result<(), TngError> {
         let n = length;
         let nframes = n / n_atoms / 3;
-        let pval = vec![0; n as usize];
+        let mut pval = vec![0u32; n as usize];
         let mut cnt = 0;
         let most_negative = (packed[0] as u32
             | (packed[1] as u32) << 8
             | (packed[2] as u32) << 16
             | (packed[3] as u32) << 24) as i32;
 
-        let coder = Coder::default();
-        bwlzh_decompress(&packed[4..], length, pval);
+        bwlzh_decompress(&packed[4..], length, &mut pval);
 
         for i in 0..n_atoms {
             for j in 0..3 {
