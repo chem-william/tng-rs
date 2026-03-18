@@ -1,7 +1,10 @@
 use crate::{
     bwlzh::{N_HUFFMAN_ALGO, ptngc_comp_conv_to_vals16},
     dict::ptngc_comp_make_dict_hist,
-    huffman::{HUFFMAN_DICT_CAP, HUFFMAN_DICT_UNPACKED_CAP, ptngc_comp_conv_to_huffman},
+    huffman::{
+        HUFFMAN_DICT_CAP, HUFFMAN_DICT_UNPACKED_CAP, ptngc_comp_conv_from_huffman,
+        ptngc_comp_conv_to_huffman,
+    },
     rle::ptngc_comp_conv_to_rle,
 };
 
@@ -235,6 +238,36 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
         for i in 0..nhuffdict2 {
             huffman[32 + nhuff + nhuff2 + i] = huffdict2[i];
         }
+    }
+}
+
+pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals: &mut [u32]) {
+    let isvals16 = huffman[0] as i32;
+    let mut vals16 = None;
+    let algo = huffman[1] as i32;
+    let mut nvals16 = i32::from_le_bytes(huffman[2..2 + 4].try_into().expect("error handling"));
+    let nvals = i32::from_le_bytes(huffman[6..6 + 4].try_into().expect("error handling"));
+    let nhuff = i32::from_le_bytes(huffman[10..10 + 4].try_into().expect("error handling"));
+    let ndict = i32::from_le_bytes(
+        huffman[17 + nhuff as usize..17 + nhuff as usize + 3]
+            .try_into()
+            .expect("error handling"),
+    );
+
+    if isvals16 == 0 {
+        vals16 = Some(vec![0_u32; nvals16 as usize].as_slice());
+    } else {
+        vals16 = Some(vals);
+        nvals16 = nvals;
+    }
+
+    if algo == 0 {
+        let nhuffdict = i32::from_le_bytes(
+            huffman[14 + nhuff as usize..14 + nhuff as usize + 3]
+                .try_into()
+                .expect("error handling"),
+        );
+        ptngc_comp_conv_from_huffman();
     }
 }
 

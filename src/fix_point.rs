@@ -70,6 +70,13 @@ impl From<FixT> for u32 {
     }
 }
 
+/// This is very much like C
+impl From<FixT> for i32 {
+    fn from(value: FixT) -> Self {
+        value.0 as i32
+    }
+}
+
 impl BitAnd for FixT {
     type Output = Self;
 

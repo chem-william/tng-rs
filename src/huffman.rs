@@ -1,4 +1,4 @@
-use crate::dict::DICT_SIZE;
+use crate::{dict::DICT_SIZE, xtc2::readbits};
 use std::cmp::{Ordering, Reverse};
 
 use log::debug;
@@ -337,6 +337,59 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
     *huffman_dictlen = huffman_dict_index;
     *huffman_dict_unpackedlen =
         usize::try_from(3 + codelength[ndict - 1].dict + 1).expect("usize from u32");
+}
+
+pub(crate) fn ptngc_comp_conv_from_huffman(
+    huffman: &[u8],
+    vals: &[u32],
+    nvals: i32,
+    ndict: usize,
+    huffman_dict: &[u8],
+    huffman_dictlen: &mut usize,
+    huffman_dict_unpacked: &mut [u32],
+    huffman_dict_unpackedlen: &mut usize,
+) {
+    let mut codelength = vec![CodeLength::default(); ndict];
+    let mut bitptr;
+
+    let maxdict;
+    if !huffman_dict_unpacked.is_empty() {
+        maxdict = huffman_dict_unpacked[0]
+            | huffman_dict_unpacked[1] << 8
+            | huffman_dict_unpacked[2] << 16;
+        let mut j = 0;
+        for i in 0..maxdict as usize {
+            if huffman_dict_unpacked[3 + i] != 0 {
+                codelength[j].length = huffman_dict_unpacked[3 + i] as usize;
+                codelength[j].dict = i as u32;
+
+                debug!("{:?}", codelength[j]);
+                j += 1;
+            }
+        }
+    } else {
+        let mut huffman_ptr = huffman_dict;
+        maxdict = huffman_dict_unpacked[0]
+            | huffman_dict_unpacked[1] << 8
+            | huffman_dict_unpacked[2] << 16;
+        huffman_ptr = &huffman_ptr[3..];
+        bitptr = 0;
+        let mut j = 0;
+        for i in 0..maxdict {
+            let bit = readbits(&mut huffman_ptr, &mut bitptr, 1);
+
+            if bit != 0 {
+                codelength[j].length = readbits(&mut huffman_ptr, &mut bitptr, 5) as usize;
+                codelength[j].dict = i as u32;
+
+                debug!("{:?}", codelength[j]);
+                j += 1;
+            }
+        }
+    }
+
+    // Sort codes wrt length/value
+    unimplemented!("line 595 compression/huffman.c");
 }
 
 fn flush_8bits(combine: &mut u32, output: &mut [u8], output_index: &mut usize, bitptr: &mut usize) {

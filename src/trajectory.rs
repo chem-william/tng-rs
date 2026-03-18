@@ -6632,23 +6632,23 @@ fn compress_uncompress_pos_gen(
     }
 
     // Number of atoms
-    let natoms = readbufferfix(&data[bufloc..], 4);
+    let natoms = i32::from(readbufferfix(&data[bufloc..], 4));
     bufloc += 4;
 
     // Number of frames
-    let nframes = readbufferfix(&data[bufloc..], 4);
+    let nframes = i32::from(readbufferfix(&data[bufloc..], 4));
     bufloc += 4;
 
     // Initial coding
-    let initial_coding = readbufferfix(&data[bufloc..], 4);
+    let initial_coding = i32::from(readbufferfix(&data[bufloc..], 4));
     bufloc += 4;
 
     // Initial coding parameter
-    let initial_coding_parameter = readbufferfix(&data[bufloc..], 4);
+    let initial_coding_parameter = i32::from(readbufferfix(&data[bufloc..], 4));
     bufloc += 4;
 
     // Coding
-    let coding = readbufferfix(&data[bufloc..], 4);
+    let coding = i32::from(readbufferfix(&data[bufloc..], 4));
     bufloc += 4;
 
     // Precision
@@ -6658,13 +6658,20 @@ fn compress_uncompress_pos_gen(
     bufloc += 4;
 
     // Allocate the memory for the quantized positions
-    // let quant = Vec<_>::with_capacity(u32::from(natoms) as usize * u32::from(nframes) as usize * 3);
+    let mut quant = vec![0; (natoms * nframes) as usize * 3];
     // The data block length
     let length = readbufferfix(&data[bufloc..], 4);
     bufloc += 4;
     // The initial frame
     let coder = Coder::default();
-    // let rval =
+    coder.unpack_array(
+        &data[bufloc..],
+        &mut quant,
+        natoms * 3,
+        initial_coding,
+        initial_coding_parameter,
+        natoms,
+    );
 
     Ok((0, 0))
 }
