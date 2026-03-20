@@ -1,3 +1,7 @@
+use std::{fmt::Display, ops::Mul};
+
+use log::debug;
+
 use crate::{
     coder::Coder,
     fix_point::{FixT, f64_to_fixt_pair, fixt_pair_to_f64},
@@ -172,6 +176,88 @@ pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: u
         }
     }
     quant_intra
+}
+
+trait Float: Copy + Mul<Output = Self> + Display {
+    fn from_i32(v: i32) -> Self;
+}
+
+impl Float for f64 {
+    fn from_i32(v: i32) -> Self {
+        v as f64
+    }
+}
+impl Float for f32 {
+    fn from_i32(v: i32) -> Self {
+        v as f32
+    }
+}
+
+pub(crate) fn unquantize<T: Float>(
+    x: &mut [T],
+    n_atoms: usize,
+    n_frames: usize,
+    precision: T,
+    quant: &[i32],
+) {
+    for iframe in 0..n_frames {
+        for i in 0..n_atoms {
+            for j in 0..3 {
+                x[iframe * n_atoms * 3 + i * 3 + j] =
+                    T::from_i32(quant[iframe * n_atoms * 3 + i * 3 + j]) * precision;
+            }
+        }
+    }
+}
+
+/// In frame update required for the initial frame intra-frame compression was used
+pub(crate) fn unquantize_intra_differences_first_frame(quant: &mut [i32], natoms: usize) {
+    for j in 0..3 {
+        let mut q = quant[j];
+        for i in 0..natoms {
+            q += quant[i * 3 + j];
+            quant[i * 3 + j] = q;
+        }
+    }
+}
+
+pub(crate) fn unquantize_intra_differences<T: Float>(
+    x: &mut [T],
+    n_atoms: usize,
+    n_frames: usize,
+    precision: T,
+    quant: &[i32],
+) {
+    debug!("UQ precision={precision}");
+
+    for iframe in 0..n_frames {
+        for j in 0..3 {
+            let mut q = quant[iframe * n_atoms * 3 + j];
+            x[iframe * n_atoms * 3 + j] = T::from_i32(q) * precision;
+            for i in 1..n_atoms {
+                q += quant[iframe * n_atoms * 3 + i * 3 + j];
+                x[iframe * n_atoms * 3 + i * 3 + j] = T::from_i32(q) * precision;
+            }
+        }
+    }
+}
+
+pub(crate) fn unquantize_intra_differences_int(
+    x: &mut [i32],
+    n_atoms: usize,
+    n_frames: usize,
+    quant: &[i32],
+) {
+    for iframe in 0..n_frames {
+        for j in 0..3 {
+            let mut q = quant[iframe * n_atoms * 3 + j];
+            x[iframe * n_atoms * 3 + j] = q;
+            for i in 1..n_atoms {
+                q += quant[iframe * n_atoms * 3 + i * 3 + j];
+                x[iframe * n_atoms * 3 + i * 3 + j] = q;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

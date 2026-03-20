@@ -236,7 +236,7 @@ impl Coder {
                 for k in 0..nframes {
                     let s = pval[cnt];
                     cnt += 1;
-                    output[(k * 3 * n_atoms + i * 3 + j) as usize] = s as i32 - most_negative;
+                    output[k * 3 * n_atoms + i * 3 + j] = s as i32 - most_negative;
                 }
             }
         }
@@ -268,7 +268,9 @@ impl Coder {
                 self.unpack_array_bwlzh(packed, output, length, n_atoms)
             }
             TNG_COMPRESS_ALGO_POS_XTC3 => ptngc_unpack_array_xtc3(packed, output, length, n_atoms),
-            _ => unreachable!("unpack array got unknown coding"),
+            _ => Err(TngError::Constraint(format!(
+                "encountered unknown unpack algorithm. Got {coding}"
+            ))),
         }
     }
 

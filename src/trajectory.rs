@@ -9,10 +9,15 @@ use crate::bond::Bond;
 use crate::chain::Chain;
 use crate::coder::Coder;
 use crate::compress::{
-    MAGIC_INT_POS, MAGIC_INT_VEL, readbufferfix, tng_compress_pos, tng_compress_pos_float,
-    tng_compress_vel, tng_compress_vel_float,
+    MAGIC_INT_POS, MAGIC_INT_VEL, TNG_COMPRESS_ALGO_POS_BWLZH_INTRA,
+    TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA, TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE,
+    TNG_COMPRESS_ALGO_POS_XTC2, TNG_COMPRESS_ALGO_POS_XTC3, readbufferfix, tng_compress_pos,
+    tng_compress_pos_float, tng_compress_vel, tng_compress_vel_float, unquantize,
+    unquantize_intra_differences, unquantize_intra_differences_first_frame,
+    unquantize_intra_differences_int,
 };
 use crate::data::{Compression, Data, DataType};
+use crate::fix_point::fixt_pair_to_f64;
 use crate::gen_block::{BlockID, GenBlock};
 use crate::molecule::Molecule;
 use crate::particle_mapping::ParticleMapping;
@@ -6615,9 +6620,9 @@ fn compress_uncompress_pos_float(data: &[u8], pos: &[f32]) -> Result<(u32, u32),
 
 fn compress_uncompress_pos_gen(
     data: &[u8],
-    posd: Option<&[f64]>,
-    posf: Option<&[f32]>,
-    posi: Option<&[i32]>,
+    posd: Option<&mut [f64]>,
+    posf: Option<&mut [f32]>,
+    posi: Option<&mut [i32]>,
 ) -> Result<(u32, u32), TngError> {
     let mut bufloc = 0;
 
@@ -6651,6 +6656,10 @@ fn compress_uncompress_pos_gen(
     let coding = i32::from(readbufferfix(&data[bufloc..], 4));
     bufloc += 4;
 
+    // Coding parameter.
+    let coding_parameter = i32::from(readbufferfix(&data[bufloc..], 4));
+    bufloc += 4;
+
     // Precision
     let prec_lo = readbufferfix(&data[bufloc..], 4);
     bufloc += 4;
@@ -6663,7 +6672,7 @@ fn compress_uncompress_pos_gen(
     let length = readbufferfix(&data[bufloc..], 4);
     bufloc += 4;
     // The initial frame
-    let coder = Coder::default();
+    let mut coder = Coder::default();
     coder.unpack_array(
         &data[bufloc..],
         &mut quant,
@@ -6671,7 +6680,77 @@ fn compress_uncompress_pos_gen(
         initial_coding,
         initial_coding_parameter,
         natoms as usize,
-    );
+    )?;
+
+    // Skip past the actual data block.
+    bufloc += u32::from(length) as usize;
+    // Obtain the actual positions for the initial block.
+    match initial_coding {
+        TNG_COMPRESS_ALGO_POS_XTC2
+        | TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE
+        | TNG_COMPRESS_ALGO_POS_XTC3 => {
+            if let Some(posd) = posd {
+                unquantize(
+                    posd,
+                    natoms as usize,
+                    1,
+                    fixt_pair_to_f64(prec_hi, prec_lo),
+                    &quant,
+                );
+            }
+            if let Some(posf) = posf {
+                unquantize(
+                    posf,
+                    natoms as usize,
+                    1,
+                    fixt_pair_to_f64(prec_hi, prec_lo) as f32,
+                    &quant,
+                );
+            }
+            if let Some(posi) = posi {
+                posi.copy_from_slice(&quant[..natoms as usize * 3]);
+            }
+        }
+        TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
+            if let Some(posd) = posd {
+                unquantize_intra_differences(
+                    posd,
+                    natoms as usize,
+                    1,
+                    fixt_pair_to_f64(prec_hi, prec_lo),
+                    &quant,
+                );
+            }
+            if let Some(posf) = posf {
+                unquantize_intra_differences(
+                    posf,
+                    natoms as usize,
+                    1,
+                    fixt_pair_to_f64(prec_hi, prec_lo) as f32,
+                    &quant,
+                );
+            }
+            if let Some(posi) = posi {
+                unquantize_intra_differences_int(posi, natoms as usize, 1, &quant);
+            }
+
+            unquantize_intra_differences_first_frame(&mut quant, natoms as usize);
+        }
+        _ => {}
+    }
+    // The remaining frames
+    if nframes > 1 {
+        bufloc += 4;
+        coder = Coder::default();
+        coder.unpack_array(
+            &data[bufloc..],
+            &mut quant[natoms as usize * 3..],
+            (nframes - 1) * natoms * 3,
+            coding,
+            coding_parameter,
+            natoms as usize,
+        )?;
+    }
 
     Ok((0, 0))
 }
