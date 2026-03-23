@@ -103,7 +103,7 @@ impl BitOr for FixT {
 
 impl BitOrAssign for FixT {
     fn bitor_assign(&mut self, rhs: Self) {
-        FixT::from(self.0 | rhs.0);
+        *self = FixT::from(self.0 | rhs.0);
     }
 }
 

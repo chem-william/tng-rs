@@ -2362,7 +2362,7 @@ impl Trajectory {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
                         floats.push(f32::from_ne_bytes(arr));
                     }
-                    tng_compress_vel_float(
+                    tng_compress_pos_float(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
@@ -2379,7 +2379,7 @@ impl Trajectory {
                         ];
                         doubles.push(f64::from_ne_bytes(arr));
                     }
-                    tng_compress_vel(
+                    tng_compress_pos(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),

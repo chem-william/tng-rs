@@ -1003,7 +1003,6 @@ pub(crate) fn compress_quantized_pos(
         }
         bufloc += output_length;
     }
-    println!("bufloc: {bufloc}");
     bufloc
 }
 

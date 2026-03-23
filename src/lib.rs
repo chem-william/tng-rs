@@ -368,9 +368,9 @@ mod integration {
                 for k in 0..tot_n_mols {
                     let nr = k * 3;
                     // Move -1 to 1
-                    molpos[nr] += 2.0 * (rng.random_range(0.0_f32..1.0_f32) - 1.0);
-                    molpos[nr + 1] += 2.0 * (rng.random_range(0.0_f32..1.0_f32) - 1.0);
-                    molpos[nr + 2] += 2.0 * (rng.random_range(0.0_f32..1.0_f32) - 1.0);
+                    molpos[nr] += 2.0 * rng.random_range(0.0_f32..1.0_f32) - 1.0;
+                    molpos[nr + 1] += 2.0 * rng.random_range(0.0_f32..1.0_f32) - 1.0;
+                    molpos[nr + 2] += 2.0 * rng.random_range(0.0_f32..1.0_f32) - 1.0;
 
                     data.push(molpos[nr]);
                     data.push(molpos[nr + 1]);
