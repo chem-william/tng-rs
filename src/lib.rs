@@ -574,7 +574,7 @@ mod integration {
     }
 
     #[test]
-    #[ignore]
+    // #[ignore]
     fn tng_io_testing() {
         // tng_io_testing.c:1296
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");

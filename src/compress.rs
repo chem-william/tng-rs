@@ -178,17 +178,25 @@ pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: u
     quant_intra
 }
 
-trait Float: Copy + Mul<Output = Self> + Display {
+pub(crate) trait Float: Copy + Mul<Output = Self> + Display {
     fn from_i32(v: i32) -> Self;
+    fn from_f64(v: f64) -> Self;
 }
 
 impl Float for f64 {
     fn from_i32(v: i32) -> Self {
         v as f64
     }
+    fn from_f64(v: f64) -> Self {
+        v
+    }
 }
+
 impl Float for f32 {
     fn from_i32(v: i32) -> Self {
+        v as f32
+    }
+    fn from_f64(v: f64) -> Self {
         v as f32
     }
 }
