@@ -9,12 +9,16 @@ use crate::bond::Bond;
 use crate::chain::Chain;
 use crate::coder::Coder;
 use crate::compress::{
-    MAGIC_INT_POS, MAGIC_INT_VEL, TNG_COMPRESS_ALGO_POS_BWLZH_INTRA,
-    TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA, TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE,
-    TNG_COMPRESS_ALGO_POS_XTC2, TNG_COMPRESS_ALGO_POS_XTC3, readbufferfix, tng_compress_pos,
-    tng_compress_pos_float, tng_compress_vel, tng_compress_vel_float, unquantize,
-    unquantize_intra_differences, unquantize_intra_differences_first_frame,
-    unquantize_intra_differences_int,
+    MAGIC_INT_POS, MAGIC_INT_VEL, TNG_COMPRESS_ALGO_POS_BWLZH_INTER,
+    TNG_COMPRESS_ALGO_POS_BWLZH_INTRA, TNG_COMPRESS_ALGO_POS_STOPBIT_INTER,
+    TNG_COMPRESS_ALGO_POS_TRIPLET_INTER, TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA,
+    TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE, TNG_COMPRESS_ALGO_POS_XTC2, TNG_COMPRESS_ALGO_POS_XTC3,
+    TNG_COMPRESS_ALGO_VEL_BWLZH_INTER, TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE,
+    TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER, TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE,
+    TNG_COMPRESS_ALGO_VEL_TRIPLET_INTER, TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE, readbufferfix,
+    tng_compress_pos, tng_compress_pos_float, tng_compress_vel, tng_compress_vel_float, unquantize,
+    unquantize_inter_differences, unquantize_inter_differences_int, unquantize_intra_differences,
+    unquantize_intra_differences_first_frame, unquantize_intra_differences_int,
 };
 use crate::data::{Compression, Data, DataType};
 use crate::fix_point::fixt_pair_to_f64;
@@ -2570,14 +2574,14 @@ impl Trajectory {
             ));
         }
 
-        let f_dest = vec![0.0; uncompressed_len];
-        let d_dest = vec![0.0; uncompressed_len];
+        let mut f_dest = vec![0.0; uncompressed_len];
+        let mut d_dest = vec![0.0; uncompressed_len];
         match *data_type {
             DataType::Float => {
-                let result = compress_uncompress_float(data, &f_dest);
+                let result = compress_uncompress_float(data, &mut f_dest);
             }
             DataType::Double => {
-                let result = compress_uncompress(data);
+                // let result = compress_uncompress(data);
             }
             DataType::Char | DataType::Int => {
                 return Err(TngError::Constraint(format!(
@@ -6593,16 +6597,30 @@ impl Trajectory {
     }
 }
 
-fn compress_uncompress(data: &[u8]) {
-    todo!()
-}
+// // Uncompresses any tng compress block, positions or velocities. It determines whether it is
+// // positions or velocities from the data buffer. The return value is 0 if ok, and 1 if not.
+// fn compress_uncompress(data: &[u8], posvel: &mut [f64]) -> Result<(), TngError> {
+//     let magic_int = u32::from(readbufferfix(data, 4));
 
-fn compress_uncompress_float(data: &[u8], posvel: &[f32]) -> Result<(), TngError> {
+//     match magic_int {
+//         MAGIC_INT_POS => compress_uncompress_pos_float(data, posvel)?,
+//         MAGIC_INT_VEL => compress_uncompress_vel_float(data, posvel)?,
+//         _ => {
+//             return Err(TngError::Constraint(format!(
+//                 "found the wrong magic int when decompressing. Found {magic_int}"
+//             )));
+//         }
+//     };
+
+//     Ok(())
+// }
+
+fn compress_uncompress_float(data: &[u8], posvel: &mut [f32]) -> Result<(), TngError> {
     let magic_int = u32::from(readbufferfix(data, 4));
 
     match magic_int {
-        MAGIC_INT_POS => compress_uncompress_pos_float(data, posvel),
-        // MAGIC_INT_VEL => compress_uncompress_vel_float(data, posvel),
+        MAGIC_INT_POS => compress_uncompress_pos_float(data, posvel)?,
+        MAGIC_INT_VEL => compress_uncompress_vel_float(data, posvel)?,
         _ => {
             return Err(TngError::Constraint(format!(
                 "found the wrong magic int when decompressing. Found {magic_int}"
@@ -6613,16 +6631,16 @@ fn compress_uncompress_float(data: &[u8], posvel: &[f32]) -> Result<(), TngError
     Ok(())
 }
 
-fn compress_uncompress_pos_float(data: &[u8], pos: &[f32]) -> Result<(u32, u32), TngError> {
-    let (prec_hi, prec_lo) = compress_uncompress_pos_gen(data, None, Some(pos), None)?;
-    Ok((prec_hi, prec_lo))
+fn compress_uncompress_pos_float(data: &[u8], pos: &mut [f32]) -> Result<(), TngError> {
+    let (_prec_hi, _prec_lo) = compress_uncompress_pos_gen(data, None, Some(pos), None)?;
+    Ok(())
 }
 
 fn compress_uncompress_pos_gen(
     data: &[u8],
-    posd: Option<&mut [f64]>,
-    posf: Option<&mut [f32]>,
-    posi: Option<&mut [i32]>,
+    mut posd: Option<&mut [f64]>,
+    mut posf: Option<&mut [f32]>,
+    mut posi: Option<&mut [i32]>,
 ) -> Result<(u32, u32), TngError> {
     let mut bufloc = 0;
 
@@ -6689,7 +6707,7 @@ fn compress_uncompress_pos_gen(
         TNG_COMPRESS_ALGO_POS_XTC2
         | TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE
         | TNG_COMPRESS_ALGO_POS_XTC3 => {
-            if let Some(posd) = posd {
+            if let Some(posd) = posd.as_deref_mut() {
                 unquantize(
                     posd,
                     natoms as usize,
@@ -6698,7 +6716,7 @@ fn compress_uncompress_pos_gen(
                     &quant,
                 );
             }
-            if let Some(posf) = posf {
+            if let Some(posf) = posf.as_deref_mut() {
                 unquantize(
                     posf,
                     natoms as usize,
@@ -6707,12 +6725,12 @@ fn compress_uncompress_pos_gen(
                     &quant,
                 );
             }
-            if let Some(posi) = posi {
+            if let Some(posi) = posi.as_deref_mut() {
                 posi.copy_from_slice(&quant[..natoms as usize * 3]);
             }
         }
         TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
-            if let Some(posd) = posd {
+            if let Some(posd) = posd.as_deref_mut() {
                 unquantize_intra_differences(
                     posd,
                     natoms as usize,
@@ -6721,7 +6739,7 @@ fn compress_uncompress_pos_gen(
                     &quant,
                 );
             }
-            if let Some(posf) = posf {
+            if let Some(posf) = posf.as_deref_mut() {
                 unquantize_intra_differences(
                     posf,
                     natoms as usize,
@@ -6730,7 +6748,7 @@ fn compress_uncompress_pos_gen(
                     &quant,
                 );
             }
-            if let Some(posi) = posi {
+            if let Some(posi) = posi.as_deref_mut() {
                 unquantize_intra_differences_int(posi, natoms as usize, 1, &quant);
             }
 
@@ -6750,12 +6768,279 @@ fn compress_uncompress_pos_gen(
             coding_parameter,
             natoms as usize,
         )?;
+
+        match coding {
+            TNG_COMPRESS_ALGO_POS_STOPBIT_INTER
+            | TNG_COMPRESS_ALGO_POS_TRIPLET_INTER
+            | TNG_COMPRESS_ALGO_POS_BWLZH_INTER => {
+                // This requires that the first frame is already in one-to-one format, even if intra-frame
+                // compression was done there. Therefore the unquant_intra_differences_first_frame should be called
+                // before to convert it correctly.
+                let natoms = natoms as usize;
+                let nframes = nframes as usize;
+                if let Some(posd) = posd {
+                    unquantize_inter_differences(
+                        posd,
+                        natoms,
+                        nframes,
+                        fixt_pair_to_f64(prec_hi, prec_lo),
+                        &quant,
+                    );
+                }
+                if let Some(posf) = posf {
+                    unquantize_inter_differences(
+                        posf,
+                        natoms,
+                        nframes,
+                        fixt_pair_to_f64(prec_hi, prec_lo) as f32,
+                        &quant,
+                    );
+                }
+                if let Some(posi) = posi {
+                    unquantize_inter_differences_int(posi, natoms, nframes, &quant);
+                }
+            }
+            TNG_COMPRESS_ALGO_POS_XTC2
+            | TNG_COMPRESS_ALGO_POS_XTC3
+            | TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE => {
+                let natoms = natoms as usize;
+                let nframes = nframes as usize;
+                if let Some(posd) = posd {
+                    unquantize(
+                        posd,
+                        natoms,
+                        nframes,
+                        fixt_pair_to_f64(prec_hi, prec_lo),
+                        &quant,
+                    );
+                }
+                if let Some(posf) = posf {
+                    unquantize(
+                        posf,
+                        natoms,
+                        nframes,
+                        fixt_pair_to_f64(prec_hi, prec_lo) as f32,
+                        &quant,
+                    );
+                }
+                if let Some(posi) = posi {
+                    posi[natoms * 3..].copy_from_slice(
+                        &quant[natoms as usize * 3..natoms as usize * 3 * (nframes - 1)],
+                    );
+                }
+            }
+            TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
+                let natoms = natoms as usize;
+                let nframes = nframes as usize;
+                if let Some(posd) = posd {
+                    unquantize_intra_differences(
+                        &mut posd[natoms as usize * 3..],
+                        natoms,
+                        nframes - 1,
+                        fixt_pair_to_f64(prec_hi, prec_lo),
+                        &quant[natoms as usize * 3..],
+                    );
+                }
+                if let Some(posf) = posf {
+                    unquantize_intra_differences(
+                        &mut posf[natoms as usize * 3..],
+                        natoms,
+                        nframes - 1,
+                        fixt_pair_to_f64(prec_hi, prec_lo) as f32,
+                        &quant[natoms as usize * 3..],
+                    );
+                }
+                if let Some(posi) = posi {
+                    unquantize_intra_differences_int(
+                        &mut posi[natoms as usize * 3..],
+                        natoms,
+                        nframes - 1,
+                        &quant[natoms as usize * 3..],
+                    );
+                }
+            }
+            _ => {}
+        }
     }
 
-    Ok((0, 0))
+    Ok((u32::from(prec_hi), u32::from(prec_lo)))
 }
 
-fn compress_uncompress_vel_float(data: &[u8], vel: &[i32]) -> Result<(), TngError> {
-    todo!();
-    // let (prec_hi, prec_lo) = compress_uncompress_vel_gen(data, None, None, vel)?
+fn compress_uncompress_vel_float(data: &[u8], vel: &mut [f32]) -> Result<(), TngError> {
+    let (_prec_hi, _prec_lo) = compress_uncompress_vel_gen(data, None, Some(vel), None)?;
+    Ok(())
+}
+fn compress_uncompress_vel_gen(
+    data: &[u8],
+    mut veld: Option<&mut [f64]>,
+    mut velf: Option<&mut [f32]>,
+    mut veli: Option<&mut [i32]>,
+) -> Result<(u32, u32), TngError> {
+    let mut bufloc = 0;
+
+    // Magic integer for velocities
+    let magic_int = u32::from(readbufferfix(&data[bufloc..], 4));
+    bufloc += 4;
+
+    if magic_int != MAGIC_INT_VEL {
+        return Err(TngError::Constraint(format!(
+            "Expected MAGIC_INT_VEL, got {magic_int}"
+        )));
+    }
+
+    // Number of atoms
+    let natoms = i32::from(readbufferfix(&data[bufloc..], 4));
+    bufloc += 4;
+
+    // Number of frames
+    let nframes = i32::from(readbufferfix(&data[bufloc..], 4));
+    bufloc += 4;
+
+    // Initial coding
+    let initial_coding = i32::from(readbufferfix(&data[bufloc..], 4));
+    bufloc += 4;
+
+    // Initial coding parameter
+    let initial_coding_parameter = i32::from(readbufferfix(&data[bufloc..], 4));
+    bufloc += 4;
+
+    // Coding
+    let coding = i32::from(readbufferfix(&data[bufloc..], 4));
+    bufloc += 4;
+
+    // Coding parameter.
+    let coding_parameter = i32::from(readbufferfix(&data[bufloc..], 4));
+    bufloc += 4;
+
+    // Precision
+    let prec_lo = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+    let prec_hi = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+
+    // Allocate the memory for the quantized positions
+    let mut quant = vec![0; (natoms * nframes) as usize * 3];
+    // The data block length
+    let length = readbufferfix(&data[bufloc..], 4);
+    bufloc += 4;
+    // The initial frame
+    let mut coder = Coder::default();
+    coder.unpack_array(
+        &data[bufloc..],
+        &mut quant,
+        natoms * 3,
+        initial_coding,
+        initial_coding_parameter,
+        natoms as usize,
+    )?;
+
+    // Skip past the actual data block.
+    bufloc += u32::from(length) as usize;
+    // Obtain the actual positions for the initial block.
+    match initial_coding {
+        TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE
+        | TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE
+        | TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE => {
+            if let Some(veld) = veld.as_deref_mut() {
+                unquantize(
+                    veld,
+                    natoms as usize,
+                    1,
+                    fixt_pair_to_f64(prec_hi, prec_lo),
+                    &quant,
+                );
+            }
+            if let Some(velf) = velf.as_deref_mut() {
+                unquantize(
+                    velf,
+                    natoms as usize,
+                    1,
+                    fixt_pair_to_f64(prec_hi, prec_lo) as f32,
+                    &quant,
+                );
+            }
+            if let Some(veli) = veli.as_deref_mut() {
+                veli.copy_from_slice(&quant[..natoms as usize * 3]);
+            }
+        }
+        _ => {}
+    }
+    // The remaining frames
+    if nframes > 1 {
+        bufloc += 4;
+        coder = Coder::default();
+        coder.unpack_array(
+            &data[bufloc..],
+            &mut quant[natoms as usize * 3..],
+            (nframes - 1) * natoms * 3,
+            coding,
+            coding_parameter,
+            natoms as usize,
+        )?;
+
+        // Inter-frame compression?
+        match coding {
+            TNG_COMPRESS_ALGO_VEL_TRIPLET_INTER
+            | TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER
+            | TNG_COMPRESS_ALGO_VEL_BWLZH_INTER => {
+                // This requires that the first frame is already in one-to-one format.
+                let natoms = natoms as usize;
+                let nframes = nframes as usize;
+                if let Some(veld) = veld {
+                    unquantize_inter_differences(
+                        veld,
+                        natoms,
+                        nframes,
+                        fixt_pair_to_f64(prec_hi, prec_lo),
+                        &quant,
+                    );
+                }
+                if let Some(velf) = velf {
+                    unquantize_inter_differences(
+                        velf,
+                        natoms,
+                        nframes,
+                        fixt_pair_to_f64(prec_hi, prec_lo) as f32,
+                        &quant,
+                    );
+                }
+                if let Some(veli) = veli {
+                    unquantize_inter_differences_int(veli, natoms, nframes, &quant);
+                }
+            }
+            // One-to-one compression?
+            TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE
+            | TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE
+            | TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE => {
+                let natoms = natoms as usize;
+                let nframes = nframes as usize;
+                if let Some(veld) = veld {
+                    unquantize(
+                        veld,
+                        natoms,
+                        nframes,
+                        fixt_pair_to_f64(prec_hi, prec_lo),
+                        &quant,
+                    );
+                }
+                if let Some(velf) = velf {
+                    unquantize(
+                        velf,
+                        natoms,
+                        nframes,
+                        fixt_pair_to_f64(prec_hi, prec_lo) as f32,
+                        &quant,
+                    );
+                }
+                if let Some(veli) = veli {
+                    veli[natoms * 3..].copy_from_slice(
+                        &quant[natoms as usize * 3..natoms as usize * 3 * (nframes - 1)],
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok((u32::from(prec_hi), u32::from(prec_lo)))
 }

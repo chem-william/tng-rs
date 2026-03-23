@@ -210,6 +210,43 @@ pub(crate) fn unquantize<T: Float>(
     }
 }
 
+pub(crate) fn unquantize_inter_differences<T: Float>(
+    x: &mut [T],
+    n_atoms: usize,
+    n_frames: usize,
+    precision: T,
+    quant: &[i32],
+) {
+    for i in 0..n_atoms {
+        for j in 0..3 {
+            let mut q = quant[i * 3 + j]; // First value
+            x[i * 3 + j] = T::from_i32(q) * precision;
+            for iframe in 1..n_frames {
+                q += quant[iframe * n_atoms * 3 + i * 3 + j];
+                x[iframe * n_atoms * 3 + i * 3 + j] = T::from_i32(q) * precision;
+            }
+        }
+    }
+}
+
+pub(crate) fn unquantize_inter_differences_int(
+    x: &mut [i32],
+    n_atoms: usize,
+    n_frames: usize,
+    quant: &[i32],
+) {
+    for i in 0..n_atoms {
+        for j in 0..3 {
+            let mut q = quant[i * 3 + j]; // First value
+            x[i * 3 + j] = q;
+            for iframe in 1..n_frames {
+                q += quant[iframe * n_atoms * 3 + i * 3 + j];
+                x[iframe * n_atoms * 3 + i * 3 + j] = q;
+            }
+        }
+    }
+}
+
 /// In frame update required for the initial frame intra-frame compression was used
 pub(crate) fn unquantize_intra_differences_first_frame(quant: &mut [i32], natoms: usize) {
     for j in 0..3 {
