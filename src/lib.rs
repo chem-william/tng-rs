@@ -505,8 +505,9 @@ mod integration {
     }
 
     /// C API: tng_test_get_positions_data() in tng_io_testing.c:953
-    /// TODO: Port from C
-    fn get_positions_data(traj: &mut Trajectory) {
+    /// This test relies on knowing that the positions are stored as float
+    /// and that the data is not sparse (i.e. as many frames in the data as in the frame set)
+    fn get_positions_data(traj: &mut Trajectory, hash_mode: bool) {
         let (values, n_frames, n_particles, n_values_per_frame, _data_type) = traj
             .particle_data_get(BlockID::TrajPositions)
             .expect("failed getting particle positions");
@@ -528,13 +529,27 @@ mod integration {
                 }
             }
         }
-        // TODO: port from tng_io_testing.c:953-1034
-        // - tng_particle_data_get for positions
-        // - validate n_values_per_frame == 3
-        // - validate all coordinates in range [-500, 500]
-        // - tng_particle_data_interval_get with invalid range (should fail)
-        // - tng_particle_data_interval_get with valid range
-        // - validate interval coordinates in range
+
+        assert!(
+            traj.particle_data_interval_get(BlockID::TrajPositions, 111000, 111499, hash_mode)
+                .is_err()
+        );
+
+        let (values, _n_frames, n_particles, n_values_per_frame, _data_type) = traj
+            .particle_data_interval_get(BlockID::TrajPositions, 1000, 1050, hash_mode)
+            .unwrap();
+
+        for i in 0..50 {
+            for j in 0..n_particles {
+                for k in 0..n_values_per_frame {
+                    let value = values[((i * n_particles + j) * n_values_per_frame + k) as usize];
+                    assert!(
+                        (-500.0..=500.0).contains(&value),
+                        "Coordinates not in range at frame {i}, particle {j}, component {k}: {value}"
+                    );
+                }
+            }
+        }
     }
 
     /// C API: tng_test_utility_functions() in tng_io_testing.c:1036
@@ -606,7 +621,7 @@ mod integration {
         let mut traj = test_write_and_read_traj(&mut traj);
 
         // tng_io_testing.c:1339
-        get_positions_data(&mut traj);
+        get_positions_data(&mut traj, USE_HASH);
 
         // TODO: tng_io_testing.c:1360
         // test_utility_functions(&mut traj);
