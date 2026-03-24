@@ -507,7 +507,7 @@ impl Trajectory {
     }
 
     /// C API: `tng_num_particles_get`.
-    pub fn get_num_particles(&self) -> i64 {
+    pub fn num_particles_get(&self) -> i64 {
         if !self.var_num_atoms {
             self.n_particles
         } else {
@@ -4044,6 +4044,24 @@ impl Trajectory {
         Ok((values, n_frames, n_particles, n_values_per_frame, data_type))
     }
 
+    /// C API: `tng_particle_data_vector_interval_get`
+    ///
+    /// Returns `(values, n_particles, n_values_per_frame, stride_length, data_type)`.
+    fn particle_data_vector_interval_get(
+        &mut self,
+        block_id: BlockID,
+        start_frame_nr: i64,
+        end_frame_nr: i64,
+        hash_mode: bool,
+    ) -> Result<(Vec<f64>, i64, i64, i64, DataType), TngError> {
+        assert!(
+            start_frame_nr <= end_frame_nr,
+            "`start_frame_nr`, must be lower or equal to `end_frame_nr`"
+        );
+
+        self.gen_data_vector_interval_get(block_id, true, start_frame_nr, end_frame_nr, hash_mode)
+    }
+
     /// C API: `tng_data_interval_get`
     ///
     /// Returns `(values, n_frames, n_values_per_frame, data_type)`.
@@ -4061,6 +4079,194 @@ impl Trajectory {
         let (n_frames, _n_particles, n_values_per_frame, data_type, values) =
             self.gen_data_interval_get(block_id, false, start_frame_nr, end_frame_nr, hash_mode)?;
         Ok((values, n_frames, n_values_per_frame, data_type))
+    }
+
+    fn gen_data_vector_interval_get(
+        &mut self,
+        block_id: BlockID,
+        is_particle_data: bool,
+        start_frame_nr: i64,
+        end_frame_nr: i64,
+        hash_mode: bool,
+    ) -> Result<(Vec<f64>, i64, i64, i64, DataType), TngError> {
+        let frame_set = &self.current_trajectory_frame_set;
+        let first_frame = frame_set.first_frame;
+
+        // Do not re-read the frame set if not necessary
+        if self.current_trajectory_frame_set_input_file_pos < 0
+            || start_frame_nr < first_frame
+            || start_frame_nr >= first_frame + self.current_trajectory_frame_set.n_frames
+        {
+            self.frame_set_of_frame_find(start_frame_nr)?;
+        }
+
+        // Re-read the relevant data block
+        self.frame_set_read_current_only_data_from_block_id(USE_HASH, block_id)?;
+
+        // (From C) TODO: Test that blocks are read correctly
+        let data = if is_particle_data {
+            self.particle_data_find(block_id)
+        } else {
+            self.data_find(block_id)
+        };
+
+        if first_frame != self.current_trajectory_frame_set.first_frame || data.is_none() {
+            let mut block = GenBlock::new();
+            if data.is_none() {
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Start(
+                        u64::try_from(self.current_trajectory_frame_set_input_file_pos)
+                            .expect("i64 to u64"),
+                    ))?;
+                self.block_header_read(&mut block)?;
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Current(block.block_contents_size as i64))?;
+            }
+            let mut file_pos = self.get_input_file_position();
+            // Read until next frame set block
+            while file_pos < self.input_file_len
+                && self.block_header_read(&mut block).is_ok()
+                && block.id != BlockID::TrajectoryFrameSet
+                && block.id != BlockID::Unknown
+            {
+                if block.id == block_id || block.id == BlockID::ParticleMapping {
+                    self.block_read_next(&mut block, hash_mode);
+                    // TODO: check stat to roll back file pos line 13898 tng_io.c
+                } else {
+                    file_pos += block.block_contents_size + block.header_contents_size;
+                    self.input_file
+                        .as_ref()
+                        .expect("init input_file")
+                        .seek(SeekFrom::Current(block.block_contents_size as i64))?;
+                }
+            }
+        }
+        let data = if is_particle_data {
+            self.particle_data_find(block_id)
+        } else {
+            self.data_find(block_id)
+        }
+        .ok_or_else(|| TngError::NotFound("".to_string()))?;
+
+        let (n_frames, n_particles, n_values_per_frame, data_type, current_values) = self
+            .gen_data_vector_get(is_particle_data, block_id)
+            .ok_or_else(|| TngError::NotFound("".to_string()))?;
+
+        if is_particle_data && n_particles == 0 {
+            return Err(TngError::NotFound("".to_string()));
+        }
+
+        // stride_length is an output of gen_data_vector_get in C; we read it from the data block
+        let stride_length = data.stride_length;
+
+        let tot_n_frames = if n_frames == 1 && n_frames < self.current_trajectory_frame_set.n_frames
+        {
+            1
+        } else {
+            end_frame_nr - start_frame_nr + 1
+        };
+
+        // Check that the reading starts at a frame with data or that the reading range is
+        // long enough to reach the next frame with data of this type.
+        if start_frame_nr > data.first_frame_with_data
+            && start_frame_nr - data.first_frame_with_data + tot_n_frames < stride_length
+        {
+            return Err(TngError::Constraint("".to_string()));
+        }
+
+        if data_type == DataType::Char {
+            unimplemented!("got DataType::Char unexpectedly");
+        }
+
+        // Work in f64-element space (gen_data_vector_get already converted to f64)
+        let frame_size = if is_particle_data {
+            (n_values_per_frame * n_particles) as usize
+        } else {
+            n_values_per_frame as usize
+        };
+
+        let n_frames_div_total = (tot_n_frames - 1) / stride_length + 1;
+        let full_data_len = (n_frames_div_total as usize) * frame_size;
+        let mut values = vec![0.0f64; full_data_len];
+
+        if n_frames == 1 && n_frames < self.current_trajectory_frame_set.n_frames {
+            values[..frame_size].copy_from_slice(&current_values[..frame_size]);
+        } else {
+            let current_frame_pos = start_frame_nr - self.current_trajectory_frame_set.first_frame;
+            let last_frame_pos = (n_frames - 1).min(end_frame_nr - start_frame_nr);
+
+            let n_frames_div = (current_frame_pos / stride_length) as usize;
+            let n_frames_div_2 = (last_frame_pos / stride_length + 1) as usize;
+
+            values[..n_frames_div_2 * frame_size].copy_from_slice(
+                &current_values
+                    [n_frames_div * frame_size..(n_frames_div + n_frames_div_2) * frame_size],
+            );
+
+            // C: current_frame_pos += n_frames - current_frame_pos  =>  = n_frames
+            let mut current_frame_pos = n_frames;
+
+            while current_frame_pos <= end_frame_nr - start_frame_nr {
+                self.frame_set_read_next(hash_mode)?;
+
+                let data = if is_particle_data {
+                    self.particle_data_find(block_id)
+                } else {
+                    self.data_find(block_id)
+                }
+                .ok_or_else(|| TngError::NotFound("".to_string()))?;
+
+                let (n_frames, _n_particles, _n_values_per_frame, _data_type, current_values) =
+                    self.gen_data_vector_get(is_particle_data, block_id)
+                        .ok_or_else(|| TngError::NotFound("".to_string()))?;
+
+                let last_frame_pos = (n_frames - 1).min(end_frame_nr - current_frame_pos);
+
+                let mut frame_pos = current_frame_pos;
+                if current_frame_pos < data.first_frame_with_data
+                    && end_frame_nr >= data.first_frame_with_data
+                {
+                    frame_pos = data.first_frame_with_data;
+                }
+
+                let n_frames_div_dst = (frame_pos / stride_length) as usize;
+                let n_frames_div_2 = (last_frame_pos / stride_length + 1) as usize;
+
+                values[n_frames_div_dst * frame_size
+                    ..(n_frames_div_dst + n_frames_div_2) * frame_size]
+                    .copy_from_slice(&current_values[..n_frames_div_2 * frame_size]);
+
+                current_frame_pos += n_frames * stride_length;
+            }
+        }
+
+        // *data may have been reinitialized/freed when reading frame sets. Re-find the correct data block
+        if is_particle_data {
+            if let Some(idx) =
+                (0..self.current_trajectory_frame_set.tr_particle_data.len()).find(|&i| {
+                    self.current_trajectory_frame_set.tr_particle_data[i].block_id == block_id
+                })
+            {
+                self.current_trajectory_frame_set.tr_particle_data[idx].last_retrieved_frame =
+                    end_frame_nr;
+            }
+        } else if let Some(idx) = (0..self.current_trajectory_frame_set.tr_data.len())
+            .find(|&i| self.current_trajectory_frame_set.tr_data[i].block_id == block_id)
+        {
+            self.current_trajectory_frame_set.tr_data[idx].last_retrieved_frame = end_frame_nr;
+        }
+
+        Ok((
+            values,
+            n_particles,
+            n_values_per_frame,
+            stride_length,
+            data_type,
+        ))
     }
 
     fn gen_data_interval_get(
@@ -4924,7 +5130,7 @@ impl Trajectory {
         &mut self,
         hash_mode: bool,
         match_block_id: BlockID,
-    ) -> Result<(), ()> {
+    ) -> Result<(), TngError> {
         let mut found_flag = false;
         self.input_file_init();
 
@@ -4945,7 +5151,9 @@ impl Trajectory {
                 ))
                 .expect("no error handling");
         } else {
-            return Err(());
+            return Err(TngError::Constraint(format!(
+                "`file_pos` was negative. Got {file_pos}"
+            )));
         }
 
         let mut block = GenBlock::new();
@@ -5011,7 +5219,11 @@ impl Trajectory {
                 .expect("no error handling");
         }
 
-        if found_flag { Ok(()) } else { Err(()) }
+        if found_flag {
+            Ok(())
+        } else {
+            Err(TngError::NotFound("".to_string()))
+        }
     }
 
     /// C API: `tng_frame_set_read_next_only_data_from_block_id`.
@@ -5022,7 +5234,7 @@ impl Trajectory {
         &mut self,
         hash_mode: bool,
         match_block_id: BlockID,
-    ) -> Result<(), ()> {
+    ) -> Result<(), TngError> {
         self.input_file_init();
 
         let mut file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
@@ -5039,7 +5251,9 @@ impl Trajectory {
                 ))
                 .expect("no error handling");
         } else {
-            return Err(());
+            return Err(TngError::Constraint(format!(
+                "`file_pos` was negative. Got {file_pos}"
+            )));
         }
 
         let mut block = GenBlock::new();
@@ -6958,9 +7172,23 @@ impl Trajectory {
                 ))
             })?;
 
-        let curr_n_frames = self.frame_set_n_frames_of_data_block_get(block_id);
+        let mut stat = self.frame_set_n_frames_of_data_block_get(block_id);
 
-        if let Ok(curr_n_frames) = curr_n_frames {
+        while stat.is_ok() && self.current_trajectory_frame_set.next_frame_set_file_pos != -1 {
+            n_frames += stat.unwrap();
+            let next_pos = self.current_trajectory_frame_set.next_frame_set_file_pos as u64;
+            self.input_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(next_pos))
+                .map_err(|e| {
+                    TngError::Critical(format!(
+                        "Cannot seek to position {next_pos} in util_num_frames_with_data_of_block_id_get: {e}"
+                    ))
+                })?;
+            stat = self.frame_set_n_frames_of_data_block_get(block_id);
+        }
+        if let Ok(curr_n_frames) = stat {
             n_frames += curr_n_frames;
         }
         self.input_file
@@ -7020,7 +7248,7 @@ impl Trajectory {
                             block.block_contents_size
                         ))
                     })?;
-                self.block_header_read(&mut block);
+                self.block_header_read(&mut block)?;
             }
         }
         let n_frames = if found {
@@ -7033,6 +7261,30 @@ impl Trajectory {
         };
 
         Ok(n_frames)
+    }
+
+    pub(crate) fn util_pos_read_range(
+        &mut self,
+        first_frame: i64,
+        last_frame: i64,
+    ) -> Result<(Vec<f64>, i64), TngError> {
+        assert!(
+            first_frame <= last_frame,
+            "`first_frame`, must be lower or equal to `last_frame`"
+        );
+
+        let (positions, _n_particles, _n_values_per_frame, stride_length, data_type) = self
+            .particle_data_vector_interval_get(
+                BlockID::TrajPositions,
+                first_frame,
+                last_frame,
+                USE_HASH,
+            )?;
+        if data_type != DataType::Float {
+            return Err(TngError::Constraint("data was float".to_string()));
+        }
+
+        Ok((positions, stride_length))
     }
 }
 

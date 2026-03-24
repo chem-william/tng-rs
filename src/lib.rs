@@ -254,7 +254,7 @@ mod integration {
         .unwrap();
 
         // Set the partial charges (treat the water as TIP3P)
-        let n_particles = traj.get_num_particles();
+        let n_particles = traj.num_particles_get();
         let mut charges = vec![0.0_f32; usize::try_from(n_particles).expect("i64 to usize")];
         for i in 0..n_particles {
             let atom_type = traj.atom_type_of_particle_nr_get(i);
@@ -583,6 +583,34 @@ mod integration {
             "Unexpected number of frames with positions data. Value: {n_frames}, expected value: {}",
             n_frames_per_frame_set * N_FRAME_SETS
         );
+
+        let n_frames_per_frame_set = traj.num_frames_per_frame_set_get();
+        let n_frames = traj
+            .util_num_frames_with_data_of_block_id_get(BlockID::TrajPositions)
+            .unwrap();
+        assert_eq!(
+            n_frames,
+            n_frames_per_frame_set * N_FRAME_SETS,
+            "Unexpected number of frames with positions data. Value: {n_frames}, expected value: {}",
+            n_frames_per_frame_set * N_FRAME_SETS
+        );
+
+        let n_particles = traj.num_particles_get();
+
+        let n_frames_to_read = 30;
+        let (positions, stride_length) = traj.util_pos_read_range(1, n_frames_to_read).unwrap();
+
+        for i in 0..(n_frames_to_read / stride_length) as usize {
+            for j in 0..n_particles as usize {
+                for k in 0..3 {
+                    let position = positions[i * n_particles as usize + j * 3 + k];
+                    assert!(
+                        (-500.0..=500.0).contains(&position),
+                        "Coordinates not in range at frame {i}, particle {j}, component {k}: {position}"
+                    );
+                }
+            }
+        }
 
         // TODO: port from tng_io_testing.c:1036-1140
         // - tng_util_trajectory_open (read mode)
