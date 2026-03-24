@@ -803,21 +803,18 @@ pub(crate) fn compress_quantized_pos(
     // Information needed for decompression
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], FixT::from(MAGIC_INT_POS), 4);
-        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
     // Number of atoms
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], FixT::from(n_atoms), 4);
-        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
     // Number of frames
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], FixT::from(n_frames), 4);
-        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
@@ -828,7 +825,6 @@ pub(crate) fn compress_quantized_pos(
             FixT::from(u32::try_from(initial_coding).expect("u32 from i32")),
             4,
         );
-        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
@@ -839,7 +835,6 @@ pub(crate) fn compress_quantized_pos(
             FixT::from(u32::try_from(initial_coding_parameter).expect("u32 from i32")),
             4,
         );
-        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
@@ -850,7 +845,6 @@ pub(crate) fn compress_quantized_pos(
             FixT::from(u32::try_from(coding).expect("u32 from i32")),
             4,
         );
-        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
@@ -861,26 +855,18 @@ pub(crate) fn compress_quantized_pos(
             FixT::from(u32::try_from(coding_parameter).expect("u32 from i32")),
             4,
         );
-        println!("{:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
 
     // Precision
-    println!("{prec_lo}");
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], prec_lo, 4);
-        println!("Precision lo: {:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
     if let Some(mut_data) = data.as_mut() {
         bufferfix(&mut mut_data[bufloc..], prec_hi, 4);
-        println!("Precision hi: {:?}", &mut_data[bufloc..bufloc + 4]);
     }
     bufloc += 4;
-
-    println!("printing intermediate data");
-    println!("{:?}", data);
-    println!("======================");
 
     // The initial frame
     let output_length;
@@ -900,7 +886,6 @@ pub(crate) fn compress_quantized_pos(
                     &mut speed,
                 )
                 .expect("packed array");
-            println!("datablock: {:?}", datablock);
         }
         TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
             let mut coder = Coder::default();
@@ -936,7 +921,6 @@ pub(crate) fn compress_quantized_pos(
 
     // The remaining frames
     if n_frames > 1 {
-        println!("we skip here");
         let us_natoms = usize::try_from(n_atoms).expect("usize from u32");
         let mut fallback_len = us_natoms
             .checked_mul(3)
@@ -2045,8 +2029,6 @@ mod compress_quantized_pos {
         let _nitmes = -1;
 
         let result = tng_compress_pos(&pos, 1, 1, 1e-6, 1, &mut algo).unwrap();
-        println!("{:?}", &result[..45]);
-        println!("{:?}", result.len());
         let _expected = [
             84, 78, 71, 80, 1, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             -58, 16, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0,
