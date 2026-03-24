@@ -337,7 +337,7 @@ mod integration {
         // Write file headers (includes non trajectory data blocks)
         traj.file_headers_write(USE_HASH).unwrap();
 
-        let n_frames_per_frame_set = traj.get_num_frames_per_frame_set();
+        let n_frames_per_frame_set = traj.num_frames_per_frame_set_get();
         let mut data = Vec::with_capacity(
             usize::try_from(n_particles * n_frames_per_frame_set * 3).expect("i64 to usize"),
         );
@@ -571,6 +571,17 @@ mod integration {
         assert!(
             (time - 200e-13).abs() <= 0.000001,
             "Unexpected time at frame 100. Value: {time}, expected value: 200e-13"
+        );
+
+        let n_frames_per_frame_set = traj.num_frames_per_frame_set_get();
+        let n_frames = traj
+            .util_num_frames_with_data_of_block_id_get(BlockID::TrajPositions)
+            .unwrap();
+        assert_eq!(
+            n_frames,
+            n_frames_per_frame_set * N_FRAME_SETS,
+            "Unexpected number of frames with positions data. Value: {n_frames}, expected value: {}",
+            n_frames_per_frame_set * N_FRAME_SETS
         );
 
         // TODO: port from tng_io_testing.c:1036-1140

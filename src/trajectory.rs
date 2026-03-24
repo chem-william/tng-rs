@@ -157,7 +157,7 @@ pub(crate) struct Trajectory {
     pub n_particles: i64,
 
     /// File‐offset (in bytes) of the first trajectory frame set in the input.
-    pub first_trajectory_frame_set_input_pos: i64,
+    pub first_trajectory_frame_set_input_file_pos: i64,
     /// File‐offset (in bytes) of the first trajectory frame set in the output.
     pub first_trajectory_frame_set_output_file_pos: i64,
     /// File‐offset (in bytes) of the last trajectory frame set in the input.
@@ -280,7 +280,7 @@ impl Trajectory {
             molecule_cnt_list: Vec::new(),
             n_particles: 0,
 
-            first_trajectory_frame_set_input_pos: 0,
+            first_trajectory_frame_set_input_file_pos: 0,
             first_trajectory_frame_set_output_file_pos: 0,
             last_trajectory_frame_set_input_file_pos: 0,
             last_trajectory_frame_set_output_file_pos: 0,
@@ -888,11 +888,11 @@ impl Trajectory {
         self.time = utils::read_u64(inp_file, self.endianness64, self.input_swap64);
         self.var_num_atoms = utils::read_bool_le_bytes(inp_file);
         self.frame_set_n_frames = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        self.first_trajectory_frame_set_input_pos =
+        self.first_trajectory_frame_set_input_file_pos =
             utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
         self.current_trajectory_frame_set.next_frame_set_file_pos =
-            self.first_trajectory_frame_set_input_pos;
+            self.first_trajectory_frame_set_input_file_pos;
         self.last_trajectory_frame_set_input_file_pos =
             utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
@@ -3196,7 +3196,7 @@ impl Trajectory {
         let curr_frame_set_pos =
             u64::try_from(self.current_trajectory_frame_set_input_file_pos).expect("u64 from i64");
 
-        let mut pos = self.first_trajectory_frame_set_input_pos;
+        let mut pos = self.first_trajectory_frame_set_input_file_pos;
 
         if pos <= 0 {
             return pos;
@@ -4389,7 +4389,7 @@ impl Trajectory {
 
         let mut file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
         if file_pos < 0 && self.current_trajectory_frame_set_input_file_pos <= 0 {
-            file_pos = self.first_trajectory_frame_set_input_pos;
+            file_pos = self.first_trajectory_frame_set_input_file_pos;
         }
 
         if file_pos > 0 {
@@ -4540,7 +4540,7 @@ impl Trajectory {
         let mut count = 0;
         let orig_frame_set = self.current_trajectory_frame_set.clone();
         let orig_frame_set_file_pos = self.current_trajectory_frame_set_input_file_pos;
-        let mut file_pos = self.first_trajectory_frame_set_input_pos;
+        let mut file_pos = self.first_trajectory_frame_set_input_file_pos;
 
         if file_pos < 0 {
             self.n_trajectory_frame_sets = count;
@@ -4660,7 +4660,7 @@ impl Trajectory {
             .as_ref()
             .expect("init input_file")
             .seek(SeekFrom::Start(
-                u64::try_from(self.first_trajectory_frame_set_input_pos).expect("i64 to u64"),
+                u64::try_from(self.first_trajectory_frame_set_input_file_pos).expect("i64 to u64"),
             ))
             .expect("no error handling");
         self.current_trajectory_frame_set_input_file_pos = orig_frame_set_file_pos;
@@ -4686,7 +4686,7 @@ impl Trajectory {
 
         let mut file_pos = if nr < n_frame_sets - 1 - nr {
             // Start from the beginning
-            self.first_trajectory_frame_set_input_pos
+            self.first_trajectory_frame_set_input_file_pos
         } else {
             // Start from the end
             curr_nr = n_frame_sets - 1;
@@ -4933,7 +4933,7 @@ impl Trajectory {
         if file_pos < 0 {
             // No current frame set. This means that the first frame set must be read
             found_flag = true;
-            file_pos = self.first_trajectory_frame_set_input_pos;
+            file_pos = self.first_trajectory_frame_set_input_file_pos;
         }
 
         if file_pos > 0 {
@@ -5027,7 +5027,7 @@ impl Trajectory {
 
         let mut file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
         if file_pos < 0 && self.current_trajectory_frame_set_input_file_pos <= 0 {
-            file_pos = self.first_trajectory_frame_set_input_pos;
+            file_pos = self.first_trajectory_frame_set_input_file_pos;
         }
 
         if file_pos > 0 {
@@ -5220,7 +5220,7 @@ impl Trajectory {
         let file_pos = self.get_input_file_position();
 
         let next_frame_set_file_pos = if self.current_trajectory_frame_set_input_file_pos <= 0 {
-            self.first_trajectory_frame_set_input_pos
+            self.first_trajectory_frame_set_input_file_pos
         } else {
             self.current_trajectory_frame_set.next_frame_set_file_pos
         };
@@ -5292,7 +5292,7 @@ impl Trajectory {
         let mut block = GenBlock::new();
         let mut file_pos = 0;
         if self.current_trajectory_frame_set_input_file_pos < 0 {
-            file_pos = self.first_trajectory_frame_set_input_pos;
+            file_pos = self.first_trajectory_frame_set_input_file_pos;
             self.input_file
                 .as_ref()
                 .expect("init input_file")
@@ -5344,7 +5344,7 @@ impl Trajectory {
         {
             // Start from the beginning
             if first_frame - frame >= frame {
-                file_pos = self.first_trajectory_frame_set_input_pos;
+                file_pos = self.first_trajectory_frame_set_input_file_pos;
                 if file_pos <= 0 {
                     return Err(TngError::NotFound(format!(
                         "file_pos is below or equal to 0 (file_pos: {file_pos})"
@@ -5827,7 +5827,7 @@ impl Trajectory {
             self.output_file = None;
 
             self.first_trajectory_frame_set_output_file_pos =
-                self.first_trajectory_frame_set_input_pos;
+                self.first_trajectory_frame_set_input_file_pos;
             self.last_trajectory_frame_set_output_file_pos =
                 self.last_trajectory_frame_set_input_file_pos;
             self.current_trajectory_frame_set_output_file_pos =
@@ -6343,7 +6343,7 @@ impl Trajectory {
     }
 
     /// C API: `tng_num_frames_per_frame_set_get`.
-    pub(crate) fn get_num_frames_per_frame_set(&self) -> i64 {
+    pub(crate) fn num_frames_per_frame_set_get(&self) -> i64 {
         self.frame_set_n_frames
     }
 
@@ -6937,6 +6937,102 @@ impl Trajectory {
 
         Ok(frame_set.first_frame_time
             + (self.time_per_frame * (frame_nr - frame_set.first_frame) as f64))
+    }
+
+    pub(crate) fn util_num_frames_with_data_of_block_id_get(
+        &mut self,
+        block_id: BlockID,
+    ) -> Result<i64, TngError> {
+        let mut n_frames = 0;
+        self.input_file_init();
+
+        let first_frame_set_file_pos = self.first_trajectory_frame_set_input_file_pos;
+        let curr_file_pos = self.get_input_file_position();
+        self.input_file
+            .as_ref()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(first_frame_set_file_pos as u64))
+            .map_err(|e| {
+                TngError::Critical(format!(
+                    "Cannot seek to position {first_frame_set_file_pos} in block_header_read: {e}"
+                ))
+            })?;
+
+        let curr_n_frames = self.frame_set_n_frames_of_data_block_get(block_id);
+
+        if let Ok(curr_n_frames) = curr_n_frames {
+            n_frames += curr_n_frames;
+        }
+        self.input_file
+            .as_ref()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(curr_file_pos))
+            .map_err(|e| {
+                TngError::Critical(format!(
+                    "Cannot seek to position {curr_file_pos} in block_header_read: {e}"
+                ))
+            })?;
+
+        Ok(n_frames)
+    }
+
+    fn frame_set_n_frames_of_data_block_get(&mut self, block_id: BlockID) -> Result<i64, TngError> {
+        let mut found = false;
+        let mut block = GenBlock::new();
+
+        let stat = self.block_header_read(&mut block);
+        // If the block header could not be read the reading position might not have been
+        // at the start of a block. Try again from the file position of the current frame
+        // set.
+        if stat.is_err() {
+            let file_pos = self.current_trajectory_frame_set_input_file_pos as u64;
+            self.input_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(file_pos))
+                .map_err(|e| {
+                    TngError::Critical(format!(
+                        "Cannot seek to position {file_pos} in block_header_read: {e}"
+                    ))
+                })?;
+            self.block_header_read(&mut block)?;
+        }
+
+        if block.id == BlockID::TrajectoryFrameSet {
+            self.block_read_next(&mut block, SKIP_HASH);
+            self.block_header_read(&mut block)?;
+        }
+
+        let mut metainfo = None;
+        while block.id != BlockID::TrajectoryFrameSet && !found {
+            if block.id == block_id {
+                let temp = self.data_block_meta_information_read(&mut block);
+                metainfo = Some(temp);
+                found = true;
+            } else {
+                self.input_file
+                    .as_ref()
+                    .expect("init input_file")
+                    .seek(SeekFrom::Current(block.block_contents_size as i64))
+                    .map_err(|e| {
+                        TngError::Critical(format!(
+                            "Cannot seek to position {} in block_header_read: {e}",
+                            block.block_contents_size
+                        ))
+                    })?;
+                self.block_header_read(&mut block);
+            }
+        }
+        let n_frames = if found {
+            let metainfo = metainfo.expect("we found a block");
+            (self.current_trajectory_frame_set.n_frames
+                - (self.current_trajectory_frame_set.first_frame - metainfo.first_frame_with_data))
+                / metainfo.stride_length
+        } else {
+            0
+        };
+
+        Ok(n_frames)
     }
 }
 
