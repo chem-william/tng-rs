@@ -85,16 +85,16 @@ pub struct BlockMetaInfo {
 }
 
 #[derive(Debug)]
-pub struct Trajectory {
+pub(crate) struct Trajectory {
     /// Path to the input trajectory file.
-    pub input_file_path: PathBuf,
+    pub input_file_path: Option<PathBuf>,
     /// Open handle to the input file (None until opened).
     pub input_file: Option<File>,
     /// Length (in bytes) of the input file.
     pub input_file_len: u64,
 
     /// Path to the output trajectory file (if any).
-    pub output_file_path: PathBuf,
+    pub output_file_path: Option<PathBuf>,
     /// Open handle to the output file (None until opened).
     pub output_file: Option<File>,
 
@@ -159,11 +159,11 @@ pub struct Trajectory {
     /// File‐offset (in bytes) of the first trajectory frame set in the input.
     pub first_trajectory_frame_set_input_pos: i64,
     /// File‐offset (in bytes) of the first trajectory frame set in the output.
-    pub first_trajectory_frame_set_output_pos: i64,
+    pub first_trajectory_frame_set_output_file_pos: i64,
     /// File‐offset (in bytes) of the last trajectory frame set in the input.
-    pub last_trajectory_frame_set_input_pos: i64,
+    pub last_trajectory_frame_set_input_file_pos: i64,
     /// File‐offset (in bytes) of the last trajectory frame set in the output.
-    pub last_trajectory_frame_set_output_pos: i64,
+    pub last_trajectory_frame_set_output_file_pos: i64,
 
     /// Metadata for the currently active frame set.
     pub current_trajectory_frame_set: TrajectoryFrameSet,
@@ -242,11 +242,11 @@ impl Trajectory {
         let (endianness32, endianness64) = Trajectory::detect_host_endianness();
 
         Trajectory {
-            input_file_path: PathBuf::new(),
+            input_file_path: None,
             input_file: None,
             input_file_len: 0,
 
-            output_file_path: PathBuf::new(),
+            output_file_path: None,
             output_file: None,
             endianness32,
             endianness64,
@@ -281,13 +281,13 @@ impl Trajectory {
             n_particles: 0,
 
             first_trajectory_frame_set_input_pos: 0,
-            first_trajectory_frame_set_output_pos: 0,
-            last_trajectory_frame_set_input_pos: 0,
-            last_trajectory_frame_set_output_pos: 0,
+            first_trajectory_frame_set_output_file_pos: 0,
+            last_trajectory_frame_set_input_file_pos: 0,
+            last_trajectory_frame_set_output_file_pos: 0,
 
             current_trajectory_frame_set: TrajectoryFrameSet::new(),
-            current_trajectory_frame_set_input_file_pos: 0,
-            current_trajectory_frame_set_output_file_pos: 0,
+            current_trajectory_frame_set_input_file_pos: -1,
+            current_trajectory_frame_set_output_file_pos: -1,
             n_trajectory_frame_sets: 0,
 
             n_particle_data_blocks: 0,
@@ -321,8 +321,10 @@ impl Trajectory {
     /// C API: `tng_output_file_set`.
     ///
     /// Set the name of the output file.
-    pub fn set_output_file(&mut self, path: &Path) {
-        if self.output_file_path == path {
+    pub fn output_file_set(&mut self, path: &Path) {
+        if let Some(output_file_path) = self.output_file_path.as_ref()
+            && output_file_path == path
+        {
             return;
         }
 
@@ -335,9 +337,63 @@ impl Trajectory {
             path.to_str().unwrap()
         };
 
-        self.output_file_path = PathBuf::from(truncated.to_string());
+        self.output_file_path = Some(PathBuf::from(truncated.to_string()));
 
         self.output_file_init();
+    }
+
+    pub(crate) fn output_append_file_set(&mut self, filename: &Path) -> Result<(), TngError> {
+        if let Some(output_file_path) = self.output_file_path.as_ref()
+            && output_file_path == filename
+        {
+            return Ok(());
+        }
+
+        // If a file was already open, drop (close) it.
+        self.output_file.take();
+
+        let truncated = if filename.to_str().expect("valid unicode path").len() + 1 > MAX_STR_LEN {
+            &filename.to_str().unwrap()[..MAX_STR_LEN - 1]
+        } else {
+            filename.to_str().unwrap()
+        };
+        self.output_file_path = Some(PathBuf::from(truncated.to_string()));
+
+        match File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(
+                self.output_file_path
+                    .as_ref()
+                    .expect("we just created output_file_path"),
+            ) {
+            Ok(f) => {
+                self.output_file = Some(f);
+            }
+            Err(_) => {
+                eprintln!(
+                    "Cannot open file {}. {}:{}",
+                    self.output_file_path
+                        .as_ref()
+                        .expect("we just created output_file_path")
+                        .display(),
+                    file!(),
+                    line!()
+                );
+                panic!();
+            }
+        }
+
+        self.input_file = Some(
+            self.output_file
+                .as_ref()
+                .expect("we just created the output_file")
+                .try_clone()?,
+        );
+
+        Ok(())
     }
 
     /// Open the output file is it is not already opened. If the file does not
@@ -345,7 +401,7 @@ impl Trajectory {
     pub fn output_file_init(&mut self) {
         if self.output_file.is_none() {
             // If no path has ever been set, error out
-            if self.output_file_path.as_os_str().is_empty() {
+            if self.output_file_path.is_none() {
                 eprintln!("No file specified for reading. {}:{}", file!(), line!());
                 panic!();
             }
@@ -357,15 +413,16 @@ impl Trajectory {
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .open(&path)
+                .open(path.as_ref().expect("we just checked that it was not None"))
             {
                 Ok(f) => {
                     self.output_file = Some(f);
                 }
                 Err(_) => {
                     eprintln!(
-                        "TNG library: Cannot open file {}. {}:{}",
-                        path.display(),
+                        "Cannot open file {}. {}:{}",
+                        path.expect("we just checked that it was not None")
+                            .display(),
                         file!(),
                         line!()
                     );
@@ -461,8 +518,10 @@ impl Trajectory {
     /// C API: `tng_input_file_set`.
     ///
     /// Set the name of the input file.
-    pub fn set_input_file(&mut self, path: &Path) {
-        if self.input_file_path == path {
+    pub fn input_file_set(&mut self, path: &Path) {
+        if let Some(input_file_path) = self.input_file_path.as_ref()
+            && input_file_path == path
+        {
             return;
         }
 
@@ -475,11 +534,7 @@ impl Trajectory {
             path.to_str().unwrap()
         };
 
-        // Allocate a new String. In Rust, this will panic on OOM by default.
-        let new_path = truncated.to_string();
-
-        // Assign it. Any previous String is dropped automatically.
-        self.input_file_path = PathBuf::from(new_path);
+        self.input_file_path = Some(PathBuf::from(truncated.to_string()));
 
         self.input_file_init();
     }
@@ -488,21 +543,22 @@ impl Trajectory {
     pub fn input_file_init(&mut self) {
         if self.input_file.is_none() {
             // If no path has been set, error out
-            if self.input_file_path.as_os_str().is_empty() {
+            if self.input_file_path.is_none() {
                 eprintln!("No file specified for reading. {}:{}", file!(), line!());
                 panic!();
             }
 
             // Try to open the file in "rb" mode (read‐only, binary)
             let path = self.input_file_path.clone();
-            match File::open(&path) {
+            match File::open(path.as_ref().expect("we just checked it was not None")) {
                 Ok(f) => {
                     self.input_file = Some(f);
                 }
                 Err(_) => {
                     eprintln!(
                         "Cannot open file {}. {}:{}",
-                        path.display(),
+                        path.expect("we just checked that it was not None")
+                            .display(),
                         file!(),
                         line!()
                     );
@@ -837,7 +893,7 @@ impl Trajectory {
 
         self.current_trajectory_frame_set.next_frame_set_file_pos =
             self.first_trajectory_frame_set_input_pos;
-        self.last_trajectory_frame_set_input_pos =
+        self.last_trajectory_frame_set_input_file_pos =
             utils::read_i64(inp_file, self.endianness64, self.input_swap64);
 
         self.medium_stride_length = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
@@ -1863,13 +1919,13 @@ impl Trajectory {
         );
         utils::write_i64(
             out_file,
-            self.first_trajectory_frame_set_output_pos,
+            self.first_trajectory_frame_set_output_file_pos,
             self.endianness64,
             self.output_swap64,
         );
         utils::write_i64(
             out_file,
-            self.last_trajectory_frame_set_output_pos,
+            self.last_trajectory_frame_set_output_file_pos,
             self.endianness64,
             self.output_swap64,
         );
@@ -3091,12 +3147,12 @@ impl Trajectory {
                     i64::try_from(total_len - orig_len).expect("i64 from usize"),
                     hash_mode,
                 );
-                self.last_trajectory_frame_set_input_pos =
-                    self.last_trajectory_frame_set_output_pos;
+                self.last_trajectory_frame_set_input_file_pos =
+                    self.last_trajectory_frame_set_output_file_pos;
             }
 
             self.reread_frame_set_at_file_pos(
-                u64::try_from(self.last_trajectory_frame_set_input_pos).expect("u64 from i64"),
+                u64::try_from(self.last_trajectory_frame_set_input_file_pos).expect("u64 from i64"),
             );
 
             // In order to write non-trajectory data the current_trajectory_frame_set_output_file_pos
@@ -4328,7 +4384,7 @@ impl Trajectory {
     ///
     /// Read one (the next) frame set, including particle mapping and related data blocks
     /// from the input_file of [`Self`]
-    pub fn frame_set_read_next(&mut self, hash_mode: bool) -> Result<(), ()> {
+    pub fn frame_set_read_next(&mut self, hash_mode: bool) -> Result<(), TngError> {
         self.input_file_init();
 
         let mut file_pos = self.current_trajectory_frame_set.next_frame_set_file_pos;
@@ -4342,26 +4398,28 @@ impl Trajectory {
                 .expect("init input_file")
                 .seek(SeekFrom::Start(
                     u64::try_from(file_pos).expect("i64 to u64"),
-                ))
-                .expect("no error handling");
+                ))?;
         } else {
-            return Err(());
+            return Err(TngError::Constraint(format!(
+                "file_pos was negative. Got {file_pos}"
+            )));
         }
         self.frame_set_read(hash_mode)
     }
 
     /// Read one frame set, including all particle mapping blocks and data blocks, starting from
     /// the current file position
-    fn frame_set_read(&mut self, hash_mode: bool) -> Result<(), ()> {
+    fn frame_set_read(&mut self, hash_mode: bool) -> Result<(), TngError> {
         self.input_file_init();
         let mut file_pos = self.get_input_file_position();
         let mut block = GenBlock::new();
 
         // Read block headers first to see what block is found
-        self.block_header_read(&mut block);
-
+        self.block_header_read(&mut block)?;
         if block.id != BlockID::TrajectoryFrameSet || block.id == BlockID::Unknown {
-            return Err(());
+            return Err(TngError::Critical(format!(
+                "Cannot read block header at pos {file_pos}"
+            )));
         }
 
         self.current_trajectory_frame_set_input_file_pos =
@@ -4374,7 +4432,7 @@ impl Trajectory {
             file_pos = self.get_input_file_position();
 
             // Read all blocks until next frame set block
-            self.block_header_read(&mut block);
+            self.block_header_read(&mut block)?;
             loop {
                 if file_pos >= self.input_file_len {
                     break;
@@ -4386,7 +4444,7 @@ impl Trajectory {
                 self.block_read_next(&mut block, hash_mode);
                 file_pos = self.get_input_file_position();
                 if file_pos < self.input_file_len {
-                    self.block_header_read(&mut block);
+                    self.block_header_read(&mut block)?;
                 }
             }
 
@@ -4394,8 +4452,7 @@ impl Trajectory {
                 self.input_file
                     .as_ref()
                     .expect("init input_file")
-                    .seek(SeekFrom::Start(file_pos))
-                    .expect("no error handling");
+                    .seek(SeekFrom::Start(file_pos))?;
             }
         }
         Ok(())
@@ -4413,7 +4470,7 @@ impl Trajectory {
 
         self.current_trajectory_frame_set_output_file_pos =
             i64::try_from(self.get_output_file_position()).expect("i64 from u64");
-        self.last_trajectory_frame_set_output_pos =
+        self.last_trajectory_frame_set_output_file_pos =
             self.current_trajectory_frame_set_output_file_pos;
 
         if self.current_trajectory_frame_set_output_file_pos <= 0 {
@@ -4422,8 +4479,8 @@ impl Trajectory {
             ));
         }
 
-        if self.first_trajectory_frame_set_output_pos == -1 {
-            self.first_trajectory_frame_set_output_pos =
+        if self.first_trajectory_frame_set_output_file_pos == -1 {
+            self.first_trajectory_frame_set_output_file_pos =
                 self.current_trajectory_frame_set_output_file_pos;
         }
 
@@ -4633,7 +4690,7 @@ impl Trajectory {
         } else {
             // Start from the end
             curr_nr = n_frame_sets - 1;
-            self.last_trajectory_frame_set_input_pos
+            self.last_trajectory_frame_set_input_file_pos
         };
 
         if file_pos <= 0 {
@@ -5196,7 +5253,7 @@ impl Trajectory {
     /// C API: `tng_num_frames_get`.
     pub fn num_frames_get(&mut self) -> Option<i64> {
         let file_pos = self.get_input_file_position();
-        let last_file_pos = self.last_trajectory_frame_set_input_pos;
+        let last_file_pos = self.last_trajectory_frame_set_input_file_pos;
 
         if last_file_pos <= 0 {
             return None;
@@ -5294,7 +5351,7 @@ impl Trajectory {
                     )));
                 }
             } else if frame - first_frame > (n_frames - 1) - frame {
-                file_pos = self.last_trajectory_frame_set_input_pos;
+                file_pos = self.last_trajectory_frame_set_input_file_pos;
                 // If the last frame set position is not set start from the current
                 // frame set, since it will be closer than the first frame set
             }
@@ -5599,7 +5656,7 @@ impl Trajectory {
 
         self.input_file = temp;
 
-        let mut pos = self.first_trajectory_frame_set_output_pos;
+        let mut pos = self.first_trajectory_frame_set_output_file_pos;
         utils::write_u64(
             output_file,
             u64::try_from(pos).expect("u64 from i64"),
@@ -5607,7 +5664,7 @@ impl Trajectory {
             self.input_swap64,
         );
 
-        pos = self.last_trajectory_frame_set_output_pos;
+        pos = self.last_trajectory_frame_set_output_file_pos;
         utils::write_u64(
             output_file,
             u64::try_from(pos).expect("u64 from i64"),
@@ -5722,6 +5779,67 @@ impl Trajectory {
         self.reread_frame_set_at_file_pos(orig_file_pos);
 
         Err(())
+    }
+
+    /// High-level function for opening and initializing a TNG trajectory
+    pub fn util_trajectory_open(&mut self, filename: &Path, mode: char) -> Result<(), TngError> {
+        match mode {
+            'r' | 'w' | 'a' => {}
+            _ => {
+                return Err(TngError::Constraint(format!(
+                    "mode must one of 'r', 'w', or 'a'. Got {mode}"
+                )));
+            }
+        };
+
+        // TODO: does this even make sense? we can't call this method on traj without already having a traj
+        *self = Trajectory::new();
+
+        if mode == 'w' {
+            self.output_file_set(filename);
+        }
+        self.input_file_set(filename);
+
+        // Read the file headers
+        self.file_headers_read(USE_HASH);
+
+        let n = self.num_frame_sets_get();
+        self.n_trajectory_frame_sets = n;
+
+        if mode == 'a' {
+            // If a file was already open, drop (close) it.
+            self.output_file.take();
+            self.output_file = Some(
+                self.input_file
+                    .as_mut()
+                    .expect("we just set the input file")
+                    .try_clone()?,
+            );
+            self.input_file
+                .as_mut()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(
+                    self.last_trajectory_frame_set_input_file_pos as u64,
+                ))?;
+
+            self.frame_set_read(USE_HASH)?;
+
+            self.output_file = None;
+
+            self.first_trajectory_frame_set_output_file_pos =
+                self.first_trajectory_frame_set_input_pos;
+            self.last_trajectory_frame_set_output_file_pos =
+                self.last_trajectory_frame_set_input_file_pos;
+            self.current_trajectory_frame_set_output_file_pos =
+                self.current_trajectory_frame_set_input_file_pos;
+
+            // If a file was already open, drop (close) it.
+            self.input_file.take();
+            self.input_file_path.take();
+            self.output_append_file_set(filename)?;
+        }
+
+        Ok(())
     }
 
     /// C API: `tng_molecule_add`.
@@ -6258,7 +6376,7 @@ impl Trajectory {
         // FIXME(from c code): This is a bit risky. If they are not added in order it will be wrong
         if self.n_trajectory_frame_sets > 0 {
             self.current_trajectory_frame_set.prev_frame_set_file_pos =
-                self.last_trajectory_frame_set_output_pos;
+                self.last_trajectory_frame_set_output_file_pos;
         }
 
         self.current_trajectory_frame_set.next_frame_set_file_pos = -1;
@@ -6270,7 +6388,8 @@ impl Trajectory {
         // Set the medium range pointers
         if self.n_trajectory_frame_sets == self.medium_stride_length + 1 {
             self.current_trajectory_frame_set
-                .medium_stride_prev_frame_set_file_pos = self.first_trajectory_frame_set_output_pos;
+                .medium_stride_prev_frame_set_file_pos =
+                self.first_trajectory_frame_set_output_file_pos;
         } else if self.n_trajectory_frame_sets > self.medium_stride_length + 1 {
             // FIXME(from c code): Currently only working if the previous frame set has its
             // medium stride pointer already set.
@@ -6291,11 +6410,7 @@ impl Trajectory {
                     .seek(SeekFrom::Start(medium_prev as u64))?;
 
                 if let Err(e) = self.block_header_read(&mut block) {
-                    eprintln!(
-                        "TNG library: Cannot read frame set header. {}:{}",
-                        file!(),
-                        line!()
-                    );
+                    eprintln!("Cannot read frame set header. {}:{}", file!(), line!());
                     self.output_file = self.input_file.take();
                     self.input_file = temp_input;
                     return Err(e);
@@ -6323,7 +6438,7 @@ impl Trajectory {
                 if self.n_trajectory_frame_sets == self.long_stride_length + 1 {
                     self.current_trajectory_frame_set
                         .long_stride_prev_frame_set_file_pos =
-                        self.first_trajectory_frame_set_output_pos;
+                        self.first_trajectory_frame_set_output_file_pos;
                 } else if self.n_trajectory_frame_sets > self.medium_stride_length + 1 {
                     let long_prev = self
                         .current_trajectory_frame_set
@@ -6337,11 +6452,7 @@ impl Trajectory {
                             .seek(SeekFrom::Start(long_prev as u64))?;
 
                         if let Err(e) = self.block_header_read(&mut block) {
-                            eprintln!(
-                                "TNG library: Cannot read frame set header. {}:{}",
-                                file!(),
-                                line!()
-                            );
+                            eprintln!("Cannot read frame set header. {}:{}", file!(), line!());
                             self.output_file = self.input_file.take();
                             self.input_file = temp_input;
                             return Err(e);
@@ -6382,19 +6493,19 @@ impl Trajectory {
         frame_set.n_unwritten_frames = 0;
         frame_set.first_frame_time = -1.0;
 
-        if self.first_trajectory_frame_set_output_pos == -1
-            || self.first_trajectory_frame_set_output_pos == 0
+        if self.first_trajectory_frame_set_output_file_pos == -1
+            || self.first_trajectory_frame_set_output_file_pos == 0
         {
-            self.first_trajectory_frame_set_output_pos =
+            self.first_trajectory_frame_set_output_file_pos =
                 self.current_trajectory_frame_set_output_file_pos;
         }
 
-        if self.last_trajectory_frame_set_output_pos == -1
-            || self.last_trajectory_frame_set_output_pos == 0
-            || self.last_trajectory_frame_set_output_pos
+        if self.last_trajectory_frame_set_output_file_pos == -1
+            || self.last_trajectory_frame_set_output_file_pos == 0
+            || self.last_trajectory_frame_set_output_file_pos
                 < self.current_trajectory_frame_set_output_file_pos
         {
-            self.last_trajectory_frame_set_output_pos =
+            self.last_trajectory_frame_set_output_file_pos =
                 self.current_trajectory_frame_set_output_file_pos;
         }
 
@@ -6810,6 +6921,22 @@ impl Trajectory {
         block_id: BlockID,
     ) -> Option<(i64, i64, i64, DataType, Vec<f64>)> {
         self.gen_data_vector_get(is_particle_data, block_id)
+    }
+
+    pub(crate) fn util_time_of_frame_get(&mut self, frame_nr: i64) -> Result<f64, TngError> {
+        self.frame_set_of_frame_find(frame_nr)?;
+
+        let frame_set = &self.current_trajectory_frame_set;
+
+        if self.time_per_frame <= 0.0 {
+            return Err(TngError::Constraint(format!(
+                "time_per_frame was <= 0. Got {}",
+                self.time_per_frame
+            )));
+        }
+
+        Ok(frame_set.first_frame_time
+            + (self.time_per_frame * (frame_nr - frame_set.first_frame) as f64))
     }
 }
 

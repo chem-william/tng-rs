@@ -435,7 +435,7 @@ mod integration {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
         input_filename.push(TEST_FILES_DIR);
         input_filename.push("tng_test.tng");
-        traj.set_input_file(input_filename.as_path());
+        traj.input_file_set(input_filename.as_path());
 
         traj.file_headers_read(USE_HASH);
 
@@ -554,7 +554,25 @@ mod integration {
 
     /// C API: tng_test_utility_functions() in tng_io_testing.c:1036
     /// TODO: Port from C
-    fn test_utility_functions(_traj: &mut Trajectory) {
+    fn test_utility_functions(traj: &mut Trajectory, hash_mode: bool) {
+        let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+        input_filename.push(TEST_FILES_DIR);
+        input_filename.push("tng_test.tng");
+        traj.util_trajectory_open(input_filename.as_path(), 'r')
+            .unwrap();
+
+        let time = traj.util_time_of_frame_get(50).unwrap();
+        assert!(
+            (time - 100e-13).abs() <= 0.000001,
+            "Unexpected time at frame 50. Value: {time}, expected value: 100e-13"
+        );
+
+        let time = traj.util_time_of_frame_get(100).unwrap();
+        assert!(
+            (time - 200e-13).abs() <= 0.000001,
+            "Unexpected time at frame 100. Value: {time}, expected value: 200e-13"
+        );
+
         // TODO: port from tng_io_testing.c:1036-1140
         // - tng_util_trajectory_open (read mode)
         // - tng_util_time_of_frame_get for frames 50 and 100
@@ -600,8 +618,8 @@ mod integration {
         output_filename.push("tng_example_out.tng");
 
         let mut traj = Trajectory::new();
-        traj.set_input_file(input_filename.as_path());
-        traj.set_output_file(output_filename.as_path());
+        traj.input_file_set(input_filename.as_path());
+        traj.output_file_set(output_filename.as_path());
 
         test_read_and_write_file(&mut traj);
 
@@ -615,7 +633,7 @@ mod integration {
         let mut output_filename = std::env::current_dir().expect("able to get current working dir");
         output_filename.push(TEST_FILES_DIR);
         output_filename.push("tng_test.tng");
-        traj.set_output_file(output_filename.as_path());
+        traj.output_file_set(output_filename.as_path());
 
         // tng_io_testing.c:1329
         let mut traj = test_write_and_read_traj(&mut traj);
@@ -624,7 +642,7 @@ mod integration {
         get_positions_data(&mut traj, USE_HASH);
 
         // TODO: tng_io_testing.c:1360
-        // test_utility_functions(&mut traj);
+        test_utility_functions(&mut traj, USE_HASH);
 
         // TODO: tng_io_testing.c:1371
         // test_append(&mut traj);
