@@ -7573,6 +7573,120 @@ impl Trajectory {
 
         unreachable!("we should've found a block type OR errored out")
     }
+
+    pub(crate) fn util_trajectory_close(&mut self) -> Result<(), TngError> {
+        if self.current_trajectory_frame_set.n_unwritten_frames > 0 {
+            self.current_trajectory_frame_set.n_frames =
+                self.current_trajectory_frame_set.n_unwritten_frames;
+            self.frame_set_write(USE_HASH)?;
+        }
+
+        self.trajectory_destroy()?;
+        Ok(())
+    }
+
+    /// C API: `tng_trajectory_destroy`.
+    pub fn trajectory_destroy(&mut self) -> Result<(), TngError> {
+        let same_file = match (self.input_file.as_ref(), self.output_file.as_ref()) {
+            (Some(input), Some(output)) => is_same_file(input, output)?,
+            _ => false,
+        };
+
+        if self.input_file.is_some() {
+            if same_file {
+                self.frame_set_finalize(USE_HASH)?;
+                self.output_file = None;
+            }
+
+            drop(self.input_file.take());
+        }
+
+        self.input_file_path = None;
+
+        if self.output_file.is_some() {
+            let _ = self.frame_set_finalize(USE_HASH);
+            drop(self.output_file.take());
+        }
+
+        self.output_file_path = None;
+
+        *self = Trajectory::new();
+
+        Ok(())
+    }
+
+    fn frame_set_finalize(&mut self, _use_hash: bool) -> Result<(), TngError> {
+        if self.current_trajectory_frame_set.n_written_frames
+            == self.current_trajectory_frame_set.n_frames
+        {
+            return Ok(());
+        }
+
+        self.current_trajectory_frame_set.n_written_frames =
+            self.current_trajectory_frame_set.n_frames;
+
+        self.output_file_init();
+
+        let temp = self.input_file.take();
+        let result = (|| -> Result<(), TngError> {
+            let mut block = GenBlock::new();
+            self.input_file = Some(
+                self.output_file
+                    .as_ref()
+                    .expect("we just created the output_file")
+                    .try_clone()?,
+            );
+            let curr_file_pos = self.get_output_file_position();
+            let pos = self.current_trajectory_frame_set_output_file_pos;
+
+            self.output_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(pos as u64))
+                .map_err(|e| {
+                    TngError::Critical(format!(
+                        "Cannot seek to position {pos} in frame_set_initialize: {e}"
+                    ))
+                })?;
+            self.block_header_read(&mut block)?;
+
+            self.output_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Current(
+                    size_of_val(&self.current_trajectory_frame_set.first_frame) as i64,
+                ))
+                .map_err(|e| {
+                    TngError::Critical(format!(
+                        "Cannot seek 8 bytes forward in frame_set_initialize: {e}"
+                    ))
+                })?;
+            let out_file = self.output_file.as_mut().expect("init output_file");
+            out_file
+                .write_all(
+                    &(size_of_val(&self.current_trajectory_frame_set.first_frame) as i64)
+                        .to_ne_bytes(),
+                )
+                .expect("able to write to output_file");
+
+            // TODO: hash mode tng_io.c line 6242
+
+            self.output_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(curr_file_pos))
+                .map_err(|e| {
+                    TngError::Critical(format!(
+                        "Cannot seek to position {curr_file_pos} in frame_set_initialize: {e}"
+                    ))
+                })?;
+
+            Ok(())
+        })();
+
+        self.input_file = temp;
+        result
+    }
 }
 
 /// Interpret a byte slice as a numeric value and return it as f64.

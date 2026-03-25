@@ -553,7 +553,6 @@ mod integration {
     }
 
     /// C API: tng_test_utility_functions() in tng_io_testing.c:1036
-    /// TODO: Port from C
     fn test_utility_functions(traj: &mut Trajectory, hash_mode: bool) {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
         input_filename.push(TEST_FILES_DIR);
@@ -627,19 +626,10 @@ mod integration {
             .unwrap();
         assert_eq!(codec_id, Compression::GZip, "Could not get compression");
 
-        // TODO: port from tng_io_testing.c:1036-1140
-        // - tng_util_trajectory_open (read mode)
-        // - tng_util_time_of_frame_get for frames 50 and 100
-        // - tng_util_num_frames_with_data_of_block_id_get
-        // - tng_util_pos_read_range
-        // - validate positions in range
-        // - tng_util_trajectory_next_frame_present_data_blocks_find
-        // - tng_util_frame_current_compression_get
-        // - tng_util_trajectory_close
+        traj.util_trajectory_close().unwrap();
     }
 
     /// C API: tng_test_append() in tng_io_testing.c:1143
-    /// TODO: Port from C
     fn test_append(_traj: &mut Trajectory) {
         // TODO: port from tng_io_testing.c:1143-1226
         // - tng_util_trajectory_open (append mode)
@@ -661,7 +651,6 @@ mod integration {
     }
 
     #[test]
-    // #[ignore]
     fn tng_io_testing() {
         // tng_io_testing.c:1296
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
@@ -695,11 +684,11 @@ mod integration {
         // tng_io_testing.c:1339
         get_positions_data(&mut traj, USE_HASH);
 
-        // TODO: tng_io_testing.c:1360
+        // tng_io_testing.c:1360
         test_utility_functions(&mut traj, USE_HASH);
 
         // TODO: tng_io_testing.c:1371
-        // test_append(&mut traj);
+        test_append(&mut traj);
 
         // TODO: tng_io_testing.c:1381
         // test_copy_container(&mut traj);
