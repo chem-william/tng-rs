@@ -612,6 +612,21 @@ mod integration {
             }
         }
 
+        let (next_frame, n_blocks) = traj
+            .util_trajectory_next_frame_present_data_blocks_find(n_frames_to_read, 0, &[])
+            .unwrap();
+        assert_eq!(n_blocks, 1, "Unexpected data blocks in next frame.");
+        assert_eq!(
+            next_frame,
+            n_frames_to_read + stride_length,
+            "Unexpected data blocks in next frame."
+        );
+
+        let (codec_id, _factor) = traj
+            .util_frame_current_compression_get(BlockID::TrajPositions)
+            .unwrap();
+        assert_eq!(codec_id, Compression::GZip, "Could not get compression");
+
         // TODO: port from tng_io_testing.c:1036-1140
         // - tng_util_trajectory_open (read mode)
         // - tng_util_time_of_frame_get for frames 50 and 100

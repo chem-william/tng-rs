@@ -59,6 +59,12 @@ fn tng_compress_nalgo() -> u64 {
     4
 }
 
+#[derive(Debug, PartialEq)]
+enum BlockType {
+    NonParticleBlockData,
+    ParticleBlockData,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct BlockMetaInfo {
     /// The datatype of the data block.
@@ -5517,7 +5523,7 @@ impl Trajectory {
             self.current_trajectory_frame_set_input_file_pos = file_pos;
 
             // Read block headers first to see what block is found
-            self.block_header_read(&mut block);
+            self.block_header_read(&mut block)?;
             if block.id != BlockID::TrajectoryFrameSet {
                 panic!("Cannot read block header at pos {file_pos}");
             }
@@ -5585,7 +5591,7 @@ impl Trajectory {
                 self.current_trajectory_frame_set_input_file_pos = file_pos;
 
                 // Read block headers first to see what block is found
-                self.block_header_read(&mut block);
+                self.block_header_read(&mut block)?;
                 if block.id != BlockID::TrajectoryFrameSet {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
@@ -5619,7 +5625,7 @@ impl Trajectory {
                     .expect("no error handling");
 
                 // Read block headers first to see what block is found
-                self.block_header_read(&mut block);
+                self.block_header_read(&mut block)?;
                 if block.id != BlockID::TrajectoryFrameSet {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
@@ -5650,7 +5656,7 @@ impl Trajectory {
                     .expect("no error handling");
 
                 // Read block headers first to see what block is found
-                self.block_header_read(&mut block);
+                self.block_header_read(&mut block)?;
                 if block.id != BlockID::TrajectoryFrameSet {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
@@ -5678,7 +5684,7 @@ impl Trajectory {
                     .expect("no error handling");
 
                 // Read block headers first to see what block is found
-                self.block_header_read(&mut block);
+                self.block_header_read(&mut block)?;
                 if block.id != BlockID::TrajectoryFrameSet {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
@@ -5709,7 +5715,7 @@ impl Trajectory {
                     .expect("no error handling");
 
                 // Read block headers first to see what block is found
-                self.block_header_read(&mut block);
+                self.block_header_read(&mut block)?;
                 if block.id != BlockID::TrajectoryFrameSet {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
@@ -5740,7 +5746,7 @@ impl Trajectory {
                     .expect("no error handling");
 
                 // Read block headers first to see what block is found
-                self.block_header_read(&mut block);
+                self.block_header_read(&mut block)?;
                 if block.id != BlockID::TrajectoryFrameSet {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
@@ -5768,7 +5774,7 @@ impl Trajectory {
                     .expect("no error handling");
 
                 // Read block headers first to see what block is found
-                self.block_header_read(&mut block);
+                self.block_header_read(&mut block)?;
                 if block.id != BlockID::TrajectoryFrameSet {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
@@ -5797,7 +5803,7 @@ impl Trajectory {
                     .expect("no error handling");
 
                 // Read block headers first to see what block is found
-                self.block_header_read(&mut block);
+                self.block_header_read(&mut block)?;
                 if block.id != BlockID::TrajectoryFrameSet {
                     panic!("Cannot read block header at pos {file_pos}");
                 }
@@ -7285,6 +7291,287 @@ impl Trajectory {
         }
 
         Ok((positions, stride_length))
+    }
+
+    pub(crate) fn util_trajectory_next_frame_present_data_blocks_find(
+        &mut self,
+        current_frame: i64,
+        n_requested_data_block_ids: i64,
+        requested_data_block_ids: &[BlockID],
+    ) -> Result<(i64, i64), TngError> {
+        let mut data;
+        let mut read_all = false;
+        let mut min_diff;
+        let frame_set_file_pos;
+        let mut current_frame = current_frame;
+        let mut data_block_ids_in_next_frame =
+            vec![BlockID::default(); n_requested_data_block_ids as usize];
+        let mut n_data_blocks_in_next_frame = 0;
+
+        current_frame += 1;
+
+        if current_frame < self.current_trajectory_frame_set.first_frame
+            || current_frame
+                >= self.current_trajectory_frame_set.first_frame
+                    + self.current_trajectory_frame_set.n_frames
+        {
+            frame_set_file_pos = self.current_trajectory_frame_set_input_file_pos;
+            let stat = self.frame_set_of_frame_find(current_frame);
+            if let Err(err) = stat {
+                // If the frame set search found the frame set after the starting
+                // frame set there is a gap in the frame sets. So, even if the frame
+                // was not found the next frame with data is still in the found
+                // frame set.
+                if matches!(err, TngError::Critical(_))
+                    || self.current_trajectory_frame_set.prev_frame_set_file_pos
+                        != frame_set_file_pos
+                {
+                    return Err(err);
+                }
+                current_frame = self.current_trajectory_frame_set.first_frame;
+            }
+        }
+
+        // Check for data blocks only if they have not already been found
+        if self.current_trajectory_frame_set.n_particle_data_blocks <= 0
+            && self.current_trajectory_frame_set.n_data_blocks <= 0
+        {
+            let mut file_pos = self.get_input_file_position();
+            if file_pos < self.input_file_len {
+                let mut block = GenBlock::new();
+                self.block_header_read(&mut block)?;
+                while file_pos < self.input_file_len
+                    && block.id != BlockID::TrajectoryFrameSet
+                    && block.id != BlockID::Unknown
+                {
+                    self.block_read_next(&mut block, USE_HASH);
+                    file_pos = self.get_input_file_position();
+                    if file_pos < self.input_file_len {
+                        self.block_header_read(&mut block)?;
+                    }
+                }
+            }
+            read_all = true;
+        }
+
+        min_diff = -1;
+
+        for i in 0..self.current_trajectory_frame_set.n_particle_data_blocks {
+            let data = &self.current_trajectory_frame_set.tr_particle_data[i].clone();
+            let block_id = data.block_id;
+
+            if n_requested_data_block_ids > 0 {
+                let mut found = false;
+                for item in requested_data_block_ids
+                    .iter()
+                    .take(n_requested_data_block_ids as usize)
+                {
+                    if block_id == *item {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    continue;
+                }
+            }
+
+            if !read_all
+                && data.last_retrieved_frame < self.current_trajectory_frame_set.first_frame
+                || data.last_retrieved_frame
+                    >= self.current_trajectory_frame_set.first_frame
+                        + self.current_trajectory_frame_set.n_frames
+            {
+                let stat = self.frame_set_read_current_only_data_from_block_id(USE_HASH, block_id);
+                match stat {
+                    Ok(_) => {}
+                    Err(TngError::Constraint(_)) | Err(TngError::NotFound(_)) => continue,
+                    _ => {
+                        return Err(TngError::Critical(format!(
+                            "Cannot read data block of frame set. {}:{}",
+                            file!(),
+                            line!()
+                        )));
+                    }
+                }
+            }
+            let data_frame = if self.current_trajectory_frame_set.first_frame != current_frame
+                && data.last_retrieved_frame >= 0
+            {
+                data.last_retrieved_frame + data.stride_length
+            } else {
+                data.first_frame_with_data
+            };
+            let frame_diff = data_frame - current_frame;
+            if frame_diff < 0 {
+                continue;
+            }
+            if min_diff == -1 || frame_diff <= min_diff {
+                n_data_blocks_in_next_frame = if frame_diff < min_diff {
+                    1
+                } else {
+                    n_data_blocks_in_next_frame + 1
+                };
+                if n_requested_data_block_ids <= 0 {
+                    data_block_ids_in_next_frame =
+                        vec![BlockID::default(); n_data_blocks_in_next_frame as usize];
+                } else {
+                    assert!(
+                        n_data_blocks_in_next_frame <= n_requested_data_block_ids,
+                        "Array of data block IDs out of bounds"
+                    );
+                }
+                *data_block_ids_in_next_frame
+                    .last_mut()
+                    .expect("we've just allocated this array") = block_id;
+
+                min_diff = frame_diff;
+            }
+        }
+
+        for i in 0..self.current_trajectory_frame_set.n_data_blocks {
+            data = self.current_trajectory_frame_set.tr_data[i].clone();
+            let block_id = data.block_id;
+
+            if n_requested_data_block_ids > 0 {
+                let mut found = false;
+                for item in requested_data_block_ids
+                    .iter()
+                    .take(n_requested_data_block_ids as usize)
+                {
+                    if block_id == *item {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    continue;
+                }
+            }
+
+            if !read_all
+                && (data.last_retrieved_frame < self.current_trajectory_frame_set.first_frame
+                    || data.last_retrieved_frame
+                        >= self.current_trajectory_frame_set.first_frame
+                            + self.current_trajectory_frame_set.n_frames)
+            {
+                let stat = self.frame_set_read_current_only_data_from_block_id(USE_HASH, block_id);
+                match stat {
+                    Ok(_) => {}
+                    Err(TngError::Constraint(_)) | Err(TngError::NotFound(_)) => continue,
+                    _ => {
+                        return Err(TngError::Critical(format!(
+                            "Cannot read data block of frame set. {}:{}",
+                            file!(),
+                            line!()
+                        )));
+                    }
+                }
+            }
+            let data_frame = if self.current_trajectory_frame_set.first_frame != current_frame
+                && data.last_retrieved_frame >= 0
+            {
+                data.last_retrieved_frame + data.stride_length
+            } else {
+                data.first_frame_with_data
+            };
+            let frame_diff = data_frame - current_frame;
+            if frame_diff < 0 {
+                continue;
+            }
+            if min_diff == -1 || frame_diff <= min_diff {
+                n_data_blocks_in_next_frame = if frame_diff < min_diff {
+                    1
+                } else {
+                    n_data_blocks_in_next_frame + 1
+                };
+                if n_requested_data_block_ids <= 0 {
+                    data_block_ids_in_next_frame =
+                        vec![BlockID::default(); n_data_blocks_in_next_frame as usize];
+                } else {
+                    assert!(
+                        n_data_blocks_in_next_frame <= n_requested_data_block_ids,
+                        "Array of data block IDs out of bounds"
+                    );
+                }
+                *data_block_ids_in_next_frame
+                    .last_mut()
+                    .expect("we've just allocated this array") = block_id;
+
+                min_diff = frame_diff;
+            }
+        }
+        if min_diff < 0 {
+            return Err(TngError::Constraint(format!(
+                "`min_diff` was negative. Got {min_diff}"
+            )));
+        }
+
+        let next_frame = current_frame + min_diff;
+        Ok((next_frame, n_data_blocks_in_next_frame))
+    }
+    pub(crate) fn util_frame_current_compression_get(
+        &mut self,
+        block_id: BlockID,
+    ) -> Result<(Compression, f64), TngError> {
+        let block_type;
+        let mut data;
+        let mut i = None;
+        data = self.particle_data_find(block_id);
+
+        if data.is_some() {
+            block_type = Some(BlockType::ParticleBlockData);
+        } else {
+            data = self.data_find(block_id);
+            if data.is_some() {
+                block_type = Some(BlockType::NonParticleBlockData);
+            } else {
+                self.frame_set_read_current_only_data_from_block_id(USE_HASH, block_id)?;
+                data = self.particle_data_find(block_id);
+                if data.is_some() {
+                    block_type = Some(BlockType::ParticleBlockData);
+                } else {
+                    data = self.data_find(block_id);
+                    if data.is_some() {
+                        block_type = Some(BlockType::NonParticleBlockData);
+                    } else {
+                        return Err(TngError::NotFound("Could not find data".to_string()));
+                    }
+                }
+            }
+        }
+        // if (block_type == TNG_PARTICLE_BLOCK_DATA || block_type == TNG_NON_PARTICLE_BLOCK_DATA)
+        if block_type.is_some() {
+            if let Some(data) = data.as_ref() {
+                i = if data.last_retrieved_frame < 0 {
+                    Some(data.first_frame_with_data)
+                } else {
+                    Some(data.last_retrieved_frame)
+                }
+            }
+        } else {
+            return Err(TngError::NotFound(
+                "Could not find an appropriate data block".to_string(),
+            ));
+        }
+        if let Some(i) = i
+            && (i < self.current_trajectory_frame_set.first_frame
+                || i >= self.current_trajectory_frame_set.first_frame
+                    + self.current_trajectory_frame_set.n_frames)
+        {
+            self.frame_set_of_frame_find(i)?;
+            self.frame_set_read_current_only_data_from_block_id(USE_HASH, block_id)?;
+        }
+        // if (block_type == TNG_PARTICLE_BLOCK_DATA || block_type == TNG_NON_PARTICLE_BLOCK_DATA)
+        if block_type.is_some()
+            && let Some(data) = data
+        {
+            let codec_id = data.codec_id;
+            let factor = data.compression_multiplier;
+            return Ok((codec_id, factor));
+        }
+
+        unreachable!("we should've found a block type OR errored out")
     }
 }
 
