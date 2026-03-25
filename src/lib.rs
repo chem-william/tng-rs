@@ -71,7 +71,7 @@ mod integration {
         data::{Compression, DataType},
         gen_block::BlockID,
         molecule::Molecule,
-        trajectory::Trajectory,
+        trajectory::{BlockType, Trajectory},
     };
     use rand::RngExt;
 
@@ -222,7 +222,7 @@ mod integration {
         traj.set_medium_stride_length(MEDIUM_STRIDE_LEN).unwrap();
         traj.set_long_stride_length(LONG_STRIDE_LEN).unwrap();
 
-        traj.set_first_user_name(USER_NAME);
+        traj.first_user_name_set(USER_NAME);
         traj.set_first_program_name(PROGRAM_NAME);
         traj.set_first_computer_name(COMPUTER_NAME);
         traj.set_forcefield_name(FORCEFIELD_NAME);
@@ -244,7 +244,7 @@ mod integration {
             BlockID::TrajBoxShape,
             "BOX SHAPE",
             DataType::Double,
-            false,
+            &BlockType::NonTrajectory,
             1,
             9,
             1,
@@ -277,7 +277,7 @@ mod integration {
             BlockID::TrajPartialCharges,
             "PARTIAL CHARGES",
             DataType::Float,
-            false,
+            &BlockType::NonTrajectory,
             1,
             1,
             1,
@@ -307,7 +307,7 @@ mod integration {
             BlockID::TrajMasses,
             "ATOM MASSES",
             DataType::Float,
-            false,
+            &BlockType::NonTrajectory,
             1,
             1,
             1,
@@ -325,7 +325,7 @@ mod integration {
             BlockID::TrajGeneralComments,
             "COMMENTS",
             DataType::Char,
-            false,
+            &BlockType::NonTrajectory,
             1,
             1,
             1,
@@ -415,7 +415,7 @@ mod integration {
                 BlockID::TrajPositions,
                 "POSITIONS",
                 DataType::Float,
-                true,
+                &BlockType::Trajectory,
                 n_frames_per_frame_set,
                 3,
                 1,
@@ -553,7 +553,7 @@ mod integration {
     }
 
     /// C API: tng_test_utility_functions() in tng_io_testing.c:1036
-    fn test_utility_functions(traj: &mut Trajectory, hash_mode: bool) {
+    fn test_utility_functions(traj: &mut Trajectory, _hash_mode: bool) {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
         input_filename.push(TEST_FILES_DIR);
         input_filename.push("tng_test.tng");
@@ -630,7 +630,39 @@ mod integration {
     }
 
     /// C API: tng_test_append() in tng_io_testing.c:1143
-    fn test_append(_traj: &mut Trajectory) {
+    fn test_append(traj: &mut Trajectory, hash_mode: bool) {
+        let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+        input_filename.push(TEST_FILES_DIR);
+        input_filename.push("tng_test.tng");
+        traj.util_trajectory_open(input_filename.as_path(), 'a')
+            .unwrap();
+
+        traj.last_user_name_set(USER_NAME);
+        traj.last_user_name_get(MAX_STR_LEN).unwrap();
+
+        traj.last_program_name_set(PROGRAM_NAME);
+        traj.last_program_name_get(MAX_STR_LEN).unwrap();
+
+        traj.last_computer_name_set(COMPUTER_NAME);
+        traj.last_computer_name_get(MAX_STR_LEN).unwrap();
+
+        traj.file_headers_write(hash_mode).unwrap();
+
+        let n_frames = traj.num_frames_get().unwrap();
+        traj.frame_set_of_frame_find(n_frames - 1).unwrap();
+        let mut time = traj.util_time_of_frame_get(n_frames - 1).unwrap();
+        time += TIME_PER_FRAME;
+        let n_particles = traj.num_particles_get();
+
+        let mut velocities = (0..n_particles as usize * 3)
+            .map(|x| x as f64)
+            .collect::<Vec<_>>();
+
+        traj.util_vel_with_time_double_write(n_frames, time, &mut velocities)
+            .unwrap();
+
+        traj.util_trajectory_close().unwrap();
+
         // TODO: port from tng_io_testing.c:1143-1226
         // - tng_util_trajectory_open (append mode)
         // - set last_user_name, last_program_name, last_computer_name
@@ -688,7 +720,7 @@ mod integration {
         test_utility_functions(&mut traj, USE_HASH);
 
         // TODO: tng_io_testing.c:1371
-        test_append(&mut traj);
+        test_append(&mut traj, USE_HASH);
 
         // TODO: tng_io_testing.c:1381
         // test_copy_container(&mut traj);

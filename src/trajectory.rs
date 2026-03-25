@@ -60,9 +60,15 @@ fn tng_compress_nalgo() -> u64 {
 }
 
 #[derive(Debug, PartialEq)]
-enum BlockType {
+enum ParticleDependency {
     NonParticleBlockData,
     ParticleBlockData,
+}
+
+#[derive(Debug, PartialEq)]
+pub(crate) enum BlockType {
+    NonTrajectory,
+    Trajectory,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -462,14 +468,6 @@ impl Trajectory {
         self.long_stride_length = length;
 
         Ok(())
-    }
-
-    /// C API: `tng_first_user_name_set`.
-    pub fn set_first_user_name(&mut self, new_name: &str) {
-        // We use `floor_char_boundary` as Rust strings has to be valid UTF-8. This way we never split a charachter
-        // and never panic on non-UTF-8 names
-        let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
-        self.first_user_name = new_name[..length].to_string();
     }
 
     /// C API: `tng_first_computer_name_set`.
@@ -1213,25 +1211,31 @@ impl Trajectory {
         None
     }
 
-    fn particle_data_block_create(&mut self, is_traj_block: bool) {
+    fn particle_data_block_create(&mut self, block_type_flag: &BlockType) {
         let frame_set = &mut self.current_trajectory_frame_set;
-        if is_traj_block {
-            frame_set.n_particle_data_blocks += 1;
-            frame_set.tr_particle_data.push(Data::default());
-        } else {
-            self.n_particle_data_blocks += 1;
-            self.non_tr_particle_data.push(Data::default());
+        match block_type_flag {
+            BlockType::Trajectory => {
+                frame_set.n_particle_data_blocks += 1;
+                frame_set.tr_particle_data.push(Data::default());
+            }
+            BlockType::NonTrajectory => {
+                self.n_particle_data_blocks += 1;
+                self.non_tr_particle_data.push(Data::default());
+            }
         }
     }
 
-    fn data_block_create(&mut self, is_traj_block: bool) {
+    fn data_block_create(&mut self, block_type_flag: &BlockType) {
         let frame_set = &mut self.current_trajectory_frame_set;
-        if is_traj_block {
-            frame_set.n_data_blocks += 1;
-            frame_set.tr_data.push(Data::default());
-        } else {
-            self.n_data_blocks += 1;
-            self.non_tr_data.push(Data::default());
+        match block_type_flag {
+            BlockType::Trajectory => {
+                frame_set.n_data_blocks += 1;
+                frame_set.tr_data.push(Data::default());
+            }
+            BlockType::NonTrajectory => {
+                self.n_data_blocks += 1;
+                self.non_tr_data.push(Data::default());
+            }
         }
     }
 
@@ -1291,7 +1295,11 @@ impl Trajectory {
             false
         };
 
-        let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0;
+        let is_traj_block = if self.current_trajectory_frame_set_input_file_pos > 0 {
+            BlockType::Trajectory
+        } else {
+            BlockType::NonTrajectory
+        };
 
         // Use position-based lookup so we get a mutable reference into the
         // actual vec, not a clone (the old `particle_data_find`/`data_find`
@@ -1302,7 +1310,7 @@ impl Trajectory {
         }
 
         let found: Option<FoundIn> = if is_particle_data {
-            if is_traj_block {
+            if is_traj_block == BlockType::Trajectory {
                 self.current_trajectory_frame_set
                     .tr_particle_data
                     .iter()
@@ -1314,7 +1322,7 @@ impl Trajectory {
                     .position(|d| d.block_id == block.id)
                     .map(FoundIn::NonTrajVec)
             }
-        } else if is_traj_block {
+        } else if is_traj_block == BlockType::Trajectory {
             self.current_trajectory_frame_set
                 .tr_data
                 .iter()
@@ -1353,14 +1361,14 @@ impl Trajectory {
             }
         } else {
             if is_particle_data {
-                self.particle_data_block_create(is_traj_block);
+                self.particle_data_block_create(&is_traj_block);
             } else {
-                self.data_block_create(is_traj_block);
+                self.data_block_create(&is_traj_block);
             }
 
             let frame_set = &mut self.current_trajectory_frame_set;
             let data = if is_particle_data {
-                if is_traj_block {
+                if is_traj_block == BlockType::Trajectory {
                     frame_set
                         .tr_particle_data
                         .last_mut()
@@ -1370,7 +1378,7 @@ impl Trajectory {
                         .last_mut()
                         .expect("available element on non_tr_particle_data")
                 }
-            } else if is_traj_block {
+            } else if is_traj_block == BlockType::Trajectory {
                 frame_set
                     .tr_data
                     .last_mut()
@@ -1400,7 +1408,7 @@ impl Trajectory {
         if is_particle_data {
             data.dependency |= PARTICLE_DEPENDENT;
         }
-        if is_traj_block
+        if is_traj_block == BlockType::Trajectory
             && (meta_info.n_frames > 1
                 || frame_set_n_frames == meta_info.n_frames
                 || meta_info.stride_length > 1)
@@ -1409,7 +1417,7 @@ impl Trajectory {
         }
 
         let tot_n_particles = if is_particle_data {
-            if is_traj_block && self.var_num_atoms {
+            if is_traj_block == BlockType::Trajectory && self.var_num_atoms {
                 frame_set_n_particles
             } else {
                 self.n_particles
@@ -5508,7 +5516,7 @@ impl Trajectory {
 
     /// Find the frame set containing a specific frame
     /// [`Self::current_trajectory_frame_set`] will contain the found trajectory if successful.
-    fn frame_set_of_frame_find(&mut self, frame: i64) -> Result<(), TngError> {
+    pub fn frame_set_of_frame_find(&mut self, frame: i64) -> Result<(), TngError> {
         let mut block = GenBlock::new();
         let mut file_pos = 0;
         if self.current_trajectory_frame_set_input_file_pos < 0 {
@@ -6250,7 +6258,7 @@ impl Trajectory {
         id: BlockID,
         block_name: &str,
         data_type: DataType,
-        block_type_flag: bool,
+        block_type_flag: &BlockType,
         n_frames: i64,
         n_values_per_frame: i64,
         stride_length: i64,
@@ -6263,7 +6271,7 @@ impl Trajectory {
             )));
         }
 
-        self.add_gen_data_block(
+        self.gen_data_block_add(
             id,
             false,
             block_name,
@@ -6280,13 +6288,13 @@ impl Trajectory {
         Ok(())
     }
 
-    fn add_gen_data_block(
+    fn gen_data_block_add(
         &mut self,
         id: BlockID,
         is_particle_data: bool,
         block_name: &str,
         data_type: DataType,
-        block_type_flag: bool,
+        block_type_flag: &BlockType,
         n_frames: i64,
         n_values_per_frame: i64,
         stride_length: i64,
@@ -6312,9 +6320,9 @@ impl Trajectory {
         } else {
             // If the block does not exist, create it
             if is_particle_data {
-                self.particle_data_block_create(block_type_flag);
+                self.particle_data_block_create(&block_type_flag);
             } else {
-                self.data_block_create(block_type_flag);
+                self.data_block_create(&block_type_flag);
             }
 
             let mut data = Data {
@@ -6340,7 +6348,8 @@ impl Trajectory {
         }
 
         let frame_set = &self.current_trajectory_frame_set;
-        if block_type_flag && (n_frames > 1 || frame_set.n_frames == n_frames || stride_length > 1)
+        if block_type_flag == &BlockType::Trajectory
+            && (n_frames > 1 || frame_set.n_frames == n_frames || stride_length > 1)
         {
             data.dependency |= FRAME_DEPENDENT;
         }
@@ -6351,7 +6360,7 @@ impl Trajectory {
 
         let mut tot_n_particles = 0;
         if is_particle_data {
-            tot_n_particles = if block_type_flag && self.var_num_atoms {
+            tot_n_particles = if block_type_flag == &BlockType::Trajectory && self.var_num_atoms {
                 frame_set.n_particles
             } else {
                 self.n_particles
@@ -6448,7 +6457,7 @@ impl Trajectory {
         if is_new_block {
             // We just pushed a Data::default() — replace it with the fully initialized one
             if is_particle_data {
-                if block_type_flag {
+                if block_type_flag == &BlockType::Trajectory {
                     *self
                         .current_trajectory_frame_set
                         .tr_particle_data
@@ -6457,7 +6466,7 @@ impl Trajectory {
                 } else {
                     *self.non_tr_particle_data.last_mut().expect("just created") = data;
                 }
-            } else if block_type_flag {
+            } else if block_type_flag == &BlockType::Trajectory {
                 *self
                     .current_trajectory_frame_set
                     .tr_data
@@ -6469,7 +6478,7 @@ impl Trajectory {
         } else {
             // Update the existing block in-place by finding it by ID
             let target = if is_particle_data {
-                if block_type_flag {
+                if block_type_flag == &BlockType::Trajectory {
                     self.current_trajectory_frame_set
                         .tr_particle_data
                         .iter_mut()
@@ -6479,7 +6488,7 @@ impl Trajectory {
                         .iter_mut()
                         .find(|d| d.block_id == id)
                 }
-            } else if block_type_flag {
+            } else if block_type_flag == &BlockType::Trajectory {
                 self.current_trajectory_frame_set
                     .tr_data
                     .iter_mut()
@@ -6508,7 +6517,7 @@ impl Trajectory {
         id: BlockID,
         block_name: &str,
         data_type: DataType,
-        block_type_flag: bool,
+        block_type_flag: &BlockType,
         n_frames: i64,
         n_values_per_frame: i64,
         stride_length: i64,
@@ -6529,7 +6538,7 @@ impl Trajectory {
             )));
         }
 
-        self.add_gen_data_block(
+        self.gen_data_block_add(
             id,
             true,
             block_name,
@@ -6838,10 +6847,55 @@ impl Trajectory {
 
         Ok(name)
     }
+    /// C API: `tng_last_program_name_get`.
+    ///
+    /// Get the name of the program used when last modifying the trajectory.
+    pub fn last_program_name_get(&self, max_len: usize) -> Result<&str, TngError> {
+        Self::validate_get_name_len(&self.last_program_name, "first user name", max_len)
+    }
+
+    /// C API: `tng_last_program_name_set`.
+    ///
+    /// Set the name of the program used when last modifying the trajectory.
+    pub fn last_program_name_set(&mut self, new_name: &str) {
+        // We use `floor_char_boundary` as Rust strings has to be valid UTF-8. This way we never split a charachter
+        // and never panic on non-UTF-8 names
+        let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
+        self.last_program_name = new_name[..length].to_string();
+    }
 
     /// C API: `tng_first_user_name_get`.
+    ///
+    /// Get the name of the user who created the trajectory
     pub fn first_user_name_get(&self, max_len: usize) -> Result<&str, TngError> {
         Self::validate_get_name_len(&self.first_user_name, "first user name", max_len)
+    }
+
+    /// C API: `tng_first_user_name_set`.
+    ///
+    /// Set the name of the user who created the trajectory
+    pub fn first_user_name_set(&mut self, new_name: &str) {
+        // We use `floor_char_boundary` as Rust strings has to be valid UTF-8. This way we never split a charachter
+        // and never panic on non-UTF-8 names
+        let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
+        self.first_user_name = new_name[..length].to_string();
+    }
+
+    /// C API: `tng_last_user_name_get`.
+    ///
+    /// Get the name of the user who last modified the trajectory
+    pub fn last_user_name_get(&self, max_len: usize) -> Result<&str, TngError> {
+        Self::validate_get_name_len(&self.last_user_name, "last user name", max_len)
+    }
+
+    /// C API: `tng_last_user_name_set`.
+    ///
+    /// Set the name of the user who last modified the trajectory
+    pub fn last_user_name_set(&mut self, new_name: &str) {
+        // We use `floor_char_boundary` as Rust strings has to be valid UTF-8. This way we never split a charachter
+        // and never panic on non-UTF-8 names
+        let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
+        self.last_user_name = new_name[..length].to_string();
     }
 
     /// C API: `tng_first_program_name_get`.
@@ -6850,8 +6904,27 @@ impl Trajectory {
     }
 
     /// C API: `tng_first_computer_name_get`.
+    ///
+    /// Get the name of the computer used when creating the trajectory
     pub fn first_computer_name_get(&self, max_len: usize) -> Result<&str, TngError> {
         Self::validate_get_name_len(&self.first_computer_name, "first computer name", max_len)
+    }
+
+    /// C API: `tng_last_computer_name_get`.
+    ///
+    /// Get the name of the computer used when last modifying the trajectory.
+    pub fn last_computer_name_get(&self, max_len: usize) -> Result<&str, TngError> {
+        Self::validate_get_name_len(&self.last_computer_name, "first user name", max_len)
+    }
+
+    /// C API: `tng_last_computer_name_set`.
+    ///
+    /// Set the name of the computer used when last modifying the trajectory.
+    pub fn last_computer_name_set(&mut self, new_name: &str) {
+        // We use `floor_char_boundary` as Rust strings has to be valid UTF-8. This way we never split a charachter
+        // and never panic on non-UTF-8 names
+        let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
+        self.last_computer_name = new_name[..length].to_string();
     }
 
     /// C API: `tng_forcefield_name_get`.
@@ -7520,20 +7593,20 @@ impl Trajectory {
         data = self.particle_data_find(block_id);
 
         if data.is_some() {
-            block_type = Some(BlockType::ParticleBlockData);
+            block_type = Some(ParticleDependency::ParticleBlockData);
         } else {
             data = self.data_find(block_id);
             if data.is_some() {
-                block_type = Some(BlockType::NonParticleBlockData);
+                block_type = Some(ParticleDependency::NonParticleBlockData);
             } else {
                 self.frame_set_read_current_only_data_from_block_id(USE_HASH, block_id)?;
                 data = self.particle_data_find(block_id);
                 if data.is_some() {
-                    block_type = Some(BlockType::ParticleBlockData);
+                    block_type = Some(ParticleDependency::ParticleBlockData);
                 } else {
                     data = self.data_find(block_id);
                     if data.is_some() {
-                        block_type = Some(BlockType::NonParticleBlockData);
+                        block_type = Some(ParticleDependency::NonParticleBlockData);
                     } else {
                         return Err(TngError::NotFound("Could not find data".to_string()));
                     }
@@ -7686,6 +7759,195 @@ impl Trajectory {
 
         self.input_file = temp;
         result
+    }
+
+    /// C API: tng_util_vel_with_time_double_write
+    ///
+    /// High-level function for adding data to velocities data blocks at
+    /// double precision. If the frame is at the beginning of a frame set the
+    /// time stamp of the frame set is set.
+    pub(crate) fn util_vel_with_time_double_write(
+        &mut self,
+        frame_nr: i64,
+        time: f64,
+        velocities: &mut [f64],
+    ) -> Result<(), TngError> {
+        self.util_generic_with_time_double_write(
+            frame_nr,
+            time,
+            velocities,
+            3,
+            BlockID::TrajVelocities,
+            "VELOCITIES",
+            ParticleDependency::ParticleBlockData,
+            Compression::TNG,
+        )
+    }
+
+    fn util_generic_with_time_double_write(
+        &mut self,
+        frame_nr: i64,
+        time: f64,
+        values: &mut [f64],
+        n_values_per_frame: i64,
+        block_id: BlockID,
+        block_name: &str,
+        particle_dependency: ParticleDependency,
+        compression: Compression,
+    ) -> Result<(), TngError> {
+        self.util_generic_double_write(
+            frame_nr,
+            values,
+            n_values_per_frame,
+            block_id,
+            block_name,
+            particle_dependency,
+            compression,
+        )
+    }
+
+    fn util_generic_double_write(
+        &mut self,
+        frame_nr: i64,
+        values: &mut [f64],
+        n_values_per_frame: i64,
+        block_id: BlockID,
+        block_name: &str,
+        particle_dependency: ParticleDependency,
+        compression: Compression,
+    ) -> Result<(), TngError> {
+        let mut data;
+        let mut n_particles = 0;
+        let frame_pos;
+        let block_type_flag;
+        let mut stride_length = 100;
+        let mut last_frame;
+        let mut is_first_frame_flag = false;
+        let n_frames;
+        if particle_dependency == ParticleDependency::ParticleBlockData {
+            n_particles = self.num_particles_get();
+            assert!(
+                n_particles > 0,
+                "There must be particles in the system to write particle data"
+            );
+        }
+
+        if frame_nr < 0 {
+            block_type_flag = BlockType::NonTrajectory;
+            n_frames = 1;
+            stride_length = 1;
+        } else {
+            block_type_flag = BlockType::Trajectory;
+
+            // TODO: do we need to check !frame_set here like the C code does? tng_io.c line 15717
+            if self.n_trajectory_frame_sets <= 0 {
+                self.frame_set_new(0, self.frame_set_n_frames)?;
+            }
+            last_frame = self.current_trajectory_frame_set.first_frame
+                + self.current_trajectory_frame_set.n_frames
+                - 1;
+            if frame_nr > last_frame {
+                self.frame_set_write(USE_HASH)?;
+                if last_frame + self.frame_set_n_frames < frame_nr {
+                    last_frame = frame_nr + 1;
+                }
+                self.frame_set_new(last_frame + 1, self.frame_set_n_frames)?;
+            }
+            if self.current_trajectory_frame_set.n_unwritten_frames == 0 {
+                is_first_frame_flag = true;
+            }
+            self.current_trajectory_frame_set.n_unwritten_frames =
+                frame_nr - self.current_trajectory_frame_set.first_frame + 1;
+
+            n_frames = self.current_trajectory_frame_set.n_frames;
+        }
+
+        if particle_dependency == ParticleDependency::ParticleBlockData {
+            data = self.particle_data_find(block_id);
+            if data.is_none() {
+                self.particle_data_block_add(
+                    block_id,
+                    block_name,
+                    DataType::Double,
+                    &block_type_flag,
+                    n_frames,
+                    n_values_per_frame,
+                    stride_length,
+                    0,
+                    n_particles,
+                    compression,
+                    None,
+                )?;
+                data = if block_type_flag == BlockType::Trajectory {
+                    Some(
+                        self.current_trajectory_frame_set.tr_particle_data
+                            [self.current_trajectory_frame_set.n_particle_data_blocks - 1]
+                            .clone(),
+                    )
+                } else {
+                    Some(self.non_tr_particle_data[self.n_particle_data_blocks - 1].clone())
+                };
+                data.as_mut()
+                    .expect("we just filled it with Some")
+                    .allocate_particle_data_mem(
+                        n_frames,
+                        stride_length,
+                        n_particles,
+                        n_values_per_frame,
+                    );
+            }
+            // (C)FIXME: Here we must be able to handle modified n_particles as well
+            else if n_frames > data.as_ref().expect("has to be Some").n_frames {
+                let data = data.as_mut().unwrap();
+                data.allocate_particle_data_mem(
+                    n_frames,
+                    stride_length,
+                    n_particles,
+                    n_values_per_frame,
+                );
+            }
+
+            let mut data = data.unwrap();
+            if block_type_flag == BlockType::Trajectory {
+                stride_length = data.stride_length;
+
+                if is_first_frame_flag
+                    || data.first_frame_with_data < self.current_trajectory_frame_set.first_frame
+                {
+                    data.first_frame_with_data = frame_nr;
+                    frame_pos = 0;
+                } else {
+                    frame_pos =
+                        (frame_nr - self.current_trajectory_frame_set.first_frame) / stride_length;
+                }
+
+                data.values.as_mut().expect("values to be allocated")[((frame_pos
+                    * n_particles
+                    * n_values_per_frame)
+                    as usize
+                    * size_of::<f64>())..]
+                    .copy_from_slice(
+                        &values[..(n_particles * n_values_per_frame) as usize]
+                            .iter()
+                            .flat_map(|&x| x.to_ne_bytes())
+                            .collect::<Vec<_>>(),
+                    );
+            } else {
+                data.values
+                    .as_mut()
+                    .expect("values to be allocated")
+                    .copy_from_slice(
+                        &values[..(n_particles * n_values_per_frame) as usize]
+                            .iter()
+                            .flat_map(|&x| x.to_ne_bytes())
+                            .collect::<Vec<_>>(),
+                    );
+            }
+        } else {
+            // unimplemented!("")
+        }
+
+        Ok(())
     }
 }
 
