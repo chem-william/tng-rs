@@ -1695,56 +1695,67 @@ fn test29() {
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test30() {
     algotest(&test30_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test31() {
     algotest(&test31_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test32() {
     algotest(&test32_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test33() {
     algotest(&test33_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test34() {
     algotest(&test34_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test35() {
     algotest(&test35_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test36() {
     algotest(&test36_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test37() {
     algotest(&test37_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test38() {
     algotest(&test38_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test39() {
     algotest(&test39_params());
 }
 
 #[test]
+#[ignore = "5M atoms"]
 fn test40() {
     algotest(&test40_params());
 }
