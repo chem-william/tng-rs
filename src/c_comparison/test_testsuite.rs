@@ -919,6 +919,36 @@ fn test19_params() -> TestParams {
     }
 }
 
+// Position coding. Intra frame triple algorithm. Large system. Cubic cell.
+fn test36_params() -> TestParams {
+    TestParams {
+        natoms: 5000000,
+        chunky: 2,
+        nframes: 10,
+        scale: 1.0,
+        precision: 1.0,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 3,
+        coding_parameter: -1,
+        initial_velcoding: 0,
+        initial_velcoding_parameter: -1,
+        velcoding: 4,
+        velcoding_parameter: 0,
+        intmin: [-536870911, -536870911, -536870911],
+        intmax: [536870911, 536870911, 536870911],
+        speed: 5,
+        framescale: 1,
+        genprecision: 1.0,
+        genvelprecision: 0.1,
+        expected_filesize: 290800607.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 // Position coding. Inter frame triple algorithm. Large system. Cubic cell.
 fn test35_params() -> TestParams {
     TestParams {
@@ -1572,4 +1602,9 @@ fn test34() {
 #[test]
 fn test35() {
     algotest(&test35_params());
+}
+
+#[test]
+fn test36() {
+    algotest(&test36_params());
 }
