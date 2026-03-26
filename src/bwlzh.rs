@@ -238,6 +238,7 @@ pub(crate) fn bwlzh_compress_gen(
                         // If huffman was bad for these offsets, just store the offsets as pairs
                         if bwlzhhufflen < i32::try_from(noffsets).expect("i32 from usize") * 2 {
                             output[outdata] = 0;
+                            outdata += 1;
 
                             // Store the size of the huffman block
                             copy_bytes(bwlzhhufflen as u32, output, &mut outdata);

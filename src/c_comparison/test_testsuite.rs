@@ -919,6 +919,36 @@ fn test19_params() -> TestParams {
     }
 }
 
+// Position coding. Autoselect algorithm. Repetitive molecule. Cubic cell.
+fn test29_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: -1,
+        initial_coding_parameter: -1,
+        coding: -1,
+        coding_parameter: -1,
+        initial_velcoding: 0,
+        initial_velcoding_parameter: -1,
+        velcoding: 0,
+        velcoding_parameter: 0,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 228148.0,
+        regular: true,
+        velintmul: None,
+    }
+}
+
 // Initial coding. Autoselect algorithm. Repetitive molecule. Cubic cell.
 fn test28_params() -> TestParams {
     TestParams {
@@ -1327,4 +1357,9 @@ fn test27() {
 #[test]
 fn test28() {
     algotest(&test28_params());
+}
+
+#[test]
+fn test29() {
+    algotest(&test29_params());
 }
