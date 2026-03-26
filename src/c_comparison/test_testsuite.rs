@@ -442,31 +442,31 @@ fn test6_params() -> TestParams {
 }
 
 #[test]
-fn testsuite_test1() {
+fn test1() {
     algotest(&test1_params());
 }
 
 #[test]
-fn testsuite_test2() {
+fn test2() {
     algotest(&test2_params());
 }
 
 #[test]
-fn testsuite_test3() {
+fn test3() {
     algotest(&test3_params());
 }
 
 #[test]
-fn testsuite_test4() {
+fn test4() {
     algotest(&test4_params());
 }
 
 #[test]
-fn testsuite_test5() {
+fn test5() {
     algotest(&test5_params());
 }
 
 #[test]
-fn testsuite_test6() {
+fn test6() {
     algotest(&test6_params());
 }
