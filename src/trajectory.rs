@@ -375,7 +375,7 @@ impl Trajectory {
             .read(true)
             .write(true)
             .create(true)
-            .truncate(true)
+            .truncate(false)
             .open(
                 self.output_file_path
                     .as_ref()
@@ -3663,9 +3663,8 @@ impl Trajectory {
         // Read through the headers of non-trajectory blocks (they come before the
         // trajectory blocks in the file)
         // TODO: error handling
-        self.block_header_read(&mut block)
-            .expect("able to read header");
         while len < self.input_file_len
+            && self.block_header_read(&mut block).is_ok()
             && block.id != BlockID::Unknown
             && block.id != BlockID::TrajectoryFrameSet
         {
