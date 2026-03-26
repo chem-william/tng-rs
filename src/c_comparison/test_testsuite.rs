@@ -919,6 +919,36 @@ fn test19_params() -> TestParams {
     }
 }
 
+// XTC3 algorithm. Orthorhombic cell.
+fn test27_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 200,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: 10,
+        initial_coding_parameter: 0,
+        coding: 10,
+        coding_parameter: 0,
+        initial_velcoding: 1,
+        initial_velcoding_parameter: -1,
+        velcoding: 9,
+        velcoding_parameter: 0,
+        intmin: [0, 0, 0],
+        intmax: [20000, 10000, 30000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 282600.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 // XTC2 algorithm. Orthorhombic cell.
 fn test26_params() -> TestParams {
     TestParams {
@@ -1257,4 +1287,9 @@ fn test25() {
 #[test]
 fn test26() {
     algotest(&test26_params());
+}
+
+#[test]
+fn test27() {
+    algotest(&test27_params());
 }
