@@ -1,6 +1,6 @@
 use crate::{trajectory::Trajectory, utils};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Atom {
     /// The molecule containing this atom.
     pub(crate) parent_molecule_idx: usize,

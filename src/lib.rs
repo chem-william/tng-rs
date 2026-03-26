@@ -97,14 +97,14 @@ mod integration {
     fn setup_molecules(traj: &mut Trajectory) {
         let mol_idx = traj.add_molecule("water");
         let chain_idx = traj.add_chain(mol_idx, "W");
-        let residue_idx = traj.add_chain_residue(mol_idx, chain_idx, "WAT");
-        let _o_idx = traj.add_residue_atom(mol_idx, residue_idx, "O", "O");
-        let _h1_idx = traj.add_residue_atom(mol_idx, residue_idx, "HO1", "H");
-        let _h2_idx = traj.add_residue_atom(mol_idx, residue_idx, "HO2", "H");
+        let residue_idx = traj.chain_residue_add(mol_idx, chain_idx, "WAT");
+        let _o_idx = traj.residue_atom_add(mol_idx, residue_idx, "O", "O");
+        let _h1_idx = traj.residue_atom_add(mol_idx, residue_idx, "HO1", "H");
+        let _h2_idx = traj.residue_atom_add(mol_idx, residue_idx, "HO2", "H");
         let _bond_idx = traj.add_molecule_bond(mol_idx, 0, 1);
         let _bond_idx = traj.add_molecule_bond(mol_idx, 0, 2);
 
-        traj.set_molecule_cnt(mol_idx, 200);
+        traj.molecule_cnt_set(mol_idx, 200);
         let count = traj.get_molecule_cnt(mol_idx);
         assert_eq!(count, 200);
     }
@@ -662,24 +662,22 @@ mod integration {
             .unwrap();
 
         traj.util_trajectory_close().unwrap();
-
-        // TODO: port from tng_io_testing.c:1143-1226
-        // - tng_util_trajectory_open (append mode)
-        // - set last_user_name, last_program_name, last_computer_name
-        // - tng_file_headers_write
-        // - tng_num_frames_get, tng_frame_set_of_frame_find
-        // - tng_util_vel_with_time_double_write
-        // - tng_util_trajectory_close
     }
 
     /// C API: tng_test_copy_container() in tng_io_testing.c:1228
-    /// TODO: Port from C
-    fn test_copy_container(_traj: &mut Trajectory) {
-        // TODO: port from tng_io_testing.c:1228-1260
-        // - tng_util_trajectory_open (read mode)
-        // - tng_trajectory_init_from_src
-        // - tng_molecule_system_copy
-        // - close both trajectories
+    fn test_copy_container(traj: &mut Trajectory, _hash_mode: bool) {
+        let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+        input_filename.push(TEST_FILES_DIR);
+        input_filename.push("tng_test.tng");
+        traj.util_trajectory_open(input_filename.as_path(), 'a')
+            .unwrap();
+
+        let mut dest = traj.trajectory_init_from_src();
+
+        traj.molecule_system_copy(&mut dest);
+
+        traj.util_trajectory_close().unwrap();
+        dest.util_trajectory_close().unwrap();
     }
 
     #[test]
@@ -719,10 +717,10 @@ mod integration {
         // tng_io_testing.c:1360
         test_utility_functions(&mut traj, USE_HASH);
 
-        // TODO: tng_io_testing.c:1371
+        // tng_io_testing.c:1371
         test_append(&mut traj, USE_HASH);
 
-        // TODO: tng_io_testing.c:1381
-        // test_copy_container(&mut traj);
+        // tng_io_testing.c:1381
+        test_copy_container(&mut traj, USE_HASH);
     }
 }

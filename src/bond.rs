@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bond {
     /// One of the atoms of the bond
     pub(crate) from_atom_id: i64,

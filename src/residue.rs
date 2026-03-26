@@ -1,6 +1,6 @@
 use crate::{trajectory::Trajectory, utils};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Residue {
     /// The molecule containing this residue.
     pub(crate) parent_molecule_idx: usize,

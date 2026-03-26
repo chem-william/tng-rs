@@ -1,6 +1,6 @@
 use crate::{atom::Atom, bond::Bond, chain::Chain, residue::Residue};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Molecule {
     /// A unique ID number of the molecule
     pub(crate) id: i64,

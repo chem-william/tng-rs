@@ -1,7 +1,7 @@
 use crate::trajectory::Trajectory;
 use crate::{MAX_STR_LEN, utils};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Chain {
     // /// The molecule containing this chain
     // pub molecule: Molecule,
@@ -30,7 +30,7 @@ impl Chain {
         }
     }
 
-    // c function: tng_chain_data_read
+    // C API: `tng_chain_data_read`
     pub(crate) fn read_data(&mut self, trajectory_data: &mut Trajectory) {
         let inp_file = trajectory_data
             .input_file
@@ -49,7 +49,10 @@ impl Chain {
         );
     }
 
-    pub(crate) fn set_name(&mut self, new_name: String) {
+    /// C API: `tng_chain_name_set`
+    ///
+    /// Set the name of a chain.
+    pub(crate) fn set_name(&mut self, new_name: &str) {
         // The C version leaves space for a '\0' in a buffer of size TNG_MAX_STR_LEN.
         // In Rust, Strings don't need a trailing zero, so we just clamp to:
         let max_bytes = MAX_STR_LEN - 1;

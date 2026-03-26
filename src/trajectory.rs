@@ -3928,20 +3928,20 @@ impl Trajectory {
 
     /// C API: `tng_molecule_cnt_set`.
     ///
-    /// Set the count of a molecule
-    pub fn set_molecule_cnt(&mut self, molecule_idx: usize, count: i64) {
+    /// Set the count of a molecule.
+    pub fn molecule_cnt_set(&mut self, molecule_idx: usize, cnt: i64) {
         let old_count;
         if !self.var_num_atoms {
             old_count = self.molecule_cnt_list[molecule_idx];
-            self.molecule_cnt_list[molecule_idx] = count;
+            self.molecule_cnt_list[molecule_idx] = cnt;
 
-            self.n_particles += (count - old_count) * self.molecules[molecule_idx].n_atoms;
+            self.n_particles += (cnt - old_count) * self.molecules[molecule_idx].n_atoms;
         } else {
             old_count = self.current_trajectory_frame_set.molecule_cnt_list[molecule_idx];
-            self.current_trajectory_frame_set.molecule_cnt_list[molecule_idx] = count;
+            self.current_trajectory_frame_set.molecule_cnt_list[molecule_idx] = cnt;
 
             self.current_trajectory_frame_set.n_particles +=
-                (count - old_count) * self.molecules[molecule_idx].n_atoms;
+                (cnt - old_count) * self.molecules[molecule_idx].n_atoms;
         }
     }
 
@@ -6075,10 +6075,13 @@ impl Trajectory {
     /// Returns the index of the new molecule in `self.molecules`.
     pub fn add_molecule(&mut self, name: &str) -> usize {
         let id = self.molecules.last().map(|m| m.id + 1).unwrap_or(1);
-        self.add_molecule_w_id(name, id)
+        self.molecule_w_id_add(name, id)
     }
 
-    fn add_molecule_w_id(&mut self, name: &str, id: i64) -> usize {
+    /// C API: `tng_molecule_w_id_add`
+    ///
+    /// Add a molecule with a specific ID to the trajectory
+    fn molecule_w_id_add(&mut self, name: &str, id: i64) -> usize {
         let mut molecule = Molecule::new();
         let length = name.floor_char_boundary(MAX_STR_LEN - 1);
         molecule.name = name[..length].to_string();
@@ -6101,12 +6104,30 @@ impl Trajectory {
             .last()
             .map(|c| c.id + 1)
             .unwrap_or(1);
-        self.add_chain_w_id(molecule_idx, name, id)
+        self.chain_w_id_add(molecule_idx, name, id)
     }
 
-    fn add_chain_w_id(&mut self, molecule_idx: usize, name: &str, id: u64) -> usize {
+    /// C API: `tng_molecule_chain_w_id_add`
+    ///
+    /// Add a chain with a specific id to a molecule
+    fn molecule_chain_w_id_add(&self, molecule: &mut Molecule, name: &str, id: u64) {
+        let mut new_chain = Chain::default();
+        new_chain.name = String::new();
+
+        new_chain.set_name(name);
+        new_chain.parent_molecule_idx = molecule.id as usize;
+        new_chain.n_residues = 0;
+        molecule.n_chains += 1;
+
+        new_chain.id = id;
+
+        molecule.chains.push(new_chain);
+    }
+
+    /// C API: `tng_chain_w_id_add`
+    fn chain_w_id_add(&mut self, molecule_idx: usize, name: &str, id: u64) -> usize {
         let mut chain = Chain::new();
-        chain.set_name(name.to_string());
+        chain.set_name(name);
         chain.parent_molecule_idx = molecule_idx;
         chain.id = id;
         chain.n_residues = 0;
@@ -6123,7 +6144,7 @@ impl Trajectory {
     ///
     /// Add a residue to the molecule at `molecule_idx`, associated with chain `chain_idx`.
     /// Returns the index of the new residue in `self.molecules[molecule_idx].residues`.
-    pub fn add_chain_residue(
+    pub fn chain_residue_add(
         &mut self,
         molecule_idx: usize,
         chain_idx: usize,
@@ -6137,10 +6158,13 @@ impl Trajectory {
         } else {
             0
         };
-        self.add_residue_w_id(molecule_idx, chain_idx, name, id)
+        self.chain_residue_w_id_add(molecule_idx, chain_idx, name, id)
     }
 
-    fn add_residue_w_id(
+    /// C API: `tng_chain_residue_w_id_add`
+    ///
+    /// Add a residue with a specific ID to a chain.
+    fn chain_residue_w_id_add(
         &mut self,
         molecule_idx: usize,
         chain_idx: usize,
@@ -6186,7 +6210,7 @@ impl Trajectory {
     ///
     /// Add an atom to the molecule at `molecule_idx`, associated with residue `residue_idx`.
     /// Returns the index of the new atom in `self.molecules[molecule_idx].atoms`.
-    pub fn add_residue_atom(
+    pub fn residue_atom_add(
         &mut self,
         molecule_idx: usize,
         residue_idx: usize,
@@ -6198,10 +6222,13 @@ impl Trajectory {
             .last()
             .map(|a| a.id + 1)
             .unwrap_or(0);
-        self.add_atom_w_id(molecule_idx, residue_idx, name, atom_type, id)
+        self.residue_atom_w_id_add(molecule_idx, residue_idx, name, atom_type, id)
     }
 
-    fn add_atom_w_id(
+    /// C API: `tng_residue_atom_w_id_add`
+    ///
+    /// Add an atom with a specific ID to a residue
+    fn residue_atom_w_id_add(
         &mut self,
         molecule_idx: usize,
         residue_idx: usize,
@@ -7687,6 +7714,109 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: tng_trajectory_init_from_src
+    ///
+    /// Copy a trajectory data container (dest is setup as well)
+    pub(crate) fn trajectory_init_from_src(&self) -> Self {
+        let mut dest = Trajectory::new();
+        let frame_set = &mut dest.current_trajectory_frame_set;
+
+        if let Some(input_file_path) = self.input_file_path.as_ref() {
+            dest.input_file_path = Some((*input_file_path).clone());
+            dest.input_file_len = self.input_file_len;
+        } else {
+            dest.input_file_path = None;
+        }
+        dest.input_file = None;
+        if let Some(output_file_path) = self.output_file_path.as_ref() {
+            dest.output_file_path = Some((*output_file_path).clone());
+        } else {
+            dest.output_file_path = None;
+        }
+        dest.output_file = None;
+
+        dest.first_program_name = String::new();
+        dest.first_user_name = String::new();
+        dest.first_computer_name = String::new();
+        dest.first_pgp_signature = String::new();
+        dest.last_program_name = String::new();
+        dest.last_user_name = String::new();
+        dest.last_computer_name = String::new();
+        dest.last_pgp_signature = String::new();
+        dest.forcefield_name = String::new();
+
+        dest.var_num_atoms = self.var_num_atoms;
+        dest.first_trajectory_frame_set_input_file_pos =
+            self.first_trajectory_frame_set_input_file_pos;
+        dest.last_trajectory_frame_set_input_file_pos =
+            self.last_trajectory_frame_set_input_file_pos;
+        dest.current_trajectory_frame_set_input_file_pos =
+            self.current_trajectory_frame_set_input_file_pos;
+        dest.first_trajectory_frame_set_output_file_pos =
+            self.first_trajectory_frame_set_output_file_pos;
+        dest.last_trajectory_frame_set_output_file_pos =
+            self.last_trajectory_frame_set_output_file_pos;
+        dest.current_trajectory_frame_set_output_file_pos =
+            self.current_trajectory_frame_set_output_file_pos;
+        dest.frame_set_n_frames = self.frame_set_n_frames;
+        dest.n_trajectory_frame_sets = self.n_trajectory_frame_sets;
+        dest.medium_stride_length = self.medium_stride_length;
+        dest.long_stride_length = self.long_stride_length;
+
+        dest.time_per_frame = self.time_per_frame;
+
+        // Currently the non trajectory data blocks are not copied since it
+        // can lead to problems when freeing memory in a parallel block.
+        dest.n_particle_data_blocks = 0;
+        dest.n_data_blocks = 0;
+        dest.non_tr_particle_data = Vec::new();
+        dest.non_tr_data = Vec::new();
+
+        dest.compress_algo_pos = Vec::new();
+        dest.compress_algo_vel = Vec::new();
+        dest.distance_unit_exponential = -9;
+        dest.compression_precision = 1000.0;
+
+        frame_set.n_mapping_blocks = 0;
+        frame_set.mappings = Vec::new();
+        frame_set.molecule_cnt_list = Vec::new();
+
+        frame_set.n_particle_data_blocks = 0;
+        frame_set.n_data_blocks = 0;
+
+        frame_set.tr_particle_data = Vec::new();
+        frame_set.tr_data = Vec::new();
+
+        frame_set.n_written_frames = 0;
+        frame_set.n_unwritten_frames = 0;
+
+        frame_set.next_frame_set_file_pos = -1;
+        frame_set.prev_frame_set_file_pos = -1;
+        frame_set.medium_stride_next_frame_set_file_pos = -1;
+        frame_set.medium_stride_prev_frame_set_file_pos = -1;
+        frame_set.long_stride_next_frame_set_file_pos = -1;
+        frame_set.long_stride_prev_frame_set_file_pos = -1;
+        frame_set.first_frame = -1;
+
+        dest.n_molecules = 0;
+        dest.molecules = Vec::new();
+        dest.molecule_cnt_list = Vec::new();
+        dest.n_particles = self.n_particles;
+
+        dest.endianness32 = self.endianness32;
+        dest.endianness64 = self.endianness64;
+        dest.input_swap32 = self.input_swap32;
+        dest.input_swap64 = self.input_swap64;
+        dest.output_swap32 = self.output_swap32;
+        dest.output_swap64 = self.output_swap64;
+
+        dest.current_trajectory_frame_set.next_frame_set_file_pos = -1;
+        dest.current_trajectory_frame_set.prev_frame_set_file_pos = -1;
+        dest.current_trajectory_frame_set.n_frames = 0;
+
+        dest
+    }
+
     fn frame_set_finalize(&mut self, _use_hash: bool) -> Result<(), TngError> {
         if self.current_trajectory_frame_set.n_written_frames
             == self.current_trajectory_frame_set.n_frames
@@ -7947,6 +8077,24 @@ impl Trajectory {
         }
 
         Ok(())
+    }
+
+    /// C API: tng_molecule_system_copy
+    ///
+    /// Copy all molecules and the molecule counts from one TNG trajectory ([`Self`]) to another [`traj_dest`]
+    pub(crate) fn molecule_system_copy(&self, traj_dest: &mut Trajectory) {
+        traj_dest.n_molecules = 0;
+        traj_dest.n_particles = 0;
+        traj_dest.molecules = Vec::with_capacity(self.n_molecules as usize);
+        traj_dest.molecule_cnt_list = Vec::with_capacity(self.n_molecules as usize);
+
+        for i in 0..self.n_molecules as usize {
+            let molecule = self.molecules[i].clone();
+            traj_dest.molecules.push(molecule);
+            traj_dest.molecule_cnt_list.push(0);
+            traj_dest.n_molecules += 1;
+            traj_dest.molecule_cnt_set(i, self.molecule_cnt_list[i]);
+        }
     }
 }
 
