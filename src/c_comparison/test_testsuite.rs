@@ -919,6 +919,36 @@ fn test19_params() -> TestParams {
     }
 }
 
+// XTC2 algorithm. Orthorhombic cell.
+fn test26_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 1,
+        initial_velcoding_parameter: -1,
+        velcoding: 9,
+        velcoding_parameter: 0,
+        intmin: [0, 0, 0],
+        intmax: [20000, 10000, 30000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 2861948.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 // Coding of velocities. BWLZH one-to-one. Cubic cell.
 fn test25_params() -> TestParams {
     TestParams {
@@ -1222,4 +1252,9 @@ fn test24() {
 #[test]
 fn test25() {
     algotest(&test25_params());
+}
+
+#[test]
+fn test26() {
+    algotest(&test26_params());
 }
