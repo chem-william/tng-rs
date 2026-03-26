@@ -776,26 +776,34 @@ impl Trajectory {
             0,
         );
 
-        // TODO: handle endianness
-        let bytes_to_read = usize::try_from(mapping.n_particles).expect("i64 to usize")
-            * std::mem::size_of::<i64>();
-        let mut buffer = vec![0u8; bytes_to_read];
-
-        match inp_file.read_exact(&mut buffer) {
-            Ok(()) => {
-                // Convert bytes to i64 values safely
-                for (i, chunk) in buffer.chunks_exact(8).enumerate() {
-                    let bytes: [u8; 8] = chunk.try_into().expect("chunk is exactly 8 bytes");
-                    mapping.real_particle_numbers[i] = i64::from_le_bytes(bytes);
-                }
-
-                // TODO: Handle hashing
+        // If the byte order needs to be swapped the data must be read one value at
+        // a time and swapped. Otherwise the data can be read all at once.
+        if self.input_swap64.is_some() {
+            let inp_file = self.input_file.as_mut().expect("init input_file");
+            for i in 0..mapping.n_particles as usize {
+                mapping.real_particle_numbers[i] =
+                    utils::read_i64(inp_file, self.endianness64, self.input_swap64);
             }
-            Err(_) => {
-                eprintln!("Cannot read block. {}:{}", file!(), line!());
-                panic!()
+        } else {
+            let bytes_to_read = usize::try_from(mapping.n_particles).expect("i64 to usize")
+                * std::mem::size_of::<i64>();
+            let mut buffer = vec![0u8; bytes_to_read];
+
+            let inp_file = self.input_file.as_mut().expect("init input_file");
+            match inp_file.read_exact(&mut buffer) {
+                Ok(()) => {
+                    for (i, chunk) in buffer.chunks_exact(8).enumerate() {
+                        let bytes: [u8; 8] = chunk.try_into().expect("chunk is exactly 8 bytes");
+                        mapping.real_particle_numbers[i] = i64::from_ne_bytes(bytes);
+                    }
+                }
+                Err(_) => {
+                    eprintln!("Cannot read block. {}:{}", file!(), line!());
+                    panic!()
+                }
             }
         }
+        // TODO: Handle hashing
         self.current_trajectory_frame_set.mappings.push(mapping);
 
         self.input_file
