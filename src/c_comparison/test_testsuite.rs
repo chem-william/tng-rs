@@ -87,7 +87,7 @@ fn flush_tng_frames(tng_file: &mut TngFileWrite) {
         tng_file.speed,
         &mut algo,
     )
-    .expect("Rust compression returned None");
+    .expect("compression returned None");
 
     write_int_le(&mut tng_file.file, nframes as i32);
     write_int_le(&mut tng_file.file, buf.len() as i32);
@@ -147,7 +147,6 @@ fn open_tng_file_read(data: &[u8]) -> TngFileRead<'_> {
 }
 
 /// `read_tng_file` from testsuite.c — returns one frame of decompressed data.
-/// Uses Rust's `compress_uncompress` to decompress.
 fn read_tng_file(tng_file: &mut TngFileRead, pos: &mut [f64]) -> Result<(), ()> {
     if tng_file.nframes == tng_file.nframes_delivered {
         let nframes = read_int_le(tng_file.data, &mut tng_file.cursor).ok_or(())? as usize;
@@ -156,7 +155,7 @@ fn read_tng_file(tng_file: &mut TngFileRead, pos: &mut [f64]) -> Result<(), ()> 
         tng_file.cursor += nitems;
 
         tng_file.pos.resize(tng_file.natoms * nframes * 3, 0.0);
-        compress_uncompress(blob, &mut tng_file.pos).expect("Rust decompress failed");
+        compress_uncompress(blob, &mut tng_file.pos).expect("decompress failed");
         tng_file.nframes = nframes;
         tng_file.nframes_delivered = 0;
     }
@@ -195,8 +194,8 @@ fn equalarr(arr1: &[f64], arr2: &[f64], prec: f64, natoms: usize) -> f64 {
 // ---------------------------------------------------------------------------
 
 /// Mirrors `algotest()` from testsuite.c.
-/// GEN phase: generate data, compress with Rust, write to in-memory file.
-/// Read phase: re-generate data, decompress with Rust, check precision.
+/// GEN phase: generate data, compress, write to in-memory file.
+/// Read phase: re-generate data, decompress, check precision.
 fn algotest(params: &TestParams) {
     let natoms = params.natoms;
     let mut intbox = vec![0i32; natoms * 3];
