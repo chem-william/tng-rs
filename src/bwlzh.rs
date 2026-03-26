@@ -80,7 +80,7 @@ pub(crate) fn bwlzh_compress_gen(
         }
         valsleft -= thisvals;
         debug!("Creating vals16 block from {thisvals} values");
-        let nvals16 = ptngc_comp_conv_to_vals16(&vals[valstart..], vals16);
+        let nvals16 = ptngc_comp_conv_to_vals16(&vals[valstart..valstart + thisvals], vals16);
         valstart += thisvals;
 
         debug!("Resulting vals16 values: {nvals16}");
