@@ -658,6 +658,37 @@ fn test13_params() -> TestParams {
     }
 }
 
+// Coding. XTC3 algorithm. Cubic cell
+fn test14_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 10,
+        coding_parameter: 0,
+        velcoding: 0,
+        velcoding_parameter: 0,
+        initial_velcoding: -1,
+        initial_velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        stride: 3,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 1401016.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 #[test]
 fn test1() {
     algotest(&test1_params());
@@ -721,4 +752,9 @@ fn test12() {
 #[test]
 fn test13() {
     algotest(&test13_params());
+}
+
+#[test]
+fn test14() {
+    algotest(&test14_params());
 }
