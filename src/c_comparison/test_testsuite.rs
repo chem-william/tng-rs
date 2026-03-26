@@ -919,6 +919,36 @@ fn test19_params() -> TestParams {
     }
 }
 
+// Coding of velocities. Triplet one-to-one. Cubic cell.
+fn test22_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: true,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 1,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 6988699.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 // Coding of velocities. Triplet inter. Cubic cell.
 fn test21_params() -> TestParams {
     TestParams {
@@ -1082,4 +1112,9 @@ fn test20() {
 #[test]
 fn test21() {
     algotest(&test21_params());
+}
+
+#[test]
+fn test22() {
+    algotest(&test22_params());
 }
