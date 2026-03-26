@@ -348,6 +348,99 @@ fn test3_params() -> TestParams {
     }
 }
 
+// Initial coding. BWLZH intra algorithm. Cubic cell
+fn test4_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 1,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: 9,
+        initial_coding_parameter: 0,
+        coding: 1,
+        coding_parameter: 0,
+        velcoding: 0,
+        velcoding_parameter: 0,
+        initial_velcoding: -1,
+        initial_velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        stride: 3,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 2572043.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
+// Initial coding. XTC3 algorithm. Cubic cell
+fn test5_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 1,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: 10,
+        initial_coding_parameter: 0,
+        coding: 1,
+        coding_parameter: 0,
+        velcoding: 0,
+        velcoding_parameter: 0,
+        initial_velcoding: -1,
+        initial_velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        stride: 3,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 3346179.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
+// Coding. XTC2 algorithm. Cubic cell
+fn test6_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        velcoding: 0,
+        velcoding_parameter: 0,
+        initial_velcoding: -1,
+        initial_velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        stride: 3,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 2736662.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 #[test]
 fn testsuite_test1() {
     algotest(&test1_params());
@@ -361,4 +454,19 @@ fn testsuite_test2() {
 #[test]
 fn testsuite_test3() {
     algotest(&test3_params());
+}
+
+#[test]
+fn testsuite_test4() {
+    algotest(&test4_params());
+}
+
+#[test]
+fn testsuite_test5() {
+    algotest(&test5_params());
+}
+
+#[test]
+fn testsuite_test6() {
+    algotest(&test6_params());
 }
