@@ -689,6 +689,68 @@ fn test14_params() -> TestParams {
     }
 }
 
+// Initial coding. Automatic selection of algorithms. Cubic cell
+fn test15_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 1,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: -1,
+        initial_coding_parameter: -1,
+        coding: 1,
+        coding_parameter: 0,
+        velcoding: 0,
+        velcoding_parameter: 0,
+        initial_velcoding: -1,
+        initial_velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        stride: 3,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 2776230.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
+// Coding. Automatic selection of algorithms. Cubic cell
+fn test16_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: -1,
+        initial_coding_parameter: -1,
+        coding: -1,
+        coding_parameter: 0,
+        velcoding: 0,
+        velcoding_parameter: 0,
+        initial_velcoding: -1,
+        initial_velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 6,
+        framescale: 1,
+        stride: 3,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 838168.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 #[test]
 fn test1() {
     algotest(&test1_params());
@@ -757,4 +819,14 @@ fn test13() {
 #[test]
 fn test14() {
     algotest(&test14_params());
+}
+
+#[test]
+fn test15() {
+    algotest(&test15_params());
+}
+
+#[test]
+fn test16() {
+    algotest(&test16_params());
 }
