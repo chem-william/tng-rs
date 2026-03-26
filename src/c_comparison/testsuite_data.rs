@@ -23,7 +23,6 @@ pub(super) struct TestParams {
     pub intmax: [i32; 3],
     pub speed: usize,
     pub framescale: i32,
-    pub stride: usize,
     pub genprecision: f64,
     pub genvelprecision: f64,
     pub expected_filesize: f64,
