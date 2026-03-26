@@ -259,7 +259,7 @@ pub(crate) fn unquantize_inter_differences_int(
 pub(crate) fn unquantize_intra_differences_first_frame(quant: &mut [i32], natoms: usize) {
     for j in 0..3 {
         let mut q = quant[j];
-        for i in 0..natoms {
+        for i in 1..natoms {
             q += quant[i * 3 + j];
             quant[i * 3 + j] = q;
         }
