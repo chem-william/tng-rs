@@ -1,3 +1,4 @@
+mod c_helpers;
 mod prop_bwt;
 mod prop_coder;
 mod prop_fixpoint;
@@ -11,4 +12,6 @@ mod test_fixpoint;
 mod test_huffman;
 mod test_mtf;
 mod test_rle;
+mod test_testsuite;
 mod test_vals16;
+mod testsuite_data;

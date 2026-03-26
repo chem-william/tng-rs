@@ -8120,7 +8120,7 @@ fn interval_bytes_to_f64(bytes: &[u8], data_type: DataType) -> f64 {
 
 // // Uncompresses any tng compress block, positions or velocities. It determines whether it is
 // // positions or velocities from the data buffer. The return value is 0 if ok, and 1 if not.
-fn compress_uncompress<T: Float>(data: &[u8], posvel: &mut [T]) -> Result<(), TngError> {
+pub(crate) fn compress_uncompress<T: Float>(data: &[u8], posvel: &mut [T]) -> Result<(), TngError> {
     let magic_int = u32::from(readbufferfix(data, 4));
 
     match magic_int {
