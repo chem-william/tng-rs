@@ -4,15 +4,16 @@
 /// The test mirrors the C structure: a GEN phase compresses data into an
 /// in-memory file, then a read phase decompresses each chunk with C's
 /// `tng_compress_uncompress` and checks precision against re-generated data.
-use super::testsuite_data::{TestParams, genibox, realbox};
+use super::testsuite_data::{TestParams, genibox, genivelbox, realbox, realvelbox};
 use crate::compress;
 use crate::trajectory::compress_uncompress;
 
 const FUDGE: f64 = 1.1; // 10% off target precision is acceptable.
-const STRIDE: usize = 3;
 
 // ---------------------------------------------------------------------------
-// File format: [natoms:u32le] then per chunk: [nframes:u32le] [nitems:u32le] [blob]
+// File format: [natoms:u32le] then per chunk:
+//   [nframes:u32le] [pos_nitems:u32le] [pos_blob]
+//   (if writevel) [vel_nitems:u32le] [vel_blob]
 // ---------------------------------------------------------------------------
 
 fn write_int_le(out: &mut Vec<u8>, val: i32) {
@@ -37,13 +38,19 @@ struct TngFileWrite {
     natoms: usize,
     chunky: usize,
     precision: f64,
+    velprecision: f64,
     speed: usize,
     initial_coding: i32,
     initial_coding_parameter: i32,
     coding: i32,
     coding_parameter: i32,
+    initial_velcoding: i32,
+    initial_velcoding_parameter: i32,
+    velcoding: i32,
+    velcoding_parameter: i32,
     nframes: usize,
     pos: Vec<f64>,
+    vel: Vec<f64>,
     file: Vec<u8>,
 }
 
@@ -51,28 +58,40 @@ struct TngFileWrite {
 fn open_tng_file_write(params: &TestParams) -> TngFileWrite {
     let mut file = Vec::new();
     write_int_le(&mut file, params.natoms as i32);
+    let vel = if params.writevel {
+        vec![0.0f64; params.natoms * params.chunky * 3]
+    } else {
+        Vec::new()
+    };
     TngFileWrite {
         natoms: params.natoms,
         chunky: params.chunky,
         precision: params.precision,
-        speed: params.speed,
+        velprecision: params.velprecision,
         initial_coding: params.initial_coding,
         initial_coding_parameter: params.initial_coding_parameter,
         coding: params.coding,
         coding_parameter: params.coding_parameter,
+        initial_velcoding: params.initial_velcoding,
+        initial_velcoding_parameter: params.initial_velcoding_parameter,
+        velcoding: params.velcoding,
+        velcoding_parameter: params.velcoding_parameter,
+        speed: params.speed,
         nframes: 0,
         pos: vec![0.0f64; params.natoms * params.chunky * 3],
+        vel,
         file,
     }
 }
 
 /// `flush_tng_frames` from testsuite.c — compresses the accumulated chunk
 /// and appends it to the in-memory file.
-fn flush_tng_frames(tng_file: &mut TngFileWrite) {
+fn flush_tng_frames(tng_file: &mut TngFileWrite, writevel: bool) {
     let n = tng_file.natoms;
     let nframes = tng_file.nframes;
     let pos = &tng_file.pos[..n * nframes * 3];
 
+    write_int_le(&mut tng_file.file, nframes as i32);
     let mut algo = [
         tng_file.initial_coding,
         tng_file.initial_coding_parameter,
@@ -88,34 +107,61 @@ fn flush_tng_frames(tng_file: &mut TngFileWrite) {
         tng_file.speed,
         &mut algo,
     )
-    .expect("compression returned None");
-
-    write_int_le(&mut tng_file.file, nframes as i32);
-    write_int_le(&mut tng_file.file, buf.len() as i32);
-    tng_file.file.extend_from_slice(&buf);
-
+    .expect("pos compression returned None");
     tng_file.initial_coding = algo[0];
     tng_file.initial_coding_parameter = algo[1];
     tng_file.coding = algo[2];
     tng_file.coding_parameter = algo[3];
+    write_int_le(&mut tng_file.file, buf.len() as i32);
+    tng_file.file.extend_from_slice(&buf);
+
+    if writevel {
+        let vel = &tng_file.vel[..n * nframes * 3];
+        let mut algo = [
+            tng_file.initial_velcoding,
+            tng_file.initial_velcoding_parameter,
+            tng_file.velcoding,
+            tng_file.velcoding_parameter,
+        ];
+
+        let buf = compress::tng_compress_vel(
+            vel,
+            n,
+            nframes,
+            tng_file.velprecision,
+            tng_file.speed,
+            &mut algo,
+        )
+        .expect("vel compression returned None");
+        tng_file.initial_velcoding = algo[0];
+        tng_file.initial_velcoding_parameter = algo[1];
+        tng_file.velcoding = algo[2];
+        tng_file.velcoding_parameter = algo[3];
+        write_int_le(&mut tng_file.file, buf.len() as i32);
+        tng_file.file.extend_from_slice(&buf);
+    }
+
     tng_file.nframes = 0;
 }
 
 /// `write_tng_file` from testsuite.c — appends a frame, flushing when full.
-fn write_tng_file(tng_file: &mut TngFileWrite, pos: &[f64]) {
+fn write_tng_file(tng_file: &mut TngFileWrite, pos: &[f64], vel: &[f64], writevel: bool) {
     let n = tng_file.natoms;
     let offset = tng_file.nframes * n * 3;
     tng_file.pos[offset..offset + n * 3].copy_from_slice(&pos[..n * 3]);
+    if writevel {
+        tng_file.vel[offset..offset + n * 3].copy_from_slice(&vel[..n * 3]);
+    }
     tng_file.nframes += 1;
     if tng_file.nframes == tng_file.chunky {
-        flush_tng_frames(tng_file);
+        flush_tng_frames(tng_file, writevel);
     }
 }
 
 /// `close_tng_file_write` from testsuite.c — flushes remaining frames.
-fn close_tng_file_write(tng_file: &mut TngFileWrite) {
+fn close_tng_file_write(tng_file: &mut TngFileWrite, writevel: bool) {
     if tng_file.nframes > 0 {
-        flush_tng_frames(tng_file);
+        flush_tng_frames(tng_file, writevel);
     }
 }
 
@@ -131,6 +177,7 @@ struct TngFileRead<'a> {
     nframes: usize,
     nframes_delivered: usize,
     pos: Vec<f64>,
+    vel: Vec<f64>,
 }
 
 /// `open_tng_file_read` from testsuite.c.
@@ -144,11 +191,17 @@ fn open_tng_file_read(data: &[u8]) -> TngFileRead<'_> {
         nframes: 0,
         nframes_delivered: 0,
         pos: Vec::new(),
+        vel: Vec::new(),
     }
 }
 
 /// `read_tng_file` from testsuite.c — returns one frame of decompressed data.
-fn read_tng_file(tng_file: &mut TngFileRead, pos: &mut [f64]) -> Result<(), ()> {
+fn read_tng_file(
+    tng_file: &mut TngFileRead,
+    pos: &mut [f64],
+    vel: &mut [f64],
+    writevel: bool,
+) -> Result<(), ()> {
     if tng_file.nframes == tng_file.nframes_delivered {
         let nframes = read_int_le(tng_file.data, &mut tng_file.cursor).ok_or(())? as usize;
         let nitems = read_int_le(tng_file.data, &mut tng_file.cursor).ok_or(())? as usize;
@@ -156,7 +209,17 @@ fn read_tng_file(tng_file: &mut TngFileRead, pos: &mut [f64]) -> Result<(), ()> 
         tng_file.cursor += nitems;
 
         tng_file.pos.resize(tng_file.natoms * nframes * 3, 0.0);
+        if writevel {
+            tng_file.vel.resize(tng_file.natoms * nframes * 3, 0.0);
+        }
         compress_uncompress(blob, &mut tng_file.pos).expect("decompress failed");
+
+        if writevel {
+            let nitems = read_int_le(tng_file.data, &mut tng_file.cursor).ok_or(())? as usize;
+            let blob = &tng_file.data[tng_file.cursor..tng_file.cursor + nitems];
+            tng_file.cursor += nitems;
+            compress_uncompress(blob, &mut tng_file.vel).expect("vel decompress failed");
+        }
         tng_file.nframes = nframes;
         tng_file.nframes_delivered = 0;
     }
@@ -164,6 +227,9 @@ fn read_tng_file(tng_file: &mut TngFileRead, pos: &mut [f64]) -> Result<(), ()> 
     let n = tng_file.natoms;
     let offset = tng_file.nframes_delivered * n * 3;
     pos[..n * 3].copy_from_slice(&tng_file.pos[offset..offset + n * 3]);
+    if writevel {
+        vel[..n * 3].copy_from_slice(&tng_file.vel[offset..offset + n * 3]);
+    }
     tng_file.nframes_delivered += 1;
     Ok(())
 }
@@ -200,7 +266,9 @@ fn equalarr(arr1: &[f64], arr2: &[f64], prec: f64, natoms: usize) -> f64 {
 fn algotest(params: &TestParams) {
     let natoms = params.natoms;
     let mut intbox = vec![0i32; natoms * 3];
+    let mut intvelbox = vec![0i32; natoms * 3];
     let mut box1 = vec![0.0f64; natoms * 3];
+    let mut velbox1 = vec![0.0f64; natoms * 3];
 
     // --- GEN phase ---
     let mut dumpfile = open_tng_file_write(params);
@@ -215,10 +283,21 @@ fn algotest(params: &TestParams) {
             params.genprecision,
             params.scale,
         );
-        write_tng_file(&mut dumpfile, &box1);
+        if params.writevel {
+            genivelbox(&mut intvelbox, iframe as i32, params);
+            realvelbox(
+                &intvelbox,
+                &mut velbox1,
+                3,
+                natoms,
+                params.genvelprecision,
+                params.scale,
+            );
+        }
+        write_tng_file(&mut dumpfile, &box1, &velbox1, params.writevel);
     }
 
-    close_tng_file_write(&mut dumpfile);
+    close_tng_file_write(&mut dumpfile, params.writevel);
 
     // GEN filesize check
     let filesize = dumpfile.file.len() as f64;
@@ -235,6 +314,7 @@ fn algotest(params: &TestParams) {
     // --- Read phase ---
     let mut reader = open_tng_file_read(&dumpfile.file);
     let mut box2 = vec![0.0f64; natoms * 3];
+    let mut velbox2 = vec![0.0f64; natoms * 3];
 
     for iframe in 0..params.nframes {
         genibox(&mut intbox, iframe as i32, params);
@@ -246,8 +326,22 @@ fn algotest(params: &TestParams) {
             params.genprecision,
             params.scale,
         );
-        read_tng_file(&mut reader, &mut box2).expect("read error");
+        if params.writevel {
+            genivelbox(&mut intvelbox, iframe as i32, params);
+            realvelbox(
+                &intvelbox,
+                &mut velbox1,
+                3,
+                natoms,
+                params.genvelprecision,
+                params.scale,
+            );
+        }
+        read_tng_file(&mut reader, &mut box2, &mut velbox2, params.writevel).expect("read error");
         equalarr(&box1, &box2, params.precision, natoms);
+        if params.writevel {
+            equalarr(&velbox1, &velbox2, params.velprecision, natoms);
+        }
     }
 }
 
@@ -735,6 +829,36 @@ fn test16_params() -> TestParams {
     }
 }
 
+// Initial coding of velocities. Stopbits one-to-one. Cubic cell
+fn test17_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 1,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: true,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 1,
+        coding_parameter: 0,
+        velcoding: 0,
+        velcoding_parameter: 0,
+        initial_velcoding: 1,
+        initial_velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 7336171.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 #[test]
 fn test1() {
     algotest(&test1_params());
@@ -813,4 +937,9 @@ fn test15() {
 #[test]
 fn test16() {
     algotest(&test16_params());
+}
+
+#[test]
+fn test17() {
+    algotest(&test17_params());
 }

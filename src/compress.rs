@@ -1904,7 +1904,7 @@ pub(crate) fn determine_best_vel_initial_coding(
         } else if initial_coding == TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE {
             let mut coder = Coder::default();
             let mut current_code_size = n_atoms * 3;
-            coder.determine_best_coding_triple(
+            coder.determine_best_coding_stop_bits(
                 quant,
                 &mut current_code_size,
                 &mut resulting_coding_parameter,
