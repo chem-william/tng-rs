@@ -1108,19 +1108,19 @@ pub(crate) fn ptngc_pack_array_xtc3(
             bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
         } else {
             bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.large_intra_delta.len())];
-            if *speed >= 5 {
+            bwlzh_buf_len = if *speed >= 5 {
                 bwlzh_compress(
                     &xtc3_context.large_intra_delta,
                     xtc3_context.large_intra_delta.len(),
                     &mut bwlzh_buf,
-                );
+                )
             } else {
                 bwlzh_compress_no_lz77(
                     &xtc3_context.large_intra_delta,
                     xtc3_context.large_intra_delta.len(),
                     &mut bwlzh_buf,
-                );
-            }
+                )
+            };
         }
         // If this can be written smaller using base compression we should do that
         let (base_buf, base_buf_len) = base_compress(
@@ -1154,19 +1154,19 @@ pub(crate) fn ptngc_pack_array_xtc3(
             bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
         } else {
             bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.large_inter_delta.len())];
-            if *speed >= 5 {
+            bwlzh_buf_len = if *speed >= 5 {
                 bwlzh_compress(
                     &xtc3_context.large_inter_delta,
                     xtc3_context.large_inter_delta.len(),
                     &mut bwlzh_buf,
-                );
+                )
             } else {
                 bwlzh_compress_no_lz77(
                     &xtc3_context.large_inter_delta,
                     xtc3_context.large_inter_delta.len(),
                     &mut bwlzh_buf,
-                );
-            }
+                )
+            };
         }
         // If this can be written smaller using base compression we should do that
         let (base_buf, base_buf_len) = base_compress(
@@ -1197,19 +1197,19 @@ pub(crate) fn ptngc_pack_array_xtc3(
             bwlzh_buf_len = usize::try_from(i32::MAX).expect("usize from i32");
         } else {
             bwlzh_buf = vec![0; bwlzh_get_buflen(xtc3_context.smallintra.len())];
-            if *speed >= 5 {
+            bwlzh_buf_len = if *speed >= 5 {
                 bwlzh_compress(
                     &xtc3_context.smallintra,
                     xtc3_context.smallintra.len(),
                     &mut bwlzh_buf,
-                );
+                )
             } else {
                 bwlzh_compress_no_lz77(
                     &xtc3_context.smallintra,
                     xtc3_context.smallintra.len(),
                     &mut bwlzh_buf,
-                );
-            }
+                )
+            };
         }
         // If this can be written smaller using base compression we should do that
         let (base_buf, base_buf_len) =
@@ -1550,7 +1550,7 @@ fn base_or_bwlzh_output(
             outdata,
             u32::try_from(bwlzh_buf_len).expect("u32 from usize"),
         );
-        output[*outdata..*outdata + bwlzh_buf_len].copy_from_slice(bwlzh_buf);
+        output[*outdata..*outdata + bwlzh_buf_len].copy_from_slice(&bwlzh_buf[..bwlzh_buf_len]);
         *outdata += bwlzh_buf_len;
     }
 }
