@@ -894,7 +894,7 @@ fn test19_params() -> TestParams {
     TestParams {
         natoms: 1000,
         chunky: 1,
-        nframes: 1000,
+        nframes: 50,
         scale: 0.1,
         precision: 0.01,
         writevel: true,
@@ -906,7 +906,7 @@ fn test19_params() -> TestParams {
         velcoding: 0,
         velcoding_parameter: 0,
         initial_velcoding: 9,
-        initial_velcoding_parameter: -1,
+        initial_velcoding_parameter: 0,
         intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
         speed: 5,
@@ -914,6 +914,36 @@ fn test19_params() -> TestParams {
         genprecision: 0.01,
         genvelprecision: 0.1,
         expected_filesize: 208809.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
+// Coding of velocities. Stopbit one-to-one. Cubic cell.
+fn test20_params() -> TestParams {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: true,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 1,
+        initial_velcoding_parameter: -1,
+        velcoding: 1,
+        velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 7237102.0,
         regular: false,
         velintmul: None,
     }
@@ -1012,4 +1042,9 @@ fn test18() {
 #[test]
 fn test19() {
     algotest(&test19_params());
+}
+
+#[test]
+fn test20() {
+    algotest(&test20_params());
 }

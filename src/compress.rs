@@ -1360,7 +1360,7 @@ pub(crate) fn tng_compress_vel_int(
     if n_frames > 1 {
         if coding == -1 {
             coding_parameter = -1;
-            determine_best_vel_coding(
+            (coding, coding_parameter) = determine_best_vel_coding(
                 quant,
                 &mut Some(&mut quant_inter),
                 n_atoms,
@@ -1372,7 +1372,7 @@ pub(crate) fn tng_compress_vel_int(
                 coding_parameter,
             );
         } else if coding_parameter == -1 {
-            determine_best_vel_coding(
+            (coding, coding_parameter) = determine_best_vel_coding(
                 quant,
                 &mut Some(&mut quant_inter),
                 n_atoms,
@@ -1785,7 +1785,7 @@ fn compress_quantized_vel(
             | TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE => {
                 let mut coder = Coder::default();
                 coder.pack_array(
-                    &mut quant_inter.expect("quant_inter to be Some")[us_natoms * 3..],
+                    &mut quant[us_natoms * 3..],
                     &mut fallback_len,
                     coding,
                     coding_parameter,
