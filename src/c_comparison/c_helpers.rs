@@ -200,9 +200,7 @@ pub(super) fn c_compress_pos_find_algo(
 pub(super) fn c_uncompress(compressed: &[u8], n_values: usize) -> Vec<f64> {
     let mut buf = compressed.iter().map(|&b| b as i8).collect::<Vec<i8>>();
     let mut output = vec![0.0f64; n_values];
-    let ret = unsafe {
-        ffi::tng_compress_uncompress(buf.as_mut_ptr(), output.as_mut_ptr())
-    };
+    let ret = unsafe { ffi::tng_compress_uncompress(buf.as_mut_ptr(), output.as_mut_ptr()) };
     assert_eq!(ret, 0, "C tng_compress_uncompress returned error {}", ret);
     output
 }

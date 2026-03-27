@@ -1,16 +1,18 @@
+use crate::compress::Float;
+
 /// Deterministic data generators ported from vendor/tng/src/tests/compression/testsuite.c.
 /// Used to produce the same input data as the C testsuite for byte-for-byte comparison tests.
-
+///
 /// Parameters for a C testsuite test, mirroring the #defines in testN.h.
 #[allow(dead_code)]
-pub(super) struct TestParams {
+pub(super) struct TestParams<T: Float> {
     pub natoms: usize,
     pub chunky: usize,
     pub nframes: usize,
     pub scale: f64,
-    pub precision: f64,
+    pub precision: T,
     pub writevel: bool,
-    pub velprecision: f64,
+    pub velprecision: T,
     pub initial_coding: i32,
     pub initial_coding_parameter: i32,
     pub coding: i32,
@@ -120,7 +122,7 @@ fn molecule(
 // genibox (testsuite.c lines 95-168)
 // ---------------------------------------------------------------------------
 
-pub(super) fn genibox(intbox: &mut [i32], iframe: i32, params: &TestParams) {
+pub(super) fn genibox<T: Float>(intbox: &mut [i32], iframe: i32, params: &TestParams<T>) {
     let natoms = params.natoms;
     let intmin = &params.intmin;
     let intmax = &params.intmax;
@@ -221,7 +223,7 @@ pub(super) fn genibox(intbox: &mut [i32], iframe: i32, params: &TestParams) {
 // ---------------------------------------------------------------------------
 
 #[allow(dead_code)]
-pub(super) fn genivelbox(intvelbox: &mut [i32], iframe: i32, params: &TestParams) {
+pub(super) fn genivelbox<T: Float>(intvelbox: &mut [i32], iframe: i32, params: &TestParams<T>) {
     let natoms = params.natoms;
     let framescale = params.framescale;
     for i in 0..natoms {
@@ -244,9 +246,9 @@ pub(super) fn genivelbox(intvelbox: &mut [i32], iframe: i32, params: &TestParams
 // realbox / realvelbox (testsuite.c lines 206-228)
 // ---------------------------------------------------------------------------
 
-pub(super) fn realbox(
+pub(super) fn realbox<T: Float>(
     intbox: &[i32],
-    pos: &mut [f64],
+    pos: &mut [T],
     stride: usize,
     natoms: usize,
     genprecision: f64,
@@ -254,18 +256,18 @@ pub(super) fn realbox(
 ) {
     for i in 0..natoms {
         for j in 0..3 {
-            pos[i * stride + j] = intbox[i * 3 + j] as f64 * genprecision * scale;
+            pos[i * stride + j] = T::from_f64(intbox[i * 3 + j] as f64 * genprecision * scale);
         }
         for j in 3..stride {
-            pos[i * stride + j] = 0.0;
+            pos[i * stride + j] = T::from_f64(0.0);
         }
     }
 }
 
 #[allow(dead_code)]
-pub(super) fn realvelbox(
+pub(super) fn realvelbox<T: Float>(
     intbox: &[i32],
-    vel: &mut [f64],
+    vel: &mut [T],
     stride: usize,
     natoms: usize,
     genvelprecision: f64,
@@ -273,10 +275,10 @@ pub(super) fn realvelbox(
 ) {
     for i in 0..natoms {
         for j in 0..3 {
-            vel[i * stride + j] = intbox[i * 3 + j] as f64 * genvelprecision * scale;
+            vel[i * stride + j] = T::from_f64(intbox[i * 3 + j] as f64 * genvelprecision * scale);
         }
         for j in 3..stride {
-            vel[i * stride + j] = 0.0;
+            vel[i * stride + j] = T::from_f64(0.0);
         }
     }
 }

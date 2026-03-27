@@ -121,7 +121,7 @@ fn pos_float_matches_c() {
     // Rust
     let mut rust_algo = algo_init;
     let rust_result =
-        compress::tng_compress_pos_float(&pos, natoms, nframes, precision, speed, &mut rust_algo)
+        compress::tng_compress_pos(&pos, natoms, nframes, precision, speed, &mut rust_algo)
             .expect("Rust tng_compress_pos_float returned None");
 
     // C
@@ -243,7 +243,7 @@ fn vel_float_matches_c() {
     // Rust
     let mut rust_algo = algo_init;
     let rust_result =
-        compress::tng_compress_vel_float(&vel, natoms, nframes, precision, speed, &mut rust_algo)
+        compress::tng_compress_vel(&vel, natoms, nframes, precision, speed, &mut rust_algo)
             .expect("Rust tng_compress_vel_float returned None");
 
     // C

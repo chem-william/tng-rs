@@ -16,8 +16,8 @@ use crate::compress::{
     TNG_COMPRESS_ALGO_VEL_BWLZH_INTER, TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE,
     TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER, TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE,
     TNG_COMPRESS_ALGO_VEL_TRIPLET_INTER, TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE, readbufferfix,
-    tng_compress_pos, tng_compress_pos_float, tng_compress_vel, tng_compress_vel_float, unquantize,
-    unquantize_inter_differences, unquantize_inter_differences_int, unquantize_intra_differences,
+    tng_compress_pos, tng_compress_vel, unquantize, unquantize_inter_differences,
+    unquantize_inter_differences_int, unquantize_intra_differences,
     unquantize_intra_differences_first_frame, unquantize_intra_differences_int,
 };
 use crate::data::{Compression, Data, DataType};
@@ -2322,7 +2322,7 @@ impl Trajectory {
                         floats.push(f32::from_ne_bytes(arr));
                     }
 
-                    tng_compress_pos_float(
+                    tng_compress_pos(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
@@ -2384,7 +2384,7 @@ impl Trajectory {
                         floats.push(f32::from_ne_bytes(arr));
                     }
 
-                    let mut return_dest = tng_compress_pos_float(
+                    let mut return_dest = tng_compress_pos(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
@@ -2393,7 +2393,7 @@ impl Trajectory {
                         compress_algo_pos,
                     );
                     if algo_find_n_frames < n_frames {
-                        return_dest = tng_compress_pos_float(
+                        return_dest = tng_compress_pos(
                             &floats,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
@@ -2440,7 +2440,7 @@ impl Trajectory {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
                         floats.push(f32::from_ne_bytes(arr));
                     }
-                    tng_compress_pos_float(
+                    tng_compress_pos(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
@@ -2495,7 +2495,7 @@ impl Trajectory {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
                         floats.push(f32::from_ne_bytes(arr));
                     }
-                    tng_compress_vel_float(
+                    tng_compress_vel(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
@@ -2550,7 +2550,7 @@ impl Trajectory {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
                         floats.push(f32::from_ne_bytes(arr));
                     }
-                    let mut return_dest = tng_compress_vel_float(
+                    let mut return_dest = tng_compress_vel(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
@@ -2559,7 +2559,7 @@ impl Trajectory {
                         compress_algo_vel,
                     );
                     if algo_find_n_frames < n_frames {
-                        return_dest = tng_compress_vel_float(
+                        return_dest = tng_compress_vel(
                             &floats,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
@@ -2605,7 +2605,7 @@ impl Trajectory {
                         let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
                         floats.push(f32::from_ne_bytes(arr));
                     }
-                    tng_compress_vel_float(
+                    tng_compress_vel(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
@@ -8152,7 +8152,6 @@ fn compress_uncompress_pos<T: Float>(data: &[u8], pos: &mut [T]) -> Result<(), T
 fn compress_uncompress_pos_gen<T: Float>(
     data: &[u8],
     mut posdf: Option<&mut [T]>,
-    // mut posf: Option<&mut [f32]>,
     mut posi: Option<&mut [i32]>,
 ) -> Result<(u32, u32), TngError> {
     let mut bufloc = 0;
@@ -8341,7 +8340,6 @@ fn compress_uncompress_vel<T: Float>(data: &[u8], vel: &mut [T]) -> Result<(), T
 fn compress_uncompress_vel_gen<T: Float>(
     data: &[u8],
     mut veldf: Option<&mut [T]>,
-    // mut velf: Option<&mut [f32]>,
     mut veli: Option<&mut [i32]>,
 ) -> Result<(u32, u32), TngError> {
     let mut bufloc = 0;

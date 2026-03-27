@@ -5,7 +5,8 @@
 /// in-memory file, then a read phase decompresses each chunk with C's
 /// `tng_compress_uncompress` and checks precision against re-generated data.
 use super::testsuite_data::{TestParams, genibox, genivelbox, realbox, realvelbox};
-use crate::compress;
+use crate::compress::tng_compress_vel;
+use crate::compress::{Float, tng_compress_pos};
 use crate::trajectory::compress_uncompress;
 
 const FUDGE: f64 = 1.1; // 10% off target precision is acceptable.
@@ -34,11 +35,11 @@ fn read_int_le(data: &[u8], pos: &mut usize) -> Option<i32> {
 // ---------------------------------------------------------------------------
 
 /// `struct tng_file` from testsuite.c (write mode).
-struct TngFileWrite {
+struct TngFileWrite<T: Float> {
     natoms: usize,
     chunky: usize,
-    precision: f64,
-    velprecision: f64,
+    precision: T,
+    velprecision: T,
     speed: usize,
     initial_coding: i32,
     initial_coding_parameter: i32,
@@ -49,17 +50,17 @@ struct TngFileWrite {
     velcoding: i32,
     velcoding_parameter: i32,
     nframes: usize,
-    pos: Vec<f64>,
-    vel: Vec<f64>,
+    pos: Vec<T>,
+    vel: Vec<T>,
     file: Vec<u8>,
 }
 
 /// `open_tng_file_write` from testsuite.c.
-fn open_tng_file_write(params: &TestParams) -> TngFileWrite {
+fn open_tng_file_write<T: Float>(params: &TestParams<T>) -> TngFileWrite<T> {
     let mut file = Vec::new();
     write_int_le(&mut file, params.natoms as i32);
     let vel = if params.writevel {
-        vec![0.0f64; params.natoms * params.chunky * 3]
+        vec![T::from_f64(0.0); params.natoms * params.chunky * 3]
     } else {
         Vec::new()
     };
@@ -78,7 +79,7 @@ fn open_tng_file_write(params: &TestParams) -> TngFileWrite {
         velcoding_parameter: params.velcoding_parameter,
         speed: params.speed,
         nframes: 0,
-        pos: vec![0.0f64; params.natoms * params.chunky * 3],
+        pos: vec![T::from_f64(0.0); params.natoms * params.chunky * 3],
         vel,
         file,
     }
@@ -86,7 +87,7 @@ fn open_tng_file_write(params: &TestParams) -> TngFileWrite {
 
 /// `flush_tng_frames` from testsuite.c — compresses the accumulated chunk
 /// and appends it to the in-memory file.
-fn flush_tng_frames(tng_file: &mut TngFileWrite, writevel: bool) {
+fn flush_tng_frames<T: Float>(tng_file: &mut TngFileWrite<T>, writevel: bool) {
     let n = tng_file.natoms;
     let nframes = tng_file.nframes;
     let pos = &tng_file.pos[..n * nframes * 3];
@@ -99,7 +100,7 @@ fn flush_tng_frames(tng_file: &mut TngFileWrite, writevel: bool) {
         tng_file.coding_parameter,
     ];
 
-    let buf = compress::tng_compress_pos(
+    let buf = tng_compress_pos(
         pos,
         n,
         nframes,
@@ -124,7 +125,7 @@ fn flush_tng_frames(tng_file: &mut TngFileWrite, writevel: bool) {
             tng_file.velcoding_parameter,
         ];
 
-        let buf = compress::tng_compress_vel(
+        let buf = tng_compress_vel(
             vel,
             n,
             nframes,
@@ -145,7 +146,7 @@ fn flush_tng_frames(tng_file: &mut TngFileWrite, writevel: bool) {
 }
 
 /// `write_tng_file` from testsuite.c — appends a frame, flushing when full.
-fn write_tng_file(tng_file: &mut TngFileWrite, pos: &[f64], vel: &[f64], writevel: bool) {
+fn write_tng_file<T: Float>(tng_file: &mut TngFileWrite<T>, pos: &[T], vel: &[T], writevel: bool) {
     let n = tng_file.natoms;
     let offset = tng_file.nframes * n * 3;
     tng_file.pos[offset..offset + n * 3].copy_from_slice(&pos[..n * 3]);
@@ -159,7 +160,7 @@ fn write_tng_file(tng_file: &mut TngFileWrite, pos: &[f64], vel: &[f64], writeve
 }
 
 /// `close_tng_file_write` from testsuite.c — flushes remaining frames.
-fn close_tng_file_write(tng_file: &mut TngFileWrite, writevel: bool) {
+fn close_tng_file_write<T: Float>(tng_file: &mut TngFileWrite<T>, writevel: bool) {
     if tng_file.nframes > 0 {
         flush_tng_frames(tng_file, writevel);
     }
@@ -170,18 +171,18 @@ fn close_tng_file_write(tng_file: &mut TngFileWrite, writevel: bool) {
 // ---------------------------------------------------------------------------
 
 /// `struct tng_file` from testsuite.c (read mode).
-struct TngFileRead<'a> {
+struct TngFileRead<'a, T: Float> {
     data: &'a [u8],
     cursor: usize,
     natoms: usize,
     nframes: usize,
     nframes_delivered: usize,
-    pos: Vec<f64>,
-    vel: Vec<f64>,
+    pos: Vec<T>,
+    vel: Vec<T>,
 }
 
 /// `open_tng_file_read` from testsuite.c.
-fn open_tng_file_read(data: &[u8]) -> TngFileRead<'_> {
+fn open_tng_file_read<T: Float>(data: &[u8]) -> TngFileRead<'_, T> {
     let mut cursor = 0;
     let natoms = read_int_le(data, &mut cursor).expect("failed to read natoms") as usize;
     TngFileRead {
@@ -196,10 +197,10 @@ fn open_tng_file_read(data: &[u8]) -> TngFileRead<'_> {
 }
 
 /// `read_tng_file` from testsuite.c — returns one frame of decompressed data.
-fn read_tng_file(
-    tng_file: &mut TngFileRead,
-    pos: &mut [f64],
-    vel: &mut [f64],
+fn read_tng_file<T: Float>(
+    tng_file: &mut TngFileRead<T>,
+    pos: &mut [T],
+    vel: &mut [T],
     writevel: bool,
 ) -> Result<(), ()> {
     if tng_file.nframes == tng_file.nframes_delivered {
@@ -208,9 +209,13 @@ fn read_tng_file(
         let blob = &tng_file.data[tng_file.cursor..tng_file.cursor + nitems];
         tng_file.cursor += nitems;
 
-        tng_file.pos.resize(tng_file.natoms * nframes * 3, 0.0);
+        tng_file
+            .pos
+            .resize(tng_file.natoms * nframes * 3, T::from_f64(0.0));
         if writevel {
-            tng_file.vel.resize(tng_file.natoms * nframes * 3, 0.0);
+            tng_file
+                .vel
+                .resize(tng_file.natoms * nframes * 3, T::from_f64(0.0));
         }
         compress_uncompress(blob, &mut tng_file.pos).expect("decompress failed");
 
@@ -238,22 +243,22 @@ fn read_tng_file(
 // equalarr (testsuite.c lines 230-256)
 // ---------------------------------------------------------------------------
 
-fn equalarr(arr1: &[f64], arr2: &[f64], prec: f64, natoms: usize) -> f64 {
-    let mut maxdiff: f64 = 0.0;
+fn equalarr<T: Float>(arr1: &[T], arr2: &[T], prec: T, natoms: usize) -> f64 {
+    let mut maxdiff = T::from_f64(0.0);
     for i in 0..natoms {
         for j in 0..3 {
-            let diff = (arr1[i * 3 + j] - arr2[i * 3 + j]).abs();
+            let diff = T::from_f64(T::to_f64(arr1[i * 3 + j] - arr2[i * 3 + j]).abs());
             if diff > maxdiff {
                 maxdiff = diff;
             }
         }
     }
     assert!(
-        maxdiff <= prec * 0.5 * FUDGE,
+        maxdiff <= prec * T::from_f64(0.5 * FUDGE),
         "precision exceeded: max_diff={maxdiff}, tolerance={}",
-        prec * 0.5 * FUDGE,
+        prec * T::from_f64(0.5 * FUDGE),
     );
-    maxdiff
+    T::to_f64(maxdiff)
 }
 
 // ---------------------------------------------------------------------------
@@ -263,12 +268,12 @@ fn equalarr(arr1: &[f64], arr2: &[f64], prec: f64, natoms: usize) -> f64 {
 /// Mirrors `algotest()` from testsuite.c.
 /// GEN phase: generate data, compress, write to in-memory file.
 /// Read phase: re-generate data, decompress, check precision.
-fn algotest(params: &TestParams) {
+fn algotest<T: Float>(params: &TestParams<T>) {
     let natoms = params.natoms;
     let mut intbox = vec![0i32; natoms * 3];
     let mut intvelbox = vec![0i32; natoms * 3];
-    let mut box1 = vec![0.0f64; natoms * 3];
-    let mut velbox1 = vec![0.0f64; natoms * 3];
+    let mut box1 = vec![T::from_f64(0.0); natoms * 3];
+    let mut velbox1 = vec![T::from_f64(0.0); natoms * 3];
 
     // --- GEN phase ---
     let mut dumpfile = open_tng_file_write(params);
@@ -313,8 +318,8 @@ fn algotest(params: &TestParams) {
 
     // --- Read phase ---
     let mut reader = open_tng_file_read(&dumpfile.file);
-    let mut box2 = vec![0.0f64; natoms * 3];
-    let mut velbox2 = vec![0.0f64; natoms * 3];
+    let mut box2 = vec![T::from_f64(0.0); natoms * 3];
+    let mut velbox2 = vec![T::from_f64(0.0); natoms * 3];
 
     for iframe in 0..params.nframes {
         genibox(&mut intbox, iframe as i32, params);
@@ -350,7 +355,7 @@ fn algotest(params: &TestParams) {
 // ---------------------------------------------------------------------------
 
 // Initial coding. Intra frame triple algorithm. Cubic cell
-fn test1_params() -> TestParams {
+fn test1_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -380,7 +385,7 @@ fn test1_params() -> TestParams {
 }
 
 // Initial coding. XTC2 algorithm. Cubic cell
-fn test2_params() -> TestParams {
+fn test2_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -410,7 +415,7 @@ fn test2_params() -> TestParams {
 }
 
 // Initial coding. Triplet one-to-one algorithm . Cubic cell
-fn test3_params() -> TestParams {
+fn test3_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -440,7 +445,7 @@ fn test3_params() -> TestParams {
 }
 
 // Initial coding. BWLZH intra algorithm. Cubic cell
-fn test4_params() -> TestParams {
+fn test4_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -470,7 +475,7 @@ fn test4_params() -> TestParams {
 }
 
 // Initial coding. XTC3 algorithm. Cubic cell
-fn test5_params() -> TestParams {
+fn test5_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -500,7 +505,7 @@ fn test5_params() -> TestParams {
 }
 
 // Coding. XTC2 algorithm. Cubic cell
-fn test6_params() -> TestParams {
+fn test6_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -530,7 +535,7 @@ fn test6_params() -> TestParams {
 }
 
 // Coding. Stopbit interframe algorithm. Cubic cell
-fn test7_params() -> TestParams {
+fn test7_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -560,7 +565,7 @@ fn test7_params() -> TestParams {
 }
 
 // Coding. Stopbit interframe algorithm with intraframe compression as initial. Cubic cell
-fn test8_params() -> TestParams {
+fn test8_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -590,7 +595,7 @@ fn test8_params() -> TestParams {
 }
 
 // Coding. Triple interframe algorithm. Cubic cell
-fn test9_params() -> TestParams {
+fn test9_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -620,7 +625,7 @@ fn test9_params() -> TestParams {
 }
 
 // Coding. Triple intraframe algorithm. Cubic cell
-fn test10_params() -> TestParams {
+fn test10_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -650,7 +655,7 @@ fn test10_params() -> TestParams {
 }
 
 // Coding. Triple one-to-one algorithm. Cubic cell
-fn test11_params() -> TestParams {
+fn test11_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -680,7 +685,7 @@ fn test11_params() -> TestParams {
 }
 
 // Coding. BWLZH interframe algorithm. Cubic cell
-fn test12_params() -> TestParams {
+fn test12_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -710,7 +715,7 @@ fn test12_params() -> TestParams {
 }
 
 // Coding. BWLZH intraframe algorithm. Cubic cell
-fn test13_params() -> TestParams {
+fn test13_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -740,7 +745,7 @@ fn test13_params() -> TestParams {
 }
 
 // Coding. XTC3 algorithm. Cubic cell
-fn test14_params() -> TestParams {
+fn test14_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -770,7 +775,7 @@ fn test14_params() -> TestParams {
 }
 
 // Initial coding. Automatic selection of algorithms. Cubic cell
-fn test15_params() -> TestParams {
+fn test15_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -800,7 +805,7 @@ fn test15_params() -> TestParams {
 }
 
 // Coding. Automatic selection of algorithms. Cubic cell
-fn test16_params() -> TestParams {
+fn test16_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -830,7 +835,7 @@ fn test16_params() -> TestParams {
 }
 
 // Initial coding of velocities. Stopbits one-to-one. Cubic cell
-fn test17_params() -> TestParams {
+fn test17_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -860,7 +865,7 @@ fn test17_params() -> TestParams {
 }
 
 // Initial coding of velocities. Triplet one-to-one. Cubic cell
-fn test18_params() -> TestParams {
+fn test18_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -890,7 +895,7 @@ fn test18_params() -> TestParams {
 }
 
 // Initial coding of velocities. BWLZH one-to-one. Cubic cell
-fn test19_params() -> TestParams {
+fn test19_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -920,7 +925,7 @@ fn test19_params() -> TestParams {
 }
 
 // Initial coding. Intra frame triple algorithm. High accuracy. Cubic cell.
-fn test41_params() -> TestParams {
+fn test41_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 1,
@@ -950,7 +955,7 @@ fn test41_params() -> TestParams {
 }
 
 // Initial coding. XTC2 algorithm. High accuracy. Cubic cell.
-fn test42_params() -> TestParams {
+fn test42_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 1,
@@ -980,7 +985,7 @@ fn test42_params() -> TestParams {
 }
 
 // Initial coding. XTC3 algorithm. High accuracy. Cubic cell.
-fn test43_params() -> TestParams {
+fn test43_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 1,
@@ -1010,7 +1015,7 @@ fn test43_params() -> TestParams {
 }
 
 // Initial coding. Intra frame BWLZH algorithm. High accuracy. Cubic cell.
-fn test44_params() -> TestParams {
+fn test44_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 1,
@@ -1040,7 +1045,7 @@ fn test44_params() -> TestParams {
 }
 
 // Position coding. Stop bits algorithm. High accuracy. Cubic cell.
-fn test45_params() -> TestParams {
+fn test45_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1070,7 +1075,7 @@ fn test45_params() -> TestParams {
 }
 
 // Position coding. Inter frame triple algorithm. High accuracy. Cubic cell.
-fn test46_params() -> TestParams {
+fn test46_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1100,7 +1105,7 @@ fn test46_params() -> TestParams {
 }
 
 // Position coding.  Intra frame triple algorithm. High accuracy. Cubic cell.
-fn test47_params() -> TestParams {
+fn test47_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1130,7 +1135,7 @@ fn test47_params() -> TestParams {
 }
 
 // Position coding. XTC2 algorithm. High accuracy. Cubic cell.
-fn test48_params() -> TestParams {
+fn test48_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1160,7 +1165,7 @@ fn test48_params() -> TestParams {
 }
 
 // Position coding. XTC3 algorithm. High accuracy. Cubic cell.
-fn test49_params() -> TestParams {
+fn test49_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1190,7 +1195,7 @@ fn test49_params() -> TestParams {
 }
 
 // Position coding. Intra frame BWLZH algorithm. High accuracy. Cubic cell.
-fn test50_params() -> TestParams {
+fn test50_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1220,7 +1225,7 @@ fn test50_params() -> TestParams {
 }
 
 // Position coding. Inter frame BWLZH algorithm. High accuracy. Cubic cell.
-fn test51_params() -> TestParams {
+fn test51_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1250,7 +1255,7 @@ fn test51_params() -> TestParams {
 }
 
 // Velocity coding. Stop bits algorithm. High accuracy. Cubic cell.
-fn test52_params() -> TestParams {
+fn test52_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1280,7 +1285,7 @@ fn test52_params() -> TestParams {
 }
 
 // Velocity coding. Triple algorithm. High accuracy. Cubic cell.
-fn test53_params() -> TestParams {
+fn test53_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1310,7 +1315,7 @@ fn test53_params() -> TestParams {
 }
 
 // Velocity coding. Interframe triple algorithm. High accuracy. Cubic cell.
-fn test54_params() -> TestParams {
+fn test54_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1340,7 +1345,7 @@ fn test54_params() -> TestParams {
 }
 
 // Velocity coding. Interframe stop-bits algorithm. High accuracy. Cubic cell.
-fn test55_params() -> TestParams {
+fn test55_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1370,7 +1375,7 @@ fn test55_params() -> TestParams {
 }
 
 // Velocity coding. Intraframe BWLZH algorithm. High accuracy. Cubic cell.
-fn test56_params() -> TestParams {
+fn test56_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1400,7 +1405,7 @@ fn test56_params() -> TestParams {
 }
 
 // Velocity coding. Interframe BWLZH algorithm. High accuracy. Cubic cell.
-fn test57_params() -> TestParams {
+fn test57_params() -> TestParams<f64> {
     TestParams {
         natoms: 100000,
         chunky: 10,
@@ -1429,8 +1434,38 @@ fn test57_params() -> TestParams {
     }
 }
 
+// Coding. Test float
+fn test58_params() -> TestParams<f32> {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: true,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 6986313.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
-fn test40_params() -> TestParams {
+fn test40_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 2,
@@ -1460,7 +1495,7 @@ fn test40_params() -> TestParams {
 }
 
 // Position coding. Intra frame BWLZH algorithm. Large system. Cubic cell.
-fn test39_params() -> TestParams {
+fn test39_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 2,
@@ -1490,7 +1525,7 @@ fn test39_params() -> TestParams {
 }
 
 // Position coding. XTC3 algorithm. Large system. Cubic cell.
-fn test38_params() -> TestParams {
+fn test38_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 2,
@@ -1520,7 +1555,7 @@ fn test38_params() -> TestParams {
 }
 
 // Position coding. XTC2 algorithm. Large system. Cubic cell.
-fn test37_params() -> TestParams {
+fn test37_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 2,
@@ -1550,7 +1585,7 @@ fn test37_params() -> TestParams {
 }
 
 // Position coding. Intra frame triple algorithm. Large system. Cubic cell.
-fn test36_params() -> TestParams {
+fn test36_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 2,
@@ -1580,7 +1615,7 @@ fn test36_params() -> TestParams {
 }
 
 // Position coding. Inter frame triple algorithm. Large system. Cubic cell.
-fn test35_params() -> TestParams {
+fn test35_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 2,
@@ -1610,7 +1645,7 @@ fn test35_params() -> TestParams {
 }
 
 // Position coding. Stop bits algorithm. Large system. Cubic cell.
-fn test34_params() -> TestParams {
+fn test34_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 2,
@@ -1640,7 +1675,7 @@ fn test34_params() -> TestParams {
 }
 
 // Initial coding. Intra frame BWLZH algorithm. Large system. Cubic cell.
-fn test33_params() -> TestParams {
+fn test33_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 1,
@@ -1670,7 +1705,7 @@ fn test33_params() -> TestParams {
 }
 
 // Initial coding. XTC3 algorithm. Large system. Cubic cell.
-fn test32_params() -> TestParams {
+fn test32_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 1,
@@ -1700,7 +1735,7 @@ fn test32_params() -> TestParams {
 }
 
 // Initial coding. XTC2 algorithm. Large system. Cubic cell.
-fn test31_params() -> TestParams {
+fn test31_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 1,
@@ -1730,7 +1765,7 @@ fn test31_params() -> TestParams {
 }
 
 // Initial coding. Intra frame triple algorithm. Large system. Cubic cell.
-fn test30_params() -> TestParams {
+fn test30_params() -> TestParams<f64> {
     TestParams {
         natoms: 5000000,
         chunky: 1,
@@ -1760,7 +1795,7 @@ fn test30_params() -> TestParams {
 }
 
 // Position coding. Autoselect algorithm. Repetitive molecule. Cubic cell.
-fn test29_params() -> TestParams {
+fn test29_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -1790,7 +1825,7 @@ fn test29_params() -> TestParams {
 }
 
 // Initial coding. Autoselect algorithm. Repetitive molecule. Cubic cell.
-fn test28_params() -> TestParams {
+fn test28_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 1,
@@ -1820,7 +1855,7 @@ fn test28_params() -> TestParams {
 }
 
 // XTC3 algorithm. Orthorhombic cell.
-fn test27_params() -> TestParams {
+fn test27_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -1850,7 +1885,7 @@ fn test27_params() -> TestParams {
 }
 
 // XTC2 algorithm. Orthorhombic cell.
-fn test26_params() -> TestParams {
+fn test26_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -1880,7 +1915,7 @@ fn test26_params() -> TestParams {
 }
 
 // Coding of velocities. BWLZH one-to-one. Cubic cell.
-fn test25_params() -> TestParams {
+fn test25_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 25,
@@ -1910,7 +1945,7 @@ fn test25_params() -> TestParams {
 }
 
 // Coding of velocities. BWLZH interframe. Cubic cell.
-fn test24_params() -> TestParams {
+fn test24_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 25,
@@ -1940,7 +1975,7 @@ fn test24_params() -> TestParams {
 }
 
 // Coding of velocities. Stopbit interframe. Cubic cell.
-fn test23_params() -> TestParams {
+fn test23_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -1970,7 +2005,7 @@ fn test23_params() -> TestParams {
 }
 
 // Coding of velocities. Triplet one-to-one. Cubic cell.
-fn test22_params() -> TestParams {
+fn test22_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -2000,7 +2035,7 @@ fn test22_params() -> TestParams {
 }
 
 // Coding of velocities. Triplet inter. Cubic cell.
-fn test21_params() -> TestParams {
+fn test21_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -2030,7 +2065,7 @@ fn test21_params() -> TestParams {
 }
 
 // Coding of velocities. Stopbit one-to-one. Cubic cell.
-fn test20_params() -> TestParams {
+fn test20_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
         chunky: 100,
@@ -2353,4 +2388,9 @@ fn test56() {
 #[test]
 fn test57() {
     algotest(&test57_params());
+}
+
+#[test]
+fn test58() {
+    algotest(&test58_params());
 }

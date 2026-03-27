@@ -1,4 +1,7 @@
-use std::{fmt::Display, ops::Mul};
+use std::{
+    fmt::Display,
+    ops::{Add, Div, Mul, Sub},
+};
 
 use log::debug;
 
@@ -46,11 +49,11 @@ pub fn precision(hi: FixT, lo: FixT) -> f64 {
     fixt_pair_to_f64(hi, lo)
 }
 
-pub(crate) fn quantize_float(
-    x: &[f32],
+pub(crate) fn quantize<T: Float>(
+    x: &[T],
     n_atoms: usize,
     n_frames: usize,
-    precision: f32,
+    precision: T,
 ) -> Result<Vec<i32>, ()> {
     let total = n_atoms
         .checked_mul(n_frames)
@@ -62,53 +65,8 @@ pub(crate) fn quantize_float(
         for i in 0..n_atoms {
             for j in 0..3 {
                 quant[iframe * n_atoms * 3 + i * 3 + j] =
-                    ((x[iframe * n_atoms * 3 + i * 3 + j] / precision) + 0.5).floor() as i32;
-            }
-        }
-    }
-
-    if verify_input_data_float(x, n_atoms, n_frames, precision).is_ok() {
-        Ok(quant)
-    } else {
-        Err(())
-    }
-}
-
-fn verify_input_data_float(
-    x: &[f32],
-    n_atoms: usize,
-    n_frames: usize,
-    precision: f32,
-) -> Result<(), ()> {
-    for iframe in 0..n_frames {
-        for i in 0..n_atoms {
-            for j in 0..3 {
-                if (x[iframe * n_atoms * 3 + i * 3 + j] / precision + 0.5).abs() >= MAX_FVAL {
-                    return Err(());
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn quantize(
-    x: &[f64],
-    n_atoms: usize,
-    n_frames: usize,
-    precision: f64,
-) -> Result<Vec<i32>, ()> {
-    let total = n_atoms
-        .checked_mul(n_frames)
-        .and_then(|v| v.checked_mul(3))
-        .expect("overflow computing quant length");
-    let mut quant = vec![0; total];
-
-    for iframe in 0..n_frames {
-        for i in 0..n_atoms {
-            for j in 0..3 {
-                quant[iframe * n_atoms * 3 + i * 3 + j] =
-                    ((x[iframe * n_atoms * 3 + i * 3 + j] / precision) + 0.5).floor() as i32;
+                    (T::to_f64(x[iframe * n_atoms * 3 + i * 3 + j] / precision) + 0.5).floor()
+                        as i32;
             }
         }
     }
@@ -120,11 +78,16 @@ pub(crate) fn quantize(
     }
 }
 
-fn verify_input_data(x: &[f64], n_atoms: usize, n_frames: usize, precision: f64) -> Result<(), ()> {
+fn verify_input_data<T: Float>(
+    x: &[T],
+    n_atoms: usize,
+    n_frames: usize,
+    precision: T,
+) -> Result<(), ()> {
     for iframe in 0..n_frames {
         for i in 0..n_atoms {
             for j in 0..3 {
-                if (x[iframe * n_atoms * 3 + i * 3 + j] / precision + 0.5).abs()
+                if (T::to_f64(x[iframe * n_atoms * 3 + i * 3 + j] / precision) + 0.5).abs()
                     >= f64::from(MAX_FVAL)
                 {
                     return Err(());
@@ -178,9 +141,19 @@ pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: u
     quant_intra
 }
 
-pub(crate) trait Float: Copy + Mul<Output = Self> + Display {
+pub(crate) trait Float:
+    Copy
+    + Mul<Output = Self>
+    + Div<Output = Self>
+    + Sub<Output = Self>
+    + Add<Output = Self>
+    + PartialEq
+    + PartialOrd
+    + Display
+{
     fn from_i32(v: i32) -> Self;
     fn from_f64(v: f64) -> Self;
+    fn to_f64(self) -> f64;
 }
 
 impl Float for f64 {
@@ -190,6 +163,9 @@ impl Float for f64 {
     fn from_f64(v: f64) -> Self {
         v
     }
+    fn to_f64(self) -> f64 {
+        self
+    }
 }
 
 impl Float for f32 {
@@ -198,6 +174,9 @@ impl Float for f32 {
     }
     fn from_f64(v: f64) -> Self {
         v as f32
+    }
+    fn to_f64(self) -> f64 {
+        self as f64
     }
 }
 
@@ -395,16 +374,21 @@ mod quant_tests {
     }
 }
 
-pub(crate) fn tng_compress_pos(
-    pos: &[f64],
+pub(crate) fn tng_compress_pos<T: Float>(
+    pos: &[T],
     n_atoms: usize,
     n_frames: usize,
-    desired_precision: f64,
+    desired_precision: T,
     speed: usize,
     algo: &mut [i32],
 ) -> Option<Vec<u8>> {
-    let (prec_hi, prec_lo) = f64_to_fixt_pair(desired_precision);
-    let quant = quantize(pos, n_atoms, n_frames, precision(prec_hi, prec_lo));
+    let (prec_hi, prec_lo) = f64_to_fixt_pair(T::to_f64(desired_precision));
+    let quant = quantize(
+        pos,
+        n_atoms,
+        n_frames,
+        T::from_f64(precision(prec_hi, prec_lo)),
+    );
     if let Ok(mut ok_quant) = quant {
         Some(tng_compress_pos_int(
             &mut ok_quant,
@@ -551,32 +535,6 @@ pub(crate) fn tng_compress_pos_int(
     }
 
     data
-}
-
-pub(crate) fn tng_compress_pos_float(
-    pos: &[f32],
-    n_atoms: usize,
-    n_frames: usize,
-    desired_precision: f32,
-    speed: usize,
-    algo: &mut [i32],
-) -> Option<Vec<u8>> {
-    let (prec_hi, prec_lo) = f64_to_fixt_pair(f64::from(desired_precision));
-    let quant = quantize_float(pos, n_atoms, n_frames, precision(prec_hi, prec_lo) as f32);
-
-    if let Ok(mut ok_quant) = quant {
-        Some(tng_compress_pos_int(
-            &mut ok_quant,
-            u32::try_from(n_atoms).expect("usize from u32"),
-            u32::try_from(n_frames).expect("usize from u32"),
-            prec_hi,
-            prec_lo,
-            speed,
-            algo,
-        ))
-    } else {
-        None
-    }
 }
 
 pub(crate) fn determine_best_pos_initial_coding(
@@ -1251,42 +1209,21 @@ pub(crate) fn determine_best_pos_coding(
     }
 }
 
-pub(crate) fn tng_compress_vel(
-    vel: &[f64],
+pub(crate) fn tng_compress_vel<T: Float>(
+    vel: &[T],
     n_atoms: usize,
     n_frames: usize,
-    desired_precision: f64,
+    desired_precision: T,
     speed: usize,
     algo: &mut [i32],
 ) -> Option<Vec<u8>> {
-    let (prec_hi, prec_lo) = f64_to_fixt_pair(desired_precision);
-    let quant = quantize(vel, n_atoms, n_frames, precision(prec_hi, prec_lo));
-    if let Ok(mut ok_quant) = quant {
-        Some(tng_compress_vel_int(
-            &mut ok_quant,
-            n_atoms,
-            n_frames,
-            prec_hi,
-            prec_lo,
-            speed,
-            algo,
-        ))
-    } else {
-        None
-    }
-}
-
-pub(crate) fn tng_compress_vel_float(
-    vel: &[f32],
-    n_atoms: usize,
-    n_frames: usize,
-    desired_precision: f32,
-    speed: usize,
-    algo: &mut [i32],
-) -> Option<Vec<u8>> {
-    let (prec_hi, prec_lo) = f64_to_fixt_pair(f64::from(desired_precision));
-    let quant = quantize_float(vel, n_atoms, n_frames, precision(prec_hi, prec_lo) as f32);
-
+    let (prec_hi, prec_lo) = f64_to_fixt_pair(T::to_f64(desired_precision));
+    let quant = quantize(
+        vel,
+        n_atoms,
+        n_frames,
+        T::from_f64(precision(prec_hi, prec_lo)),
+    );
     if let Ok(mut ok_quant) = quant {
         Some(tng_compress_vel_int(
             &mut ok_quant,
