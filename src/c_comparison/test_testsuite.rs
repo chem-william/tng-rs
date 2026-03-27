@@ -5,9 +5,11 @@
 /// in-memory file, then a read phase decompresses each chunk with C's
 /// `tng_compress_uncompress` and checks precision against re-generated data.
 use super::testsuite_data::{TestParams, genibox, genivelbox, realbox, realvelbox};
-use crate::compress::tng_compress_vel;
-use crate::compress::{Float, tng_compress_pos};
-use crate::trajectory::compress_uncompress;
+use crate::compress::{
+    Float, tng_compress_pos, tng_compress_pos_int, tng_compress_vel, tng_compress_vel_int,
+};
+use crate::fix_point::FixT;
+use crate::trajectory::{compress_uncompress, compress_uncompress_int};
 
 const FUDGE: f64 = 1.1; // 10% off target precision is acceptable.
 
@@ -40,6 +42,7 @@ struct TngFileWrite<T: Float> {
     chunky: usize,
     precision: T,
     velprecision: T,
+    integer_mode: bool,
     speed: usize,
     initial_coding: i32,
     initial_coding_parameter: i32,
@@ -49,9 +52,15 @@ struct TngFileWrite<T: Float> {
     initial_velcoding_parameter: i32,
     velcoding: i32,
     velcoding_parameter: i32,
+    pos_prec_hi: u32,
+    pos_prec_lo: u32,
+    vel_prec_hi: u32,
+    vel_prec_lo: u32,
     nframes: usize,
     pos: Vec<T>,
     vel: Vec<T>,
+    ipos: Vec<i32>,
+    ivel: Vec<i32>,
     file: Vec<u8>,
 }
 
@@ -69,6 +78,7 @@ fn open_tng_file_write<T: Float>(params: &TestParams<T>) -> TngFileWrite<T> {
         chunky: params.chunky,
         precision: params.precision,
         velprecision: params.velprecision,
+        integer_mode: false,
         initial_coding: params.initial_coding,
         initial_coding_parameter: params.initial_coding_parameter,
         coding: params.coding,
@@ -77,10 +87,51 @@ fn open_tng_file_write<T: Float>(params: &TestParams<T>) -> TngFileWrite<T> {
         initial_velcoding_parameter: params.initial_velcoding_parameter,
         velcoding: params.velcoding,
         velcoding_parameter: params.velcoding_parameter,
+        pos_prec_hi: 0,
+        pos_prec_lo: 0,
+        vel_prec_hi: 0,
+        vel_prec_lo: 0,
         speed: params.speed,
         nframes: 0,
         pos: vec![T::from_f64(0.0); params.natoms * params.chunky * 3],
+        ipos: Vec::new(),
+        ivel: Vec::new(),
         vel,
+        file,
+    }
+}
+
+fn open_tng_file_write_int<W: Float>(params: &TestParams<W>) -> TngFileWrite<W> {
+    let mut file = Vec::new();
+    write_int_le(&mut file, params.natoms as i32);
+    TngFileWrite {
+        natoms: params.natoms,
+        chunky: params.chunky,
+        precision: params.precision,
+        velprecision: params.velprecision,
+        integer_mode: true,
+        initial_coding: params.initial_coding,
+        initial_coding_parameter: params.initial_coding_parameter,
+        coding: params.coding,
+        coding_parameter: params.coding_parameter,
+        initial_velcoding: params.initial_velcoding,
+        initial_velcoding_parameter: params.initial_velcoding_parameter,
+        velcoding: params.velcoding,
+        velcoding_parameter: params.velcoding_parameter,
+        pos_prec_hi: 0,
+        pos_prec_lo: 0,
+        vel_prec_hi: 0,
+        vel_prec_lo: 0,
+        speed: params.speed,
+        nframes: 0,
+        ipos: vec![0i32; params.natoms * params.chunky * 3],
+        ivel: if params.writevel {
+            vec![0i32; params.natoms * params.chunky * 3]
+        } else {
+            Vec::new()
+        },
+        pos: Vec::new(),
+        vel: Vec::new(),
         file,
     }
 }
@@ -90,7 +141,6 @@ fn open_tng_file_write<T: Float>(params: &TestParams<T>) -> TngFileWrite<T> {
 fn flush_tng_frames<T: Float>(tng_file: &mut TngFileWrite<T>, writevel: bool) {
     let n = tng_file.natoms;
     let nframes = tng_file.nframes;
-    let pos = &tng_file.pos[..n * nframes * 3];
 
     write_int_le(&mut tng_file.file, nframes as i32);
     let mut algo = [
@@ -100,15 +150,29 @@ fn flush_tng_frames<T: Float>(tng_file: &mut TngFileWrite<T>, writevel: bool) {
         tng_file.coding_parameter,
     ];
 
-    let buf = tng_compress_pos(
-        pos,
-        n,
-        nframes,
-        tng_file.precision,
-        tng_file.speed,
-        &mut algo,
-    )
-    .expect("pos compression returned None");
+    let buf = if tng_file.integer_mode {
+        let pos_prec_hi = FixT::from(tng_file.pos_prec_hi);
+        let pos_prec_lo = FixT::from(tng_file.pos_prec_lo);
+        tng_compress_pos_int(
+            &mut tng_file.ipos[..n * nframes * 3],
+            u32::try_from(n).expect("usize fits in u32"),
+            u32::try_from(nframes).expect("usize fits in u32"),
+            pos_prec_hi,
+            pos_prec_lo,
+            tng_file.speed,
+            &mut algo,
+        )
+    } else {
+        tng_compress_pos(
+            &tng_file.pos[..n * nframes * 3],
+            n,
+            nframes,
+            tng_file.precision,
+            tng_file.speed,
+            &mut algo,
+        )
+        .expect("pos compression returned None")
+    };
     tng_file.initial_coding = algo[0];
     tng_file.initial_coding_parameter = algo[1];
     tng_file.coding = algo[2];
@@ -117,7 +181,6 @@ fn flush_tng_frames<T: Float>(tng_file: &mut TngFileWrite<T>, writevel: bool) {
     tng_file.file.extend_from_slice(&buf);
 
     if writevel {
-        let vel = &tng_file.vel[..n * nframes * 3];
         let mut algo = [
             tng_file.initial_velcoding,
             tng_file.initial_velcoding_parameter,
@@ -125,15 +188,29 @@ fn flush_tng_frames<T: Float>(tng_file: &mut TngFileWrite<T>, writevel: bool) {
             tng_file.velcoding_parameter,
         ];
 
-        let buf = tng_compress_vel(
-            vel,
-            n,
-            nframes,
-            tng_file.velprecision,
-            tng_file.speed,
-            &mut algo,
-        )
-        .expect("vel compression returned None");
+        let buf = if tng_file.integer_mode {
+            let vel_prec_hi = FixT::from(tng_file.vel_prec_hi);
+            let vel_prec_lo = FixT::from(tng_file.vel_prec_lo);
+            tng_compress_vel_int(
+                &mut tng_file.ivel[..n * nframes * 3],
+                n,
+                nframes,
+                vel_prec_hi,
+                vel_prec_lo,
+                tng_file.speed,
+                &mut algo,
+            )
+        } else {
+            tng_compress_vel(
+                &tng_file.vel[..n * nframes * 3],
+                n,
+                nframes,
+                tng_file.velprecision,
+                tng_file.speed,
+                &mut algo,
+            )
+            .expect("vel compression returned None")
+        };
         tng_file.initial_velcoding = algo[0];
         tng_file.initial_velcoding_parameter = algo[1];
         tng_file.velcoding = algo[2];
@@ -159,6 +236,29 @@ fn write_tng_file<T: Float>(tng_file: &mut TngFileWrite<T>, pos: &[T], vel: &[T]
     }
 }
 
+fn write_tng_file_int<T: Float>(
+    tng_file: &mut TngFileWrite<T>,
+    ipos: &[i32],
+    ivel: &[i32],
+    precisions: ChunkPrecisions,
+    writevel: bool,
+) {
+    let n = tng_file.natoms;
+    let offset = tng_file.nframes * n * 3;
+    tng_file.ipos[offset..offset + n * 3].copy_from_slice(&ipos[..n * 3]);
+    if writevel {
+        tng_file.ivel[offset..offset + n * 3].copy_from_slice(&ivel[..n * 3]);
+    }
+    tng_file.pos_prec_hi = precisions.pos_prec_hi;
+    tng_file.pos_prec_lo = precisions.pos_prec_lo;
+    tng_file.vel_prec_hi = precisions.vel_prec_hi;
+    tng_file.vel_prec_lo = precisions.vel_prec_lo;
+    tng_file.nframes += 1;
+    if tng_file.nframes == tng_file.chunky {
+        flush_tng_frames(tng_file, writevel);
+    }
+}
+
 /// `close_tng_file_write` from testsuite.c — flushes remaining frames.
 fn close_tng_file_write<T: Float>(tng_file: &mut TngFileWrite<T>, writevel: bool) {
     if tng_file.nframes > 0 {
@@ -177,8 +277,14 @@ struct TngFileRead<'a, T: Float> {
     natoms: usize,
     nframes: usize,
     nframes_delivered: usize,
+    pos_prec_hi: u32,
+    pos_prec_lo: u32,
+    vel_prec_hi: u32,
+    vel_prec_lo: u32,
     pos: Vec<T>,
     vel: Vec<T>,
+    ipos: Vec<i32>,
+    ivel: Vec<i32>,
 }
 
 /// `open_tng_file_read` from testsuite.c.
@@ -191,8 +297,14 @@ fn open_tng_file_read<T: Float>(data: &[u8]) -> TngFileRead<'_, T> {
         natoms,
         nframes: 0,
         nframes_delivered: 0,
+        pos_prec_hi: 0,
+        pos_prec_lo: 0,
+        vel_prec_hi: 0,
+        vel_prec_lo: 0,
         pos: Vec::new(),
         vel: Vec::new(),
+        ipos: Vec::new(),
+        ivel: Vec::new(),
     }
 }
 
@@ -239,6 +351,60 @@ fn read_tng_file<T: Float>(
     Ok(())
 }
 
+fn read_tng_file_int<T: Float>(
+    tng_file: &mut TngFileRead<'_, T>,
+    ipos: &mut [i32],
+    ivel: &mut [i32],
+    writevel: bool,
+) -> Result<ChunkPrecisions, ()> {
+    if tng_file.nframes == tng_file.nframes_delivered {
+        let nframes = read_int_le(tng_file.data, &mut tng_file.cursor).ok_or(())? as usize;
+        let nitems = read_int_le(tng_file.data, &mut tng_file.cursor).ok_or(())? as usize;
+        let blob = &tng_file.data[tng_file.cursor..tng_file.cursor + nitems];
+        tng_file.cursor += nitems;
+
+        tng_file.ipos.resize(tng_file.natoms * nframes * 3, 0);
+        if writevel {
+            tng_file.ivel.resize(tng_file.natoms * nframes * 3, 0);
+        }
+        (tng_file.pos_prec_hi, tng_file.pos_prec_lo) =
+            compress_uncompress_int(blob, &mut tng_file.ipos).map_err(|_| ())?;
+
+        if writevel {
+            let nitems = read_int_le(tng_file.data, &mut tng_file.cursor).ok_or(())? as usize;
+            let blob = &tng_file.data[tng_file.cursor..tng_file.cursor + nitems];
+            tng_file.cursor += nitems;
+            (tng_file.vel_prec_hi, tng_file.vel_prec_lo) =
+                compress_uncompress_int(blob, &mut tng_file.ivel).map_err(|_| ())?;
+        }
+        tng_file.nframes = nframes;
+        tng_file.nframes_delivered = 0;
+    }
+
+    let n = tng_file.natoms;
+    let offset = tng_file.nframes_delivered * n * 3;
+    ipos[..n * 3].copy_from_slice(&tng_file.ipos[offset..offset + n * 3]);
+    if writevel {
+        ivel[..n * 3].copy_from_slice(&tng_file.ivel[offset..offset + n * 3]);
+    }
+    tng_file.nframes_delivered += 1;
+
+    Ok(ChunkPrecisions {
+        pos_prec_hi: tng_file.pos_prec_hi,
+        pos_prec_lo: tng_file.pos_prec_lo,
+        vel_prec_hi: tng_file.vel_prec_hi,
+        vel_prec_lo: tng_file.vel_prec_lo,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct ChunkPrecisions {
+    pos_prec_hi: u32,
+    pos_prec_lo: u32,
+    vel_prec_hi: u32,
+    vel_prec_lo: u32,
+}
+
 // ---------------------------------------------------------------------------
 // equalarr (testsuite.c lines 230-256)
 // ---------------------------------------------------------------------------
@@ -261,21 +427,23 @@ fn equalarr<W: Float, R: Float>(arr1: &[W], arr2: &[R], prec: R, natoms: usize) 
     R::to_f64(maxdiff)
 }
 
-// ---------------------------------------------------------------------------
-// algotest (testsuite.c lines 717-923)
-// ---------------------------------------------------------------------------
+fn check_filesize(filesize: f64, expected_filesize: f64, label: &str) {
+    if filesize > 0.0 {
+        let diff = (filesize - expected_filesize).abs() / expected_filesize;
+        assert!(
+            diff <= 0.05,
+            "{label} {filesize} too far from expected {expected_filesize} ({:.1}%)",
+            diff * 100.0,
+        );
+    }
+}
 
-/// Mirrors `algotest()` from testsuite.c.
-/// GEN phase: generate data, compress, write to in-memory file.
-/// Read phase: re-generate data, decompress, check precision.
-fn algotest<W: Float, R: Float>(params: &TestParams<W>) {
+fn generate_tng_file<W: Float>(params: &TestParams<W>) -> Vec<u8> {
     let natoms = params.natoms;
     let mut intbox = vec![0i32; natoms * 3];
     let mut intvelbox = vec![0i32; natoms * 3];
     let mut box1 = vec![W::from_f64(0.0); natoms * 3];
     let mut velbox1 = vec![W::from_f64(0.0); natoms * 3];
-
-    // --- GEN phase ---
     let mut dumpfile = open_tng_file_write(params);
 
     for iframe in 0..params.nframes {
@@ -303,21 +471,70 @@ fn algotest<W: Float, R: Float>(params: &TestParams<W>) {
     }
 
     close_tng_file_write(&mut dumpfile, params.writevel);
+    check_filesize(
+        dumpfile.file.len() as f64,
+        params.expected_filesize,
+        "filesize",
+    );
+    dumpfile.file
+}
 
-    // GEN filesize check
-    let filesize = dumpfile.file.len() as f64;
-    if filesize > 0.0 {
-        let diff = (filesize - params.expected_filesize).abs() / params.expected_filesize;
-        assert!(
-            diff <= 0.05,
-            "filesize {filesize} too far from expected {} ({:.1}%)",
-            params.expected_filesize,
-            diff * 100.0,
+fn recompress_test(source_params: &TestParams<f64>, recompress_params: &TestParams<f64>) {
+    assert!(
+        recompress_params.recompress,
+        "recompress params must use the recompress path"
+    );
+    let source_file = generate_tng_file(source_params);
+    let expected_recompressed_filesize = source_params
+        .recompressed_filesize
+        .unwrap_or(recompress_params.expected_filesize);
+    let mut dumpfile = open_tng_file_write_int(recompress_params);
+    let mut dumpfile_recompress = open_tng_file_read::<f64>(&source_file);
+    let mut intbox = vec![0i32; source_params.natoms * 3];
+    let mut intvelbox = vec![0i32; source_params.natoms * 3];
+
+    for _ in 0..source_params.nframes {
+        let precisions = read_tng_file_int(
+            &mut dumpfile_recompress,
+            &mut intbox,
+            &mut intvelbox,
+            source_params.writevel,
+        )
+        .expect("read error");
+        write_tng_file_int(
+            &mut dumpfile,
+            &intbox,
+            &intvelbox,
+            precisions,
+            source_params.writevel,
         );
     }
 
-    // --- Read phase ---
-    let mut reader = open_tng_file_read(&dumpfile.file);
+    close_tng_file_write(&mut dumpfile, source_params.writevel);
+    check_filesize(
+        dumpfile.file.len() as f64,
+        expected_recompressed_filesize,
+        "recompressed filesize",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// algotest (testsuite.c lines 717-923)
+// ---------------------------------------------------------------------------
+
+/// Mirrors `algotest()` from testsuite.c.
+/// GEN phase: generate data, compress, write to in-memory file.
+/// Read phase: re-generate data, decompress, check precision.
+fn algotest<W: Float, R: Float>(params: &TestParams<W>) {
+    assert!(
+        !params.recompress,
+        "use recompress_test() for RECOMPRESS cases"
+    );
+    let natoms = params.natoms;
+    let mut intbox = vec![0i32; natoms * 3];
+    let mut intvelbox = vec![0i32; natoms * 3];
+    let dumpfile = generate_tng_file(params);
+    let mut reader = open_tng_file_read(&dumpfile);
     // we regenerate box1 and velbox1 to make sure they are in the R(eader) type
     let mut box1 = vec![R::from_f64(0.0); natoms * 3];
     let mut velbox1 = vec![R::from_f64(0.0); natoms * 3];
@@ -394,6 +611,7 @@ fn test1_params() -> TestParams<f64> {
         expected_filesize: 2776230.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -424,6 +642,7 @@ fn test2_params() -> TestParams<f64> {
         expected_filesize: 2796171.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -454,6 +673,7 @@ fn test3_params() -> TestParams<f64> {
         expected_filesize: 4356773.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -484,6 +704,7 @@ fn test4_params() -> TestParams<f64> {
         expected_filesize: 2572043.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -514,6 +735,7 @@ fn test5_params() -> TestParams<f64> {
         expected_filesize: 3346179.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -544,6 +766,7 @@ fn test6_params() -> TestParams<f64> {
         expected_filesize: 2736662.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -574,6 +797,7 @@ fn test7_params() -> TestParams<f64> {
         expected_filesize: 2545049.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -604,6 +828,7 @@ fn test8_params() -> TestParams<f64> {
         expected_filesize: 2544876.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -634,6 +859,7 @@ fn test9_params() -> TestParams<f64> {
         expected_filesize: 2418212.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -664,6 +890,7 @@ fn test10_params() -> TestParams<f64> {
         expected_filesize: 2728492.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -694,6 +921,7 @@ fn test11_params() -> TestParams<f64> {
         expected_filesize: 4293415.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -724,6 +952,7 @@ fn test12_params() -> TestParams<f64> {
         expected_filesize: 894421.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -754,6 +983,7 @@ fn test13_params() -> TestParams<f64> {
         expected_filesize: 840246.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -784,6 +1014,7 @@ fn test14_params() -> TestParams<f64> {
         expected_filesize: 1401016.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -814,6 +1045,7 @@ fn test15_params() -> TestParams<f64> {
         expected_filesize: 2776230.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -844,6 +1076,7 @@ fn test16_params() -> TestParams<f64> {
         expected_filesize: 838168.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -874,6 +1107,7 @@ fn test17_params() -> TestParams<f64> {
         expected_filesize: 7336171.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -904,6 +1138,7 @@ fn test18_params() -> TestParams<f64> {
         expected_filesize: 7089695.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -934,6 +1169,7 @@ fn test19_params() -> TestParams<f64> {
         expected_filesize: 208809.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -964,6 +1200,7 @@ fn test41_params() -> TestParams<f64> {
         expected_filesize: 53179342.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -994,6 +1231,7 @@ fn test42_params() -> TestParams<f64> {
         expected_filesize: 57283715.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1024,6 +1262,7 @@ fn test43_params() -> TestParams<f64> {
         expected_filesize: 3783912.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1054,6 +1293,7 @@ fn test44_params() -> TestParams<f64> {
         expected_filesize: 1436901.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1084,6 +1324,7 @@ fn test45_params() -> TestParams<f64> {
         expected_filesize: 36794379.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1114,6 +1355,7 @@ fn test46_params() -> TestParams<f64> {
         expected_filesize: 34508770.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1144,6 +1386,7 @@ fn test47_params() -> TestParams<f64> {
         expected_filesize: 53174711.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1174,6 +1417,7 @@ fn test48_params() -> TestParams<f64> {
         expected_filesize: 55638414.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1204,6 +1448,7 @@ fn test49_params() -> TestParams<f64> {
         expected_filesize: 3585605.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1234,6 +1479,7 @@ fn test50_params() -> TestParams<f64> {
         expected_filesize: 3143379.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1264,6 +1510,7 @@ fn test51_params() -> TestParams<f64> {
         expected_filesize: 2897696.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1294,6 +1541,7 @@ fn test52_params() -> TestParams<f64> {
         expected_filesize: 173083705.0,
         regular: false,
         velintmul: Some(100000),
+        ..Default::default()
     }
 }
 
@@ -1324,6 +1572,7 @@ fn test53_params() -> TestParams<f64> {
         expected_filesize: 168548573.0,
         regular: false,
         velintmul: Some(100000),
+        ..Default::default()
     }
 }
 
@@ -1354,6 +1603,7 @@ fn test54_params() -> TestParams<f64> {
         expected_filesize: 161798573.0,
         regular: false,
         velintmul: Some(100000),
+        ..Default::default()
     }
 }
 
@@ -1384,6 +1634,7 @@ fn test55_params() -> TestParams<f64> {
         expected_filesize: 166298533.0,
         regular: false,
         velintmul: Some(100000),
+        ..Default::default()
     }
 }
 
@@ -1414,6 +1665,7 @@ fn test56_params() -> TestParams<f64> {
         expected_filesize: 23390767.0,
         regular: false,
         velintmul: Some(100000),
+        ..Default::default()
     }
 }
 
@@ -1444,6 +1696,7 @@ fn test57_params() -> TestParams<f64> {
         expected_filesize: 13817974.0,
         regular: false,
         velintmul: Some(100000),
+        ..Default::default()
     }
 }
 
@@ -1474,6 +1727,7 @@ fn test58_params() -> TestParams<f32> {
         expected_filesize: 6986313.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1504,6 +1758,7 @@ fn test59_params() -> TestParams<f32> {
         expected_filesize: 6986313.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1534,6 +1789,71 @@ fn test60_params() -> TestParams<f64> {
         expected_filesize: 6986313.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
+    }
+}
+
+// Coding. Recompression test. Stage 1: Generate
+fn test61_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 100,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: true,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 698801.0,
+        regular: false,
+        velintmul: None,
+        recompressed_filesize: Some(151226.0),
+        ..Default::default()
+    }
+}
+
+// Coding. Recompression test. Stage 2: Recompress
+fn test62_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 100,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: true,
+        velprecision: 0.1,
+        initial_coding: 10,
+        initial_coding_parameter: 0,
+        coding: 10,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: 0,
+        velcoding: 8,
+        velcoding_parameter: 0,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 151226.0,
+        regular: false,
+        velintmul: None,
+        recompress: true,
+        ..Default::default()
     }
 }
 
@@ -1564,6 +1884,7 @@ fn test40_params() -> TestParams<f64> {
         expected_filesize: 63822378.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1594,6 +1915,7 @@ fn test39_params() -> TestParams<f64> {
         expected_filesize: 67631371.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1624,6 +1946,7 @@ fn test38_params() -> TestParams<f64> {
         expected_filesize: 63482016.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1654,6 +1977,7 @@ fn test37_params() -> TestParams<f64> {
         expected_filesize: 301463256.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1684,6 +2008,7 @@ fn test36_params() -> TestParams<f64> {
         expected_filesize: 290800607.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1714,6 +2039,7 @@ fn test35_params() -> TestParams<f64> {
         expected_filesize: 243598962.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1744,6 +2070,7 @@ fn test34_params() -> TestParams<f64> {
         expected_filesize: 250247372.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1774,6 +2101,7 @@ fn test33_params() -> TestParams<f64> {
         expected_filesize: 7121047.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1804,6 +2132,7 @@ fn test32_params() -> TestParams<f64> {
         expected_filesize: 31668187.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1834,6 +2163,7 @@ fn test31_params() -> TestParams<f64> {
         expected_filesize: 301463456.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1864,6 +2194,7 @@ fn test30_params() -> TestParams<f64> {
         expected_filesize: 280198420.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1894,6 +2225,7 @@ fn test29_params() -> TestParams<f64> {
         expected_filesize: 228148.0,
         regular: true,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1924,6 +2256,7 @@ fn test28_params() -> TestParams<f64> {
         expected_filesize: 1677619.0,
         regular: true,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1954,6 +2287,7 @@ fn test27_params() -> TestParams<f64> {
         expected_filesize: 282600.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -1984,6 +2318,7 @@ fn test26_params() -> TestParams<f64> {
         expected_filesize: 2861948.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -2014,6 +2349,7 @@ fn test25_params() -> TestParams<f64> {
         expected_filesize: 154753.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -2044,6 +2380,7 @@ fn test24_params() -> TestParams<f64> {
         expected_filesize: 153520.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -2074,6 +2411,7 @@ fn test23_params() -> TestParams<f64> {
         expected_filesize: 6494602.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -2104,6 +2442,7 @@ fn test22_params() -> TestParams<f64> {
         expected_filesize: 6988699.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -2134,6 +2473,7 @@ fn test21_params() -> TestParams<f64> {
         expected_filesize: 6214307.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -2164,6 +2504,7 @@ fn test20_params() -> TestParams<f64> {
         expected_filesize: 7237102.0,
         regular: false,
         velintmul: None,
+        ..Default::default()
     }
 }
 
@@ -2476,4 +2817,14 @@ fn test59() {
 #[test]
 fn test60() {
     algotest::<f64, f32>(&test60_params());
+}
+
+#[test]
+fn test61() {
+    algotest::<f64, f64>(&test61_params());
+}
+
+#[test]
+fn test62() {
+    recompress_test(&test61_params(), &test62_params());
 }

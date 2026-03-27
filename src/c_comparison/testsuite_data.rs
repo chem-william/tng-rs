@@ -28,8 +28,43 @@ pub(super) struct TestParams<T: Float> {
     pub genprecision: f64,
     pub genvelprecision: f64,
     pub expected_filesize: f64,
+    pub recompressed_filesize: Option<f64>,
     pub regular: bool,
     pub velintmul: Option<i32>,
+    pub recompress: bool,
+}
+
+impl<T: Float> Default for TestParams<T> {
+    fn default() -> Self {
+        Self {
+            natoms: 0,
+            chunky: 0,
+            nframes: 0,
+            scale: 0.0,
+            precision: T::from_f64(0.0),
+            writevel: false,
+            velprecision: T::from_f64(0.0),
+            initial_coding: 0,
+            initial_coding_parameter: 0,
+            coding: 0,
+            coding_parameter: 0,
+            velcoding: 0,
+            velcoding_parameter: 0,
+            initial_velcoding: 0,
+            initial_velcoding_parameter: 0,
+            intmin: [0; 3],
+            intmax: [0; 3],
+            speed: 0,
+            framescale: 0,
+            genprecision: 0.0,
+            genvelprecision: 0.0,
+            expected_filesize: 0.0,
+            recompressed_filesize: None,
+            regular: false,
+            velintmul: None,
+            recompress: false,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

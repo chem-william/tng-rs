@@ -8126,8 +8126,8 @@ fn interval_bytes_to_f64(bytes: &[u8], data_type: DataType) -> f64 {
     }
 }
 
-// // Uncompresses any tng compress block, positions or velocities. It determines whether it is
-// // positions or velocities from the data buffer. The return value is 0 if ok, and 1 if not.
+/// Uncompresses any tng compress block, positions or velocities. It determines whether it is
+/// positions or velocities from the data buffer. The return value is 0 if ok, and 1 if not.
 pub(crate) fn compress_uncompress<T: Float>(data: &[u8], posvel: &mut [T]) -> Result<(), TngError> {
     let magic_int = u32::from(readbufferfix(data, 4));
 
@@ -8144,9 +8144,30 @@ pub(crate) fn compress_uncompress<T: Float>(data: &[u8], posvel: &mut [T]) -> Re
     Ok(())
 }
 
+/// Uncompresses any tng compress block, positions or velocities. It determines whether it is
+/// positions or velocities from the data buffer. The return value is 0 if ok, and 1 if not.
+pub(crate) fn compress_uncompress_int(
+    data: &[u8],
+    posvel: &mut [i32],
+) -> Result<(u32, u32), TngError> {
+    let magic_int = u32::from(readbufferfix(data, 4));
+
+    match magic_int {
+        MAGIC_INT_POS => compress_uncompress_pos_int(data, posvel),
+        MAGIC_INT_VEL => compress_uncompress_vel_int(data, posvel),
+        _ => Err(TngError::Constraint(format!(
+            "found the wrong magic int when decompressing. Found {magic_int}"
+        ))),
+    }
+}
+
 fn compress_uncompress_pos<T: Float>(data: &[u8], pos: &mut [T]) -> Result<(), TngError> {
     let (_prec_hi, _prec_lo) = compress_uncompress_pos_gen(data, Some(pos), None)?;
     Ok(())
+}
+
+fn compress_uncompress_pos_int(data: &[u8], pos: &mut [i32]) -> Result<(u32, u32), TngError> {
+    compress_uncompress_pos_gen::<f64>(data, None, Some(pos))
 }
 
 fn compress_uncompress_pos_gen<T: Float>(
@@ -8229,7 +8250,7 @@ fn compress_uncompress_pos_gen<T: Float>(
                 );
             }
             if let Some(posi) = posi.as_deref_mut() {
-                posi.copy_from_slice(&quant[..natoms as usize * 3]);
+                posi[..natoms as usize * 3].copy_from_slice(&quant[..natoms as usize * 3]);
             }
         }
         TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
@@ -8301,7 +8322,7 @@ fn compress_uncompress_pos_gen<T: Float>(
                 }
                 if let Some(posi) = posi {
                     posi[natoms * 3..].copy_from_slice(
-                        &quant[natoms as usize * 3..natoms as usize * 3 * (nframes - 1)],
+                        &quant[natoms as usize * 3..natoms as usize * 3 * nframes],
                     );
                 }
             }
@@ -8337,6 +8358,11 @@ fn compress_uncompress_vel<T: Float>(data: &[u8], vel: &mut [T]) -> Result<(), T
     let (_prec_hi, _prec_lo) = compress_uncompress_vel_gen(data, Some(vel), None)?;
     Ok(())
 }
+
+fn compress_uncompress_vel_int(data: &[u8], vel: &mut [i32]) -> Result<(u32, u32), TngError> {
+    compress_uncompress_vel_gen::<f64>(data, None, Some(vel))
+}
+
 fn compress_uncompress_vel_gen<T: Float>(
     data: &[u8],
     mut veldf: Option<&mut [T]>,
@@ -8417,7 +8443,7 @@ fn compress_uncompress_vel_gen<T: Float>(
                 );
             }
             if let Some(veli) = veli.as_deref_mut() {
-                veli.copy_from_slice(&quant[..natoms as usize * 3]);
+                veli[..natoms as usize * 3].copy_from_slice(&quant[..natoms as usize * 3]);
             }
         }
         _ => {}
@@ -8473,7 +8499,7 @@ fn compress_uncompress_vel_gen<T: Float>(
                 }
                 if let Some(veli) = veli {
                     veli[natoms * 3..].copy_from_slice(
-                        &quant[natoms as usize * 3..natoms as usize * 3 * (nframes - 1)],
+                        &quant[natoms as usize * 3..natoms as usize * 3 * nframes],
                     );
                 }
             }
