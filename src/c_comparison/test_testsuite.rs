@@ -1518,6 +1518,272 @@ fn test65_params() -> TestParams<f64> {
     }
 }
 
+// Coding. Compress zeros test. positions xtc2
+fn test66_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 4465.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. positions triplet one-to-one
+fn test67_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        initial_coding: 7,
+        initial_coding_parameter: -1,
+        coding: 7,
+        coding_parameter: -1,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 6315.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. positions BWLZH intra
+fn test68_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        initial_coding: 9,
+        initial_coding_parameter: 0,
+        coding: 9,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 321.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. positions xtc3
+fn test69_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        initial_coding: 10,
+        initial_coding_parameter: 0,
+        coding: 10,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 867.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. positions stopbit interframe
+fn test70_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 1,
+        coding_parameter: -1,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 7548.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. positions triplet interframe
+fn test71_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 2,
+        coding_parameter: -1,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 6315.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. positions BWLZH inter
+fn test72_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 8,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 257.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. velocities stopbits one-to-one
+fn test73_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        writevel: true,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 3,
+        coding_parameter: -1,
+        initial_velcoding: 1,
+        initial_velcoding_parameter: -1,
+        velcoding: 1,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 13863.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. velocities triplet one-to-one
+fn test74_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        writevel: true,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 3,
+        coding_parameter: -1,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 12622.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. velocities BWLZH one-to-one
+fn test75_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        writevel: true,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 3,
+        coding_parameter: -1,
+        initial_velcoding: 9,
+        initial_velcoding_parameter: 0,
+        velcoding: 9,
+        velcoding_parameter: 0,
+        intmax: [0, 0, 0],
+        expected_filesize: 6628.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. velocities triplet inter
+fn test76_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        writevel: true,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 3,
+        coding_parameter: -1,
+        initial_velcoding: 1,
+        initial_velcoding_parameter: -1,
+        velcoding: 2,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 12630.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. velocities stopbits inter
+fn test77_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        writevel: true,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 3,
+        coding_parameter: -1,
+        initial_velcoding: 1,
+        initial_velcoding_parameter: -1,
+        velcoding: 6,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 13863.0,
+        ..Default::default()
+    }
+}
+
+// Coding. Compress zeros test. velocities BWLZH inter
+fn test78_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        writevel: true,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 3,
+        coding_parameter: -1,
+        initial_velcoding: 1,
+        initial_velcoding_parameter: -1,
+        velcoding: 8,
+        velcoding_parameter: 0,
+        intmax: [0, 0, 0],
+        expected_filesize: 6572.0,
+        ..Default::default()
+    }
+}
+
 
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
 fn test40_params() -> TestParams<f64> {
@@ -2302,4 +2568,69 @@ fn test64() {
 #[test]
 fn test65() {
     algotest::<f64, f64>(&test65_params());
+}
+
+#[test]
+fn test66() {
+    algotest::<f64, f64>(&test66_params());
+}
+
+#[test]
+fn test67() {
+    algotest::<f64, f64>(&test67_params());
+}
+
+#[test]
+fn test68() {
+    algotest::<f64, f64>(&test68_params());
+}
+
+#[test]
+fn test69() {
+    algotest::<f64, f64>(&test69_params());
+}
+
+#[test]
+fn test70() {
+    algotest::<f64, f64>(&test70_params());
+}
+
+#[test]
+fn test71() {
+    algotest::<f64, f64>(&test71_params());
+}
+
+#[test]
+fn test72() {
+    algotest::<f64, f64>(&test72_params());
+}
+
+#[test]
+fn test73() {
+    algotest::<f64, f64>(&test73_params());
+}
+
+#[test]
+fn test74() {
+    algotest::<f64, f64>(&test74_params());
+}
+
+#[test]
+fn test75() {
+    algotest::<f64, f64>(&test75_params());
+}
+
+#[test]
+fn test76() {
+    algotest::<f64, f64>(&test76_params());
+}
+
+#[test]
+fn test77() {
+    algotest::<f64, f64>(&test77_params());
+}
+
+#[test]
+fn test78() {
+    algotest::<f64, f64>(&test78_params());
 }
