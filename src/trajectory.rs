@@ -21,7 +21,7 @@ use crate::compress::{
     unquantize_intra_differences_first_frame, unquantize_intra_differences_int,
 };
 use crate::data::{Compression, Data, DataType};
-use crate::fix_point::fixt_pair_to_f64;
+use crate::fix_point::{FixT, fixt_pair_to_f64};
 use crate::gen_block::{BlockID, GenBlock};
 use crate::molecule::Molecule;
 use crate::particle_mapping::ParticleMapping;
@@ -8149,7 +8149,7 @@ pub(crate) fn compress_uncompress<T: Float>(data: &[u8], posvel: &mut [T]) -> Re
 pub(crate) fn compress_uncompress_int(
     data: &[u8],
     posvel: &mut [i32],
-) -> Result<(u32, u32), TngError> {
+) -> Result<(FixT, FixT), TngError> {
     let magic_int = u32::from(readbufferfix(data, 4));
 
     match magic_int {
@@ -8161,12 +8161,29 @@ pub(crate) fn compress_uncompress_int(
     }
 }
 
+pub(crate) fn compress_int_to_real<T: Float>(
+    posvel_int: &[i32],
+    prec_hi: FixT,
+    prec_lo: FixT,
+    n_atoms: usize,
+    n_frames: usize,
+    posvel_real: &mut [T],
+) {
+    unquantize(
+        posvel_real,
+        n_atoms,
+        n_frames,
+        T::from_f64(fixt_pair_to_f64(prec_hi, prec_lo)),
+        posvel_int,
+    );
+}
+
 fn compress_uncompress_pos<T: Float>(data: &[u8], pos: &mut [T]) -> Result<(), TngError> {
     let (_prec_hi, _prec_lo) = compress_uncompress_pos_gen(data, Some(pos), None)?;
     Ok(())
 }
 
-fn compress_uncompress_pos_int(data: &[u8], pos: &mut [i32]) -> Result<(u32, u32), TngError> {
+fn compress_uncompress_pos_int(data: &[u8], pos: &mut [i32]) -> Result<(FixT, FixT), TngError> {
     compress_uncompress_pos_gen::<f64>(data, None, Some(pos))
 }
 
@@ -8174,7 +8191,7 @@ fn compress_uncompress_pos_gen<T: Float>(
     data: &[u8],
     mut posdf: Option<&mut [T]>,
     mut posi: Option<&mut [i32]>,
-) -> Result<(u32, u32), TngError> {
+) -> Result<(FixT, FixT), TngError> {
     let mut bufloc = 0;
 
     // Magic integer for positions
@@ -8351,7 +8368,7 @@ fn compress_uncompress_pos_gen<T: Float>(
         }
     }
 
-    Ok((u32::from(prec_hi), u32::from(prec_lo)))
+    Ok((prec_hi, prec_lo))
 }
 
 fn compress_uncompress_vel<T: Float>(data: &[u8], vel: &mut [T]) -> Result<(), TngError> {
@@ -8359,7 +8376,7 @@ fn compress_uncompress_vel<T: Float>(data: &[u8], vel: &mut [T]) -> Result<(), T
     Ok(())
 }
 
-fn compress_uncompress_vel_int(data: &[u8], vel: &mut [i32]) -> Result<(u32, u32), TngError> {
+fn compress_uncompress_vel_int(data: &[u8], vel: &mut [i32]) -> Result<(FixT, FixT), TngError> {
     compress_uncompress_vel_gen::<f64>(data, None, Some(vel))
 }
 
@@ -8367,7 +8384,7 @@ fn compress_uncompress_vel_gen<T: Float>(
     data: &[u8],
     mut veldf: Option<&mut [T]>,
     mut veli: Option<&mut [i32]>,
-) -> Result<(u32, u32), TngError> {
+) -> Result<(FixT, FixT), TngError> {
     let mut bufloc = 0;
 
     // Magic integer for velocities
@@ -8507,5 +8524,5 @@ fn compress_uncompress_vel_gen<T: Float>(
         }
     }
 
-    Ok((u32::from(prec_hi), u32::from(prec_lo)))
+    Ok((prec_hi, prec_lo))
 }

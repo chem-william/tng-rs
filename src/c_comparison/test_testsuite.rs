@@ -9,7 +9,7 @@ use crate::compress::{
     Float, tng_compress_pos, tng_compress_pos_int, tng_compress_vel, tng_compress_vel_int,
 };
 use crate::fix_point::FixT;
-use crate::trajectory::{compress_uncompress, compress_uncompress_int};
+use crate::trajectory::{compress_int_to_real, compress_uncompress, compress_uncompress_int};
 
 const FUDGE: f64 = 1.1; // 10% off target precision is acceptable.
 
@@ -52,10 +52,10 @@ struct TngFileWrite<T: Float> {
     initial_velcoding_parameter: i32,
     velcoding: i32,
     velcoding_parameter: i32,
-    pos_prec_hi: u32,
-    pos_prec_lo: u32,
-    vel_prec_hi: u32,
-    vel_prec_lo: u32,
+    pos_prec_hi: FixT,
+    pos_prec_lo: FixT,
+    vel_prec_hi: FixT,
+    vel_prec_lo: FixT,
     nframes: usize,
     pos: Vec<T>,
     vel: Vec<T>,
@@ -87,10 +87,10 @@ fn open_tng_file_write<T: Float>(params: &TestParams<T>) -> TngFileWrite<T> {
         initial_velcoding_parameter: params.initial_velcoding_parameter,
         velcoding: params.velcoding,
         velcoding_parameter: params.velcoding_parameter,
-        pos_prec_hi: 0,
-        pos_prec_lo: 0,
-        vel_prec_hi: 0,
-        vel_prec_lo: 0,
+        pos_prec_hi: FixT::from(0),
+        pos_prec_lo: FixT::from(0),
+        vel_prec_hi: FixT::from(0),
+        vel_prec_lo: FixT::from(0),
         speed: params.speed,
         nframes: 0,
         pos: vec![T::from_f64(0.0); params.natoms * params.chunky * 3],
@@ -118,10 +118,10 @@ fn open_tng_file_write_int<W: Float>(params: &TestParams<W>) -> TngFileWrite<W> 
         initial_velcoding_parameter: params.initial_velcoding_parameter,
         velcoding: params.velcoding,
         velcoding_parameter: params.velcoding_parameter,
-        pos_prec_hi: 0,
-        pos_prec_lo: 0,
-        vel_prec_hi: 0,
-        vel_prec_lo: 0,
+        pos_prec_hi: FixT::from(0),
+        pos_prec_lo: FixT::from(0),
+        vel_prec_hi: FixT::from(0),
+        vel_prec_lo: FixT::from(0),
         speed: params.speed,
         nframes: 0,
         ipos: vec![0i32; params.natoms * params.chunky * 3],
@@ -277,10 +277,10 @@ struct TngFileRead<'a, T: Float> {
     natoms: usize,
     nframes: usize,
     nframes_delivered: usize,
-    pos_prec_hi: u32,
-    pos_prec_lo: u32,
-    vel_prec_hi: u32,
-    vel_prec_lo: u32,
+    pos_prec_hi: FixT,
+    pos_prec_lo: FixT,
+    vel_prec_hi: FixT,
+    vel_prec_lo: FixT,
     pos: Vec<T>,
     vel: Vec<T>,
     ipos: Vec<i32>,
@@ -297,10 +297,10 @@ fn open_tng_file_read<T: Float>(data: &[u8]) -> TngFileRead<'_, T> {
         natoms,
         nframes: 0,
         nframes_delivered: 0,
-        pos_prec_hi: 0,
-        pos_prec_lo: 0,
-        vel_prec_hi: 0,
-        vel_prec_lo: 0,
+        pos_prec_hi: FixT::from(0),
+        pos_prec_lo: FixT::from(0),
+        vel_prec_hi: FixT::from(0),
+        vel_prec_lo: FixT::from(0),
         pos: Vec::new(),
         vel: Vec::new(),
         ipos: Vec::new(),
@@ -399,10 +399,10 @@ fn read_tng_file_int<T: Float>(
 
 #[derive(Clone, Copy)]
 struct ChunkPrecisions {
-    pos_prec_hi: u32,
-    pos_prec_lo: u32,
-    vel_prec_hi: u32,
-    vel_prec_lo: u32,
+    pos_prec_hi: FixT,
+    pos_prec_lo: FixT,
+    vel_prec_hi: FixT,
+    vel_prec_lo: FixT,
 }
 
 // ---------------------------------------------------------------------------
@@ -562,7 +562,32 @@ fn algotest<W: Float, R: Float>(params: &TestParams<W>) {
                 params.scale,
             );
         }
-        read_tng_file(&mut reader, &mut box2, &mut velbox2, params.writevel).expect("read error");
+        if params.int_to_double {
+            let precisions =
+                read_tng_file_int(&mut reader, &mut intbox, &mut intvelbox, params.writevel)
+                    .expect("read error");
+            compress_int_to_real(
+                &intbox,
+                precisions.pos_prec_hi,
+                precisions.pos_prec_lo,
+                params.natoms,
+                1,
+                &mut box2,
+            );
+            if params.writevel {
+                compress_int_to_real(
+                    &intvelbox,
+                    precisions.vel_prec_hi,
+                    precisions.vel_prec_lo,
+                    params.natoms,
+                    1,
+                    &mut velbox2,
+                );
+            }
+        } else {
+            read_tng_file(&mut reader, &mut box2, &mut velbox2, params.writevel)
+                .expect("read error");
+        }
         equalarr(
             &box1,
             &box2,
@@ -1426,16 +1451,29 @@ fn test62_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 8,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 151226.0,
-        regular: false,
-        velintmul: None,
         recompress: true,
+        ..Default::default()
+    }
+}
+
+// Coding. Read int and convert to double
+fn test63_params() -> TestParams<f64> {
+    TestParams {
+        nframes: 100,
+        writevel: true,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [10000, 10000, 10000],
+        expected_filesize: 698801.0,
+        int_to_double: true,
         ..Default::default()
     }
 }
@@ -2208,4 +2246,9 @@ fn test61() {
 #[test]
 fn test62() {
     recompress_test(&test61_params(), &test62_params());
+}
+
+#[test]
+fn test63() {
+    algotest::<f64, f64>(&test63_params());
 }
