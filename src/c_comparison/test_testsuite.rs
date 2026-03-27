@@ -979,6 +979,36 @@ fn test42_params() -> TestParams {
     }
 }
 
+// Initial coding. XTC3 algorithm. High accuracy. Cubic cell.
+fn test43_params() -> TestParams {
+    TestParams {
+        natoms: 100000,
+        chunky: 1,
+        nframes: 10,
+        scale: 0.5,
+        precision: 1e-8,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: 10,
+        initial_coding_parameter: 0,
+        coding: 1,
+        coding_parameter: -1,
+        initial_velcoding: 0,
+        initial_velcoding_parameter: 0,
+        velcoding: 4,
+        velcoding_parameter: 0,
+        intmin: [0, 0, 0],
+        intmax: [1610612736, 1610612736, 1610612736],
+        speed: 5,
+        framescale: 1,
+        genprecision: 1e-8,
+        genvelprecision: 0.1,
+        expected_filesize: 3783912.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
 fn test40_params() -> TestParams {
     TestParams {
@@ -1828,4 +1858,9 @@ fn test41() {
 #[test]
 fn test42() {
     algotest(&test42_params());
+}
+
+#[test]
+fn test43() {
+    algotest(&test43_params());
 }
