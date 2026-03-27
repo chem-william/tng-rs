@@ -1498,6 +1498,27 @@ fn test64_params() -> TestParams<f32> {
     }
 }
 
+// Coding. Compress zeros test. positions intra frame triple
+fn test65_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 100,
+        nframes: 100,
+        scale: 0.0,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 3,
+        coding_parameter: -1,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [0, 0, 0],
+        expected_filesize: 6315.0,
+        ..Default::default()
+    }
+}
+
+
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
 fn test40_params() -> TestParams<f64> {
     TestParams {
@@ -2276,4 +2297,9 @@ fn test63() {
 #[test]
 fn test64() {
     algotest::<f32, f32>(&test64_params());
+}
+
+#[test]
+fn test65() {
+    algotest::<f64, f64>(&test65_params());
 }
