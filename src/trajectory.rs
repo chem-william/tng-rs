@@ -97,7 +97,7 @@ pub struct BlockMetaInfo {
 }
 
 #[derive(Debug)]
-pub(crate) struct Trajectory {
+pub struct Trajectory {
     /// Path to the input trajectory file.
     pub input_file_path: Option<PathBuf>,
     /// Open handle to the input file (None until opened).
@@ -6987,12 +6987,12 @@ impl Trajectory {
     }
 
     /// C API: `tng_num_molecule_types_get`.
-    pub(crate) fn num_molecules_types_get(&self) -> i64 {
+    pub fn num_molecule_types_get(&self) -> i64 {
         self.n_molecules
     }
 
     /// C API: `tng_num_molecules_get`.
-    pub(crate) fn num_molecules_get(&self) -> i64 {
+    pub fn num_molecules_get(&self) -> i64 {
         let cnt_list = self.molecule_cnt_list_get();
 
         cnt_list.iter().take(self.n_molecules as usize).sum()
@@ -7021,7 +7021,7 @@ impl Trajectory {
     /// # Errors
     ///
     /// Returns [`TngError::NotFound`] if the molecule cannot be found
-    pub(crate) fn molecule_find(
+    pub fn molecule_find(
         &self,
         name: Option<&str>,
         nr: Option<i64>,
@@ -7376,7 +7376,7 @@ impl Trajectory {
         Ok(n_frames)
     }
 
-    pub(crate) fn util_pos_read_range(
+    pub fn util_pos_read_range(
         &mut self,
         first_frame: i64,
         last_frame: i64,
@@ -7394,7 +7394,7 @@ impl Trajectory {
                 USE_HASH,
             )?;
         if data_type != DataType::Float {
-            return Err(TngError::Constraint("data was float".to_string()));
+            return Err(TngError::Constraint("data was not float".to_string()));
         }
 
         Ok((positions, stride_length))
@@ -8103,6 +8103,53 @@ impl Trajectory {
             traj_dest.n_molecules += 1;
             traj_dest.molecule_cnt_set(i, self.molecule_cnt_list[i]);
         }
+    }
+
+    fn get_property(&mut self, block_id: BlockID) -> Result<(Vec<f32>, i64), TngError> {
+        let n_frames = self.num_frames_get().expect("there has to be Some frames");
+        let (property, _n_particles, _n_values_per_frame, stride_length, data_type) =
+            self.particle_data_vector_interval_get(block_id, 0, n_frames - 1, USE_HASH)?;
+        if data_type != DataType::Float {
+            return Err(TngError::Constraint("data was not float".to_string()));
+        }
+        Ok((
+            property.into_iter().map(|x| x as f32).collect(),
+            stride_length,
+        ))
+    }
+
+    pub fn util_pos_read(&mut self) -> Result<(Vec<f32>, i64), TngError> {
+        self.get_property(BlockID::TrajPositions)
+    }
+
+    pub fn util_vel_read(&mut self) -> Result<(Vec<f32>, i64), TngError> {
+        self.get_property(BlockID::TrajVelocities)
+    }
+
+    pub fn util_force_read(&mut self) -> Result<(Vec<f32>, i64), TngError> {
+        self.get_property(BlockID::TrajForces)
+    }
+
+    pub fn util_box_shape_read(&mut self) -> Result<(Vec<f32>, i64), TngError> {
+        let n_frames = self.num_frames_get().expect("there has to be Some frames");
+        let (values, _n_particles, _n_values_per_frame, stride_length, data_type) = self
+            .gen_data_vector_interval_get(
+                BlockID::TrajBoxShape,
+                false,
+                0,
+                n_frames - 1,
+                USE_HASH,
+            )?;
+        if data_type != DataType::Float {
+            return Err(TngError::Constraint(format!(
+                "data type was not Float, but {data_type:?}"
+            )));
+        }
+
+        Ok((
+            values.into_iter().map(|x| x as f32).collect(),
+            stride_length,
+        ))
     }
 }
 

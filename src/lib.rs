@@ -39,7 +39,7 @@ mod mtf;
 mod particle_mapping;
 mod residue;
 mod rle;
-mod trajectory;
+pub mod trajectory;
 mod trajectory_frame_set;
 mod utils;
 mod widemuldiv;
@@ -111,7 +111,7 @@ mod integration {
 
     /// C API: tng_test_molecules() in tng_io_testing.c:141
     fn check_molecules(traj: &mut Trajectory) {
-        let cnt = traj.num_molecules_types_get();
+        let cnt = traj.num_molecule_types_get();
         assert_eq!(cnt, 1, "Molecule reading error");
 
         let cnt = traj.num_molecules_get();
