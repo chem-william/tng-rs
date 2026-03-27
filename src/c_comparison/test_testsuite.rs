@@ -243,22 +243,22 @@ fn read_tng_file<T: Float>(
 // equalarr (testsuite.c lines 230-256)
 // ---------------------------------------------------------------------------
 
-fn equalarr<T: Float>(arr1: &[T], arr2: &[T], prec: T, natoms: usize) -> f64 {
-    let mut maxdiff = T::from_f64(0.0);
+fn equalarr<W: Float, R: Float>(arr1: &[W], arr2: &[R], prec: R, natoms: usize) -> f64 {
+    let mut maxdiff = R::from_f64(0.0);
     for i in 0..natoms {
         for j in 0..3 {
-            let diff = T::from_f64(T::to_f64(arr1[i * 3 + j] - arr2[i * 3 + j]).abs());
+            let diff = R::from_f64((W::to_f64(arr1[i * 3 + j]) - R::to_f64(arr2[i * 3 + j])).abs());
             if diff > maxdiff {
                 maxdiff = diff;
             }
         }
     }
     assert!(
-        maxdiff <= prec * T::from_f64(0.5 * FUDGE),
+        maxdiff <= prec * R::from_f64(0.5 * FUDGE),
         "precision exceeded: max_diff={maxdiff}, tolerance={}",
-        prec * T::from_f64(0.5 * FUDGE),
+        prec * R::from_f64(0.5 * FUDGE),
     );
-    T::to_f64(maxdiff)
+    R::to_f64(maxdiff)
 }
 
 // ---------------------------------------------------------------------------
@@ -268,12 +268,12 @@ fn equalarr<T: Float>(arr1: &[T], arr2: &[T], prec: T, natoms: usize) -> f64 {
 /// Mirrors `algotest()` from testsuite.c.
 /// GEN phase: generate data, compress, write to in-memory file.
 /// Read phase: re-generate data, decompress, check precision.
-fn algotest<T: Float>(params: &TestParams<T>) {
+fn algotest<W: Float, R: Float>(params: &TestParams<W>) {
     let natoms = params.natoms;
     let mut intbox = vec![0i32; natoms * 3];
     let mut intvelbox = vec![0i32; natoms * 3];
-    let mut box1 = vec![T::from_f64(0.0); natoms * 3];
-    let mut velbox1 = vec![T::from_f64(0.0); natoms * 3];
+    let mut box1 = vec![W::from_f64(0.0); natoms * 3];
+    let mut velbox1 = vec![W::from_f64(0.0); natoms * 3];
 
     // --- GEN phase ---
     let mut dumpfile = open_tng_file_write(params);
@@ -318,8 +318,11 @@ fn algotest<T: Float>(params: &TestParams<T>) {
 
     // --- Read phase ---
     let mut reader = open_tng_file_read(&dumpfile.file);
-    let mut box2 = vec![T::from_f64(0.0); natoms * 3];
-    let mut velbox2 = vec![T::from_f64(0.0); natoms * 3];
+    // we regenerate box1 and velbox1 to make sure they are in the R(eader) type
+    let mut box1 = vec![R::from_f64(0.0); natoms * 3];
+    let mut velbox1 = vec![R::from_f64(0.0); natoms * 3];
+    let mut box2 = vec![R::from_f64(0.0); natoms * 3];
+    let mut velbox2 = vec![R::from_f64(0.0); natoms * 3];
 
     for iframe in 0..params.nframes {
         genibox(&mut intbox, iframe as i32, params);
@@ -343,9 +346,19 @@ fn algotest<T: Float>(params: &TestParams<T>) {
             );
         }
         read_tng_file(&mut reader, &mut box2, &mut velbox2, params.writevel).expect("read error");
-        equalarr(&box1, &box2, params.precision, natoms);
+        equalarr(
+            &box1,
+            &box2,
+            R::from_f64(W::to_f64(params.precision)),
+            natoms,
+        );
         if params.writevel {
-            equalarr(&velbox1, &velbox2, params.velprecision, natoms);
+            equalarr(
+                &velbox1,
+                &velbox2,
+                R::from_f64(W::to_f64(params.velprecision)),
+                natoms,
+            );
         }
     }
 }
@@ -1464,6 +1477,36 @@ fn test58_params() -> TestParams<f32> {
     }
 }
 
+// Coding. Test write float, read double
+fn test59_params() -> TestParams<f32> {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: true,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 6986313.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
 fn test40_params() -> TestParams<f64> {
     TestParams {
@@ -2096,301 +2139,306 @@ fn test20_params() -> TestParams<f64> {
 
 #[test]
 fn test1() {
-    algotest(&test1_params());
+    algotest::<f64, f64>(&test1_params());
 }
 
 #[test]
 fn test2() {
-    algotest(&test2_params());
+    algotest::<f64, f64>(&test2_params());
 }
 
 #[test]
 fn test3() {
-    algotest(&test3_params());
+    algotest::<f64, f64>(&test3_params());
 }
 
 #[test]
 fn test4() {
-    algotest(&test4_params());
+    algotest::<f64, f64>(&test4_params());
 }
 
 #[test]
 fn test5() {
-    algotest(&test5_params());
+    algotest::<f64, f64>(&test5_params());
 }
 
 #[test]
 fn test6() {
-    algotest(&test6_params());
+    algotest::<f64, f64>(&test6_params());
 }
 
 #[test]
 fn test7() {
-    algotest(&test7_params());
+    algotest::<f64, f64>(&test7_params());
 }
 
 #[test]
 fn test8() {
-    algotest(&test8_params());
+    algotest::<f64, f64>(&test8_params());
 }
 
 #[test]
 fn test9() {
-    algotest(&test9_params());
+    algotest::<f64, f64>(&test9_params());
 }
 
 #[test]
 fn test10() {
-    algotest(&test10_params());
+    algotest::<f64, f64>(&test10_params());
 }
 
 #[test]
 fn test11() {
-    algotest(&test11_params());
+    algotest::<f64, f64>(&test11_params());
 }
 
 #[test]
 fn test12() {
-    algotest(&test12_params());
+    algotest::<f64, f64>(&test12_params());
 }
 
 #[test]
 fn test13() {
-    algotest(&test13_params());
+    algotest::<f64, f64>(&test13_params());
 }
 
 #[test]
 fn test14() {
-    algotest(&test14_params());
+    algotest::<f64, f64>(&test14_params());
 }
 
 #[test]
 fn test15() {
-    algotest(&test15_params());
+    algotest::<f64, f64>(&test15_params());
 }
 
 #[test]
 fn test16() {
-    algotest(&test16_params());
+    algotest::<f64, f64>(&test16_params());
 }
 
 #[test]
 fn test17() {
-    algotest(&test17_params());
+    algotest::<f64, f64>(&test17_params());
 }
 
 #[test]
 fn test18() {
-    algotest(&test18_params());
+    algotest::<f64, f64>(&test18_params());
 }
 
 #[test]
 fn test19() {
-    algotest(&test19_params());
+    algotest::<f64, f64>(&test19_params());
 }
 
 #[test]
 fn test20() {
-    algotest(&test20_params());
+    algotest::<f64, f64>(&test20_params());
 }
 
 #[test]
 fn test21() {
-    algotest(&test21_params());
+    algotest::<f64, f64>(&test21_params());
 }
 
 #[test]
 fn test22() {
-    algotest(&test22_params());
+    algotest::<f64, f64>(&test22_params());
 }
 
 #[test]
 fn test23() {
-    algotest(&test23_params());
+    algotest::<f64, f64>(&test23_params());
 }
 
 #[test]
 fn test24() {
-    algotest(&test24_params());
+    algotest::<f64, f64>(&test24_params());
 }
 
 #[test]
 fn test25() {
-    algotest(&test25_params());
+    algotest::<f64, f64>(&test25_params());
 }
 
 #[test]
 fn test26() {
-    algotest(&test26_params());
+    algotest::<f64, f64>(&test26_params());
 }
 
 #[test]
 fn test27() {
-    algotest(&test27_params());
+    algotest::<f64, f64>(&test27_params());
 }
 
 #[test]
 fn test28() {
-    algotest(&test28_params());
+    algotest::<f64, f64>(&test28_params());
 }
 
 #[test]
 fn test29() {
-    algotest(&test29_params());
+    algotest::<f64, f64>(&test29_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test30() {
-    algotest(&test30_params());
+    algotest::<f64, f64>(&test30_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test31() {
-    algotest(&test31_params());
+    algotest::<f64, f64>(&test31_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test32() {
-    algotest(&test32_params());
+    algotest::<f64, f64>(&test32_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test33() {
-    algotest(&test33_params());
+    algotest::<f64, f64>(&test33_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test34() {
-    algotest(&test34_params());
+    algotest::<f64, f64>(&test34_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test35() {
-    algotest(&test35_params());
+    algotest::<f64, f64>(&test35_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test36() {
-    algotest(&test36_params());
+    algotest::<f64, f64>(&test36_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test37() {
-    algotest(&test37_params());
+    algotest::<f64, f64>(&test37_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test38() {
-    algotest(&test38_params());
+    algotest::<f64, f64>(&test38_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test39() {
-    algotest(&test39_params());
+    algotest::<f64, f64>(&test39_params());
 }
 
 #[test]
 #[ignore = "5M atoms"]
 fn test40() {
-    algotest(&test40_params());
+    algotest::<f64, f64>(&test40_params());
 }
 
 #[test]
 fn test41() {
-    algotest(&test41_params());
+    algotest::<f64, f64>(&test41_params());
 }
 
 #[test]
 fn test42() {
-    algotest(&test42_params());
+    algotest::<f64, f64>(&test42_params());
 }
 
 #[test]
 fn test43() {
-    algotest(&test43_params());
+    algotest::<f64, f64>(&test43_params());
 }
 
 #[test]
 fn test44() {
-    algotest(&test44_params());
+    algotest::<f64, f64>(&test44_params());
 }
 
 #[test]
 fn test45() {
-    algotest(&test45_params());
+    algotest::<f64, f64>(&test45_params());
 }
 
 #[test]
 fn test46() {
-    algotest(&test46_params());
+    algotest::<f64, f64>(&test46_params());
 }
 
 #[test]
 fn test47() {
-    algotest(&test47_params());
+    algotest::<f64, f64>(&test47_params());
 }
 
 #[test]
 fn test48() {
-    algotest(&test48_params());
+    algotest::<f64, f64>(&test48_params());
 }
 
 #[test]
 fn test49() {
-    algotest(&test49_params());
+    algotest::<f64, f64>(&test49_params());
 }
 
 #[test]
 fn test50() {
-    algotest(&test50_params());
+    algotest::<f64, f64>(&test50_params());
 }
 
 #[test]
 fn test51() {
-    algotest(&test51_params());
+    algotest::<f64, f64>(&test51_params());
 }
 
 #[test]
 fn test52() {
-    algotest(&test52_params());
+    algotest::<f64, f64>(&test52_params());
 }
 
 #[test]
 fn test53() {
-    algotest(&test53_params());
+    algotest::<f64, f64>(&test53_params());
 }
 
 #[test]
 fn test54() {
-    algotest(&test54_params());
+    algotest::<f64, f64>(&test54_params());
 }
 
 #[test]
 fn test55() {
-    algotest(&test55_params());
+    algotest::<f64, f64>(&test55_params());
 }
 
 #[test]
 fn test56() {
-    algotest(&test56_params());
+    algotest::<f64, f64>(&test56_params());
 }
 
 #[test]
 fn test57() {
-    algotest(&test57_params());
+    algotest::<f64, f64>(&test57_params());
 }
 
 #[test]
 fn test58() {
-    algotest(&test58_params());
+    algotest::<f32, f32>(&test58_params());
+}
+
+#[test]
+fn test59() {
+    algotest::<f32, f64>(&test59_params());
 }
