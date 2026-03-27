@@ -151,8 +151,8 @@ fn flush_tng_frames<T: Float>(tng_file: &mut TngFileWrite<T>, writevel: bool) {
     ];
 
     let buf = if tng_file.integer_mode {
-        let pos_prec_hi = FixT::from(tng_file.pos_prec_hi);
-        let pos_prec_lo = FixT::from(tng_file.pos_prec_lo);
+        let pos_prec_hi = tng_file.pos_prec_hi;
+        let pos_prec_lo = tng_file.pos_prec_lo;
         tng_compress_pos_int(
             &mut tng_file.ipos[..n * nframes * 3],
             u32::try_from(n).expect("usize fits in u32"),
@@ -189,8 +189,8 @@ fn flush_tng_frames<T: Float>(tng_file: &mut TngFileWrite<T>, writevel: bool) {
         ];
 
         let buf = if tng_file.integer_mode {
-            let vel_prec_hi = FixT::from(tng_file.vel_prec_hi);
-            let vel_prec_lo = FixT::from(tng_file.vel_prec_lo);
+            let vel_prec_hi = tng_file.vel_prec_hi;
+            let vel_prec_lo = tng_file.vel_prec_lo;
             tng_compress_vel_int(
                 &mut tng_file.ivel[..n * nframes * 3],
                 n,
@@ -562,7 +562,7 @@ fn algotest<W: Float, R: Float>(params: &TestParams<W>) {
                 params.scale,
             );
         }
-        if params.int_to_double {
+        if params.int_to_double || params.int_to_float {
             let precisions =
                 read_tng_file_int(&mut reader, &mut intbox, &mut intvelbox, params.writevel)
                     .expect("read error");
@@ -1478,6 +1478,26 @@ fn test63_params() -> TestParams<f64> {
     }
 }
 
+// Coding. Read int and convert to float
+fn test64_params() -> TestParams<f32> {
+    TestParams {
+        nframes: 100,
+        writevel: true,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmax: [10000, 10000, 10000],
+        expected_filesize: 698801.0,
+        int_to_float: true,
+        ..Default::default()
+    }
+}
+
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
 fn test40_params() -> TestParams<f64> {
     TestParams {
@@ -2251,4 +2271,9 @@ fn test62() {
 #[test]
 fn test63() {
     algotest::<f64, f64>(&test63_params());
+}
+
+#[test]
+fn test64() {
+    algotest::<f32, f32>(&test64_params());
 }

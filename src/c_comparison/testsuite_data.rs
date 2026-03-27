@@ -33,6 +33,7 @@ pub(super) struct TestParams<T: Float> {
     pub velintmul: Option<i32>,
     pub recompress: bool,
     pub int_to_double: bool,
+    pub int_to_float: bool,
 }
 
 impl<T: Float> Default for TestParams<T> {
@@ -65,6 +66,7 @@ impl<T: Float> Default for TestParams<T> {
             velintmul: None,
             recompress: false,
             int_to_double: false,
+            int_to_float: false,
         }
     }
 }
