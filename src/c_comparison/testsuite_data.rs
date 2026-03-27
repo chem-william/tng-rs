@@ -32,18 +32,19 @@ pub(super) struct TestParams<T: Float> {
     pub regular: bool,
     pub velintmul: Option<i32>,
     pub recompress: bool,
+    pub int_to_double: bool,
 }
 
 impl<T: Float> Default for TestParams<T> {
     fn default() -> Self {
         Self {
-            natoms: 0,
-            chunky: 0,
-            nframes: 0,
-            scale: 0.0,
-            precision: T::from_f64(0.0),
+            natoms: 1000,
+            chunky: 100,
+            nframes: 1000,
+            scale: 0.1,
+            precision: T::from_f64(0.01),
             writevel: false,
-            velprecision: T::from_f64(0.0),
+            velprecision: T::from_f64(0.1),
             initial_coding: 0,
             initial_coding_parameter: 0,
             coding: 0,
@@ -54,15 +55,16 @@ impl<T: Float> Default for TestParams<T> {
             initial_velcoding_parameter: 0,
             intmin: [0; 3],
             intmax: [0; 3],
-            speed: 0,
-            framescale: 0,
-            genprecision: 0.0,
-            genvelprecision: 0.0,
+            speed: 5,
+            framescale: 1,
+            genprecision: 0.01,
+            genvelprecision: 0.1,
             expected_filesize: 0.0,
             recompressed_filesize: None,
             regular: false,
             velintmul: None,
             recompress: false,
+            int_to_double: false,
         }
     }
 }

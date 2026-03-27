@@ -587,13 +587,7 @@ fn algotest<W: Float, R: Float>(params: &TestParams<W>) {
 // Initial coding. Intra frame triple algorithm. Cubic cell
 fn test1_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3, // TRIPLET_INTRA
         initial_coding_parameter: -1,
         coding: 1, // TRIPLET_INTER
@@ -602,15 +596,8 @@ fn test1_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2776230.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -618,13 +605,7 @@ fn test1_params() -> TestParams<f64> {
 // Initial coding. XTC2 algorithm. Cubic cell
 fn test2_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 1,
@@ -633,15 +614,8 @@ fn test2_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2796171.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -649,13 +623,7 @@ fn test2_params() -> TestParams<f64> {
 // Initial coding. Triplet one-to-one algorithm . Cubic cell
 fn test3_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 7,
         initial_coding_parameter: -1,
         coding: 1,
@@ -664,15 +632,8 @@ fn test3_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 4356773.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -680,13 +641,7 @@ fn test3_params() -> TestParams<f64> {
 // Initial coding. BWLZH intra algorithm. Cubic cell
 fn test4_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 9,
         initial_coding_parameter: 0,
         coding: 1,
@@ -695,15 +650,8 @@ fn test4_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2572043.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -711,13 +659,7 @@ fn test4_params() -> TestParams<f64> {
 // Initial coding. XTC3 algorithm. Cubic cell
 fn test5_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 10,
         initial_coding_parameter: 0,
         coding: 1,
@@ -726,15 +668,8 @@ fn test5_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 3346179.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -742,13 +677,6 @@ fn test5_params() -> TestParams<f64> {
 // Coding. XTC2 algorithm. Cubic cell
 fn test6_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -757,15 +685,8 @@ fn test6_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2736662.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -773,13 +694,6 @@ fn test6_params() -> TestParams<f64> {
 // Coding. Stopbit interframe algorithm. Cubic cell
 fn test7_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 1,
@@ -788,15 +702,8 @@ fn test7_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2545049.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -804,13 +711,6 @@ fn test7_params() -> TestParams<f64> {
 // Coding. Stopbit interframe algorithm with intraframe compression as initial. Cubic cell
 fn test8_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 1,
@@ -819,15 +719,8 @@ fn test8_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2544876.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -835,13 +728,6 @@ fn test8_params() -> TestParams<f64> {
 // Coding. Triple interframe algorithm. Cubic cell
 fn test9_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 2,
@@ -850,15 +736,8 @@ fn test9_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2418212.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -866,13 +745,6 @@ fn test9_params() -> TestParams<f64> {
 // Coding. Triple intraframe algorithm. Cubic cell
 fn test10_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 3,
@@ -881,15 +753,8 @@ fn test10_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2728492.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -897,13 +762,6 @@ fn test10_params() -> TestParams<f64> {
 // Coding. Triple one-to-one algorithm. Cubic cell
 fn test11_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 7,
@@ -912,15 +770,8 @@ fn test11_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 4293415.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -928,13 +779,6 @@ fn test11_params() -> TestParams<f64> {
 // Coding. BWLZH interframe algorithm. Cubic cell
 fn test12_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 8,
@@ -943,15 +787,8 @@ fn test12_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 894421.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -959,13 +796,6 @@ fn test12_params() -> TestParams<f64> {
 // Coding. BWLZH intraframe algorithm. Cubic cell
 fn test13_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 9,
@@ -974,15 +804,8 @@ fn test13_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 840246.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -990,13 +813,6 @@ fn test13_params() -> TestParams<f64> {
 // Coding. XTC3 algorithm. Cubic cell
 fn test14_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 10,
@@ -1005,15 +821,8 @@ fn test14_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 1401016.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1021,13 +830,7 @@ fn test14_params() -> TestParams<f64> {
 // Initial coding. Automatic selection of algorithms. Cubic cell
 fn test15_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: -1,
         initial_coding_parameter: -1,
         coding: 1,
@@ -1036,15 +839,8 @@ fn test15_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2776230.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1052,13 +848,6 @@ fn test15_params() -> TestParams<f64> {
 // Coding. Automatic selection of algorithms. Cubic cell
 fn test16_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: -1,
         initial_coding_parameter: -1,
         coding: -1,
@@ -1067,15 +856,9 @@ fn test16_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: -1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
         speed: 6,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 838168.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1083,13 +866,8 @@ fn test16_params() -> TestParams<f64> {
 // Initial coding of velocities. Stopbits one-to-one. Cubic cell
 fn test17_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 1,
@@ -1098,15 +876,8 @@ fn test17_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: 1,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 7336171.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1114,13 +885,8 @@ fn test17_params() -> TestParams<f64> {
 // Initial coding of velocities. Triplet one-to-one. Cubic cell
 fn test18_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 1,
@@ -1129,15 +895,8 @@ fn test18_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: 3,
         initial_velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 7089695.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1145,13 +904,9 @@ fn test18_params() -> TestParams<f64> {
 // Initial coding of velocities. BWLZH one-to-one. Cubic cell
 fn test19_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
         nframes: 50,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 1,
@@ -1160,15 +915,8 @@ fn test19_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         initial_velcoding: 9,
         initial_velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 208809.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1181,8 +929,6 @@ fn test41_params() -> TestParams<f64> {
         nframes: 100,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 1,
@@ -1191,15 +937,9 @@ fn test41_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [1610612736, 1610612736, 1610612736],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 53179342.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1212,8 +952,6 @@ fn test42_params() -> TestParams<f64> {
         nframes: 100,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 1,
@@ -1222,15 +960,9 @@ fn test42_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [1610612736, 1610612736, 1610612736],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 57283715.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1243,8 +975,6 @@ fn test43_params() -> TestParams<f64> {
         nframes: 10,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 10,
         initial_coding_parameter: 0,
         coding: 1,
@@ -1253,15 +983,9 @@ fn test43_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [1610612736, 1610612736, 1610612736],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 3783912.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1274,8 +998,6 @@ fn test44_params() -> TestParams<f64> {
         nframes: 10,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 9,
         initial_coding_parameter: 0,
         coding: 1,
@@ -1284,15 +1006,9 @@ fn test44_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [1610612736, 1610612736, 1610612736],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 1436901.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1305,8 +1021,6 @@ fn test45_params() -> TestParams<f64> {
         nframes: 100,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 1,
@@ -1315,15 +1029,9 @@ fn test45_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [1610612736, 1610612736, 1610612736],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 36794379.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1336,8 +1044,6 @@ fn test46_params() -> TestParams<f64> {
         nframes: 100,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 2,
@@ -1346,15 +1052,9 @@ fn test46_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [1610612736, 1610612736, 1610612736],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 34508770.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1367,8 +1067,6 @@ fn test47_params() -> TestParams<f64> {
         nframes: 100,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 3,
@@ -1377,15 +1075,9 @@ fn test47_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [1610612736, 1610612736, 1610612736],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 53174711.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1398,8 +1090,6 @@ fn test48_params() -> TestParams<f64> {
         nframes: 100,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 5,
@@ -1408,15 +1098,9 @@ fn test48_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 55638414.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1429,8 +1113,6 @@ fn test49_params() -> TestParams<f64> {
         nframes: 20,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 10,
@@ -1439,15 +1121,9 @@ fn test49_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 3585605.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1460,8 +1136,6 @@ fn test50_params() -> TestParams<f64> {
         nframes: 20,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 9,
@@ -1470,15 +1144,9 @@ fn test50_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 3143379.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1491,8 +1159,6 @@ fn test51_params() -> TestParams<f64> {
         nframes: 20,
         scale: 0.5,
         precision: 1e-8,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 8,
@@ -1501,15 +1167,9 @@ fn test51_params() -> TestParams<f64> {
         initial_velcoding_parameter: 0,
         velcoding: 4,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
-        genvelprecision: 0.1,
         expected_filesize: 2897696.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1532,14 +1192,10 @@ fn test52_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 1,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
         genvelprecision: 1e-8,
         expected_filesize: 173083705.0,
-        regular: false,
         velintmul: Some(100000),
         ..Default::default()
     }
@@ -1563,14 +1219,10 @@ fn test53_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 3,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
         genvelprecision: 1e-8,
         expected_filesize: 168548573.0,
-        regular: false,
         velintmul: Some(100000),
         ..Default::default()
     }
@@ -1594,14 +1246,10 @@ fn test54_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 2,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
         genvelprecision: 1e-8,
         expected_filesize: 161798573.0,
-        regular: false,
         velintmul: Some(100000),
         ..Default::default()
     }
@@ -1625,14 +1273,10 @@ fn test55_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 6,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
         genvelprecision: 1e-8,
         expected_filesize: 166298533.0,
-        regular: false,
         velintmul: Some(100000),
         ..Default::default()
     }
@@ -1656,14 +1300,10 @@ fn test56_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 9,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
         genvelprecision: 1e-8,
         expected_filesize: 23390767.0,
-        regular: false,
         velintmul: Some(100000),
         ..Default::default()
     }
@@ -1687,14 +1327,10 @@ fn test57_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 8,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [805306368, 805306368, 805306368],
-        speed: 5,
-        framescale: 1,
         genprecision: 1e-8,
         genvelprecision: 1e-8,
         expected_filesize: 13817974.0,
-        regular: false,
         velintmul: Some(100000),
         ..Default::default()
     }
@@ -1704,12 +1340,7 @@ fn test57_params() -> TestParams<f64> {
 fn test58_params() -> TestParams<f32> {
     TestParams {
         natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -1718,15 +1349,8 @@ fn test58_params() -> TestParams<f32> {
         initial_velcoding_parameter: -1,
         velcoding: 3,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 6986313.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1735,12 +1359,7 @@ fn test58_params() -> TestParams<f32> {
 fn test59_params() -> TestParams<f32> {
     TestParams {
         natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -1749,15 +1368,8 @@ fn test59_params() -> TestParams<f32> {
         initial_velcoding_parameter: -1,
         velcoding: 3,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 6986313.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1766,12 +1378,7 @@ fn test59_params() -> TestParams<f32> {
 fn test60_params() -> TestParams<f64> {
     TestParams {
         natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -1780,15 +1387,8 @@ fn test60_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 3,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 6986313.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1796,13 +1396,8 @@ fn test60_params() -> TestParams<f64> {
 // Coding. Recompression test. Stage 1: Generate
 fn test61_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
         nframes: 100,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -1811,15 +1406,8 @@ fn test61_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 3,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 698801.0,
-        regular: false,
-        velintmul: None,
         recompressed_filesize: Some(151226.0),
         ..Default::default()
     }
@@ -1828,13 +1416,8 @@ fn test61_params() -> TestParams<f64> {
 // Coding. Recompression test. Stage 2: Recompress
 fn test62_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
         nframes: 100,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 10,
         initial_coding_parameter: 0,
         coding: 10,
@@ -1865,8 +1448,6 @@ fn test40_params() -> TestParams<f64> {
         nframes: 4,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 8,
@@ -1877,13 +1458,8 @@ fn test40_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 63822378.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1896,8 +1472,6 @@ fn test39_params() -> TestParams<f64> {
         nframes: 4,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 9,
@@ -1908,13 +1482,8 @@ fn test39_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 67631371.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1927,8 +1496,6 @@ fn test38_params() -> TestParams<f64> {
         nframes: 4,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 10,
         initial_coding_parameter: 0,
         coding: 10,
@@ -1939,13 +1506,8 @@ fn test38_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 63482016.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1958,8 +1520,6 @@ fn test37_params() -> TestParams<f64> {
         nframes: 10,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -1970,13 +1530,8 @@ fn test37_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 301463256.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -1989,8 +1544,6 @@ fn test36_params() -> TestParams<f64> {
         nframes: 10,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 3,
@@ -2001,13 +1554,8 @@ fn test36_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 290800607.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2020,8 +1568,6 @@ fn test35_params() -> TestParams<f64> {
         nframes: 10,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 2,
@@ -2032,13 +1578,8 @@ fn test35_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 243598962.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2051,8 +1592,6 @@ fn test34_params() -> TestParams<f64> {
         nframes: 10,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 1,
@@ -2063,13 +1602,8 @@ fn test34_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 250247372.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2082,8 +1616,6 @@ fn test33_params() -> TestParams<f64> {
         nframes: 2,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 9,
         initial_coding_parameter: 0,
         coding: 1,
@@ -2094,13 +1626,8 @@ fn test33_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 7121047.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2113,8 +1640,6 @@ fn test32_params() -> TestParams<f64> {
         nframes: 2,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 10,
         initial_coding_parameter: 0,
         coding: 1,
@@ -2125,13 +1650,8 @@ fn test32_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 31668187.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2144,8 +1664,6 @@ fn test31_params() -> TestParams<f64> {
         nframes: 10,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 1,
@@ -2156,13 +1674,8 @@ fn test31_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 301463456.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2175,8 +1688,6 @@ fn test30_params() -> TestParams<f64> {
         nframes: 10,
         scale: 1.0,
         precision: 1.0,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 3,
         initial_coding_parameter: -1,
         coding: 1,
@@ -2187,13 +1698,8 @@ fn test30_params() -> TestParams<f64> {
         velcoding_parameter: 0,
         intmin: [-536870911, -536870911, -536870911],
         intmax: [536870911, 536870911, 536870911],
-        speed: 5,
-        framescale: 1,
         genprecision: 1.0,
-        genvelprecision: 0.1,
         expected_filesize: 280198420.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2201,13 +1707,6 @@ fn test30_params() -> TestParams<f64> {
 // Position coding. Autoselect algorithm. Repetitive molecule. Cubic cell.
 fn test29_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: -1,
         initial_coding_parameter: -1,
         coding: -1,
@@ -2216,15 +1715,9 @@ fn test29_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 0,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 228148.0,
         regular: true,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2232,13 +1725,7 @@ fn test29_params() -> TestParams<f64> {
 // Initial coding. Autoselect algorithm. Repetitive molecule. Cubic cell.
 fn test28_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 1,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: -1,
         initial_coding_parameter: -1,
         coding: 0,
@@ -2247,15 +1734,9 @@ fn test28_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 0,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 1677619.0,
         regular: true,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2263,13 +1744,7 @@ fn test28_params() -> TestParams<f64> {
 // XTC3 algorithm. Orthorhombic cell.
 fn test27_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
         nframes: 200,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 10,
         initial_coding_parameter: 0,
         coding: 10,
@@ -2278,15 +1753,8 @@ fn test27_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 9,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [20000, 10000, 30000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 282600.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2294,13 +1762,6 @@ fn test27_params() -> TestParams<f64> {
 // XTC2 algorithm. Orthorhombic cell.
 fn test26_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
-        writevel: false,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -2309,15 +1770,8 @@ fn test26_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 9,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [20000, 10000, 30000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 2861948.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2325,13 +1779,9 @@ fn test26_params() -> TestParams<f64> {
 // Coding of velocities. BWLZH one-to-one. Cubic cell.
 fn test25_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 25,
         nframes: 50,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -2340,15 +1790,8 @@ fn test25_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 9,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 154753.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2356,13 +1799,9 @@ fn test25_params() -> TestParams<f64> {
 // Coding of velocities. BWLZH interframe. Cubic cell.
 fn test24_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
         chunky: 25,
         nframes: 50,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -2371,15 +1810,8 @@ fn test24_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 8,
         velcoding_parameter: 0,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 153520.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2387,13 +1819,8 @@ fn test24_params() -> TestParams<f64> {
 // Coding of velocities. Stopbit interframe. Cubic cell.
 fn test23_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
         nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -2402,15 +1829,8 @@ fn test23_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 6,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 6494602.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2418,13 +1838,7 @@ fn test23_params() -> TestParams<f64> {
 // Coding of velocities. Triplet one-to-one. Cubic cell.
 fn test22_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -2433,15 +1847,8 @@ fn test22_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 3,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 6988699.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2449,13 +1856,7 @@ fn test22_params() -> TestParams<f64> {
 // Coding of velocities. Triplet inter. Cubic cell.
 fn test21_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -2464,15 +1865,8 @@ fn test21_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 2,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 6214307.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
@@ -2480,13 +1874,7 @@ fn test21_params() -> TestParams<f64> {
 // Coding of velocities. Stopbit one-to-one. Cubic cell.
 fn test20_params() -> TestParams<f64> {
     TestParams {
-        natoms: 1000,
-        chunky: 100,
-        nframes: 1000,
-        scale: 0.1,
-        precision: 0.01,
         writevel: true,
-        velprecision: 0.1,
         initial_coding: 5,
         initial_coding_parameter: 0,
         coding: 5,
@@ -2495,15 +1883,8 @@ fn test20_params() -> TestParams<f64> {
         initial_velcoding_parameter: -1,
         velcoding: 1,
         velcoding_parameter: -1,
-        intmin: [0, 0, 0],
         intmax: [10000, 10000, 10000],
-        speed: 5,
-        framescale: 1,
-        genprecision: 0.01,
-        genvelprecision: 0.1,
         expected_filesize: 7237102.0,
-        regular: false,
-        velintmul: None,
         ..Default::default()
     }
 }
