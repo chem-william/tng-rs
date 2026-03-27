@@ -1309,6 +1309,36 @@ fn test53_params() -> TestParams {
     }
 }
 
+// Velocity coding. Interframe triple algorithm. High accuracy. Cubic cell.
+fn test54_params() -> TestParams {
+    TestParams {
+        natoms: 100000,
+        chunky: 10,
+        nframes: 100,
+        scale: 0.5,
+        precision: 1e-8,
+        writevel: true,
+        velprecision: 1e-8,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: -1,
+        initial_velcoding_parameter: -1,
+        velcoding: 2,
+        velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [805306368, 805306368, 805306368],
+        speed: 5,
+        framescale: 1,
+        genprecision: 1e-8,
+        genvelprecision: 1e-8,
+        expected_filesize: 161798573.0,
+        regular: false,
+        velintmul: Some(100000),
+    }
+}
+
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
 fn test40_params() -> TestParams {
     TestParams {
@@ -2213,4 +2243,9 @@ fn test52() {
 #[test]
 fn test53() {
     algotest(&test53_params());
+}
+
+#[test]
+fn test54() {
+    algotest(&test54_params());
 }
