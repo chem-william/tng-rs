@@ -1507,6 +1507,36 @@ fn test59_params() -> TestParams<f32> {
     }
 }
 
+// Coding. Test write double, read float
+fn test60_params() -> TestParams<f64> {
+    TestParams {
+        natoms: 1000,
+        chunky: 100,
+        nframes: 1000,
+        scale: 0.1,
+        precision: 0.01,
+        writevel: true,
+        velprecision: 0.1,
+        initial_coding: 5,
+        initial_coding_parameter: 0,
+        coding: 5,
+        coding_parameter: 0,
+        initial_velcoding: 3,
+        initial_velcoding_parameter: -1,
+        velcoding: 3,
+        velcoding_parameter: -1,
+        intmin: [0, 0, 0],
+        intmax: [10000, 10000, 10000],
+        speed: 5,
+        framescale: 1,
+        genprecision: 0.01,
+        genvelprecision: 0.1,
+        expected_filesize: 6986313.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
 fn test40_params() -> TestParams<f64> {
     TestParams {
@@ -2441,4 +2471,9 @@ fn test58() {
 #[test]
 fn test59() {
     algotest::<f32, f64>(&test59_params());
+}
+
+#[test]
+fn test60() {
+    algotest::<f64, f32>(&test60_params());
 }
