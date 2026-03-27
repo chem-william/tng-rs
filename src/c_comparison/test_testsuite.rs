@@ -1189,6 +1189,36 @@ fn test49_params() -> TestParams {
     }
 }
 
+// Position coding. Intra frame BWLZH algorithm. High accuracy. Cubic cell.
+fn test50_params() -> TestParams {
+    TestParams {
+        natoms: 100000,
+        chunky: 10,
+        nframes: 20,
+        scale: 0.5,
+        precision: 1e-8,
+        writevel: false,
+        velprecision: 0.1,
+        initial_coding: 3,
+        initial_coding_parameter: -1,
+        coding: 9,
+        coding_parameter: 0,
+        initial_velcoding: 0,
+        initial_velcoding_parameter: 0,
+        velcoding: 4,
+        velcoding_parameter: 0,
+        intmin: [0, 0, 0],
+        intmax: [805306368, 805306368, 805306368],
+        speed: 5,
+        framescale: 1,
+        genprecision: 1e-8,
+        genvelprecision: 0.1,
+        expected_filesize: 3143379.0,
+        regular: false,
+        velintmul: None,
+    }
+}
+
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
 fn test40_params() -> TestParams {
     TestParams {
@@ -2073,4 +2103,9 @@ fn test48() {
 #[test]
 fn test49() {
     algotest(&test49_params());
+}
+
+#[test]
+fn test50() {
+    algotest(&test50_params());
 }
