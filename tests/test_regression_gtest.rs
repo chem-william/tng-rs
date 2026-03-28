@@ -2,21 +2,21 @@ use assert_approx_eq::assert_approx_eq;
 use tng_rs::trajectory::Trajectory;
 const TEST_FILES_DIR: &str = "test_files";
 
-#[test]
-fn argon_compressed_test() {
-    let mut input_filename = std::env::current_dir().expect("able to get current working dir");
-    input_filename.push(TEST_FILES_DIR);
-    input_filename.push("argon_npt_compressed.tng");
+fn molecule_find(traj: &mut Trajectory) {
+    traj.molecule_find(Some("Argon"), None).unwrap();
+}
 
-    let mut traj = Trajectory::new();
-    traj.util_trajectory_open(input_filename.as_path(), 'r')
-        .unwrap();
+fn num_particles(traj: &mut Trajectory) {
     let n_particles = traj.num_particles_get();
     assert_eq!(n_particles, 1000);
+}
 
+fn num_frames(traj: &mut Trajectory) {
     let n_frames = traj.num_frames_get().unwrap();
     assert_eq!(n_frames, 500001);
+}
 
+fn box_shape_read_values(traj: &mut Trajectory) {
     let (box_shape, _stride_length) = traj.util_box_shape_read().unwrap();
     let frame_0 = [
         3.60140, 0.00000, 0.000000, 0.000000, 3.60140, 0.000000, 0.000000, 0.000000, 3.60140,
@@ -29,15 +29,17 @@ fn argon_compressed_test() {
     for i in 0..9 {
         assert_approx_eq!(box_shape[909 - 9 + i], frame_100[i]);
     }
-
+}
+fn position_partial_read(traj: &mut Trajectory) {
     let (_positions, stride_length) = traj.util_pos_read_range(0, 5000).unwrap();
     assert_eq!(stride_length, 5000);
-
+}
+fn position_partial_read_invalid_range(traj: &mut Trajectory) {
     let _err = traj
         .util_pos_read_range(1, 1)
         .expect_err("should be invalid range");
-    assert_eq!(stride_length, 5000);
-
+}
+fn position_partial_values_frm0(traj: &mut Trajectory) {
     let (positions, stride_length) = traj.util_pos_read_range(0, 0).unwrap();
     assert_eq!(stride_length, 5000);
 
@@ -60,7 +62,8 @@ fn argon_compressed_test() {
     for i in 0..30 {
         assert_approx_eq!(positions[i], frame_0_first_10_values[i]);
     }
-
+}
+fn position_partial_values_frm1(traj: &mut Trajectory) {
     let (positions, stride_length) = traj.util_pos_read_range(5000, 5000).unwrap();
     assert_eq!(stride_length, 5000);
 
@@ -82,13 +85,19 @@ fn argon_compressed_test() {
     for i in 0..30 {
         assert_approx_eq!(positions[i], frame_1_first_10_values[i]);
     }
+}
 
+fn position_partial_read_irregular(traj: &mut Trajectory) {
     let (_positions, stride_length) = traj.util_pos_read_range(7777, 18888).unwrap();
     assert_eq!(stride_length, 5000);
+}
 
+fn position_read(traj: &mut Trajectory) {
     let (_positions, stride_length) = traj.util_pos_read().unwrap();
     assert_eq!(stride_length, 5000);
+}
 
+fn position_values(traj: &mut Trajectory) {
     let (positions, _stride_length) = traj.util_pos_read().unwrap();
     // xyz first 10 atoms frame 0
     #[rustfmt::skip]
@@ -125,19 +134,49 @@ fn argon_compressed_test() {
     for i in 0..30 {
         assert_approx_eq!(positions[303000 - 30 + i], frame_100_last_10_values[i]);
     }
-
+}
+fn force_read(traj: &mut Trajectory) {
     let _ = traj
         .util_force_read()
         .expect_err("no forces expected in this file");
-
+}
+fn vel_read(traj: &mut Trajectory) {
     let _ = traj
         .util_vel_read()
         .expect_err("no velocities expected in this file");
+}
+fn num_molecule_types(traj: &mut Trajectory) {
     let count = traj.num_molecule_types_get();
     assert_eq!(count, 1);
-
+}
+fn num_molecules(traj: &mut Trajectory) {
     let count = traj.num_molecules_get();
     assert_eq!(count, 1000);
+}
 
-    traj.molecule_find(Some("Argon"), None).unwrap();
+#[test]
+fn argon_compressed() {
+    let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+    input_filename.push(TEST_FILES_DIR);
+    input_filename.push("argon_npt_compressed.tng");
+
+    let mut traj = Trajectory::new();
+    traj.util_trajectory_open(input_filename.as_path(), 'r')
+        .unwrap();
+
+    num_particles(&mut traj);
+    num_frames(&mut traj);
+    box_shape_read_values(&mut traj);
+    position_partial_read(&mut traj);
+    position_partial_read_invalid_range(&mut traj);
+    position_partial_values_frm0(&mut traj);
+    position_partial_values_frm1(&mut traj);
+    position_partial_read_irregular(&mut traj);
+    position_read(&mut traj);
+    position_values(&mut traj);
+    force_read(&mut traj);
+    vel_read(&mut traj);
+    num_molecule_types(&mut traj);
+    num_molecules(&mut traj);
+    molecule_find(&mut traj);
 }
