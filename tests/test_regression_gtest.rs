@@ -180,3 +180,125 @@ fn argon_compressed() {
     num_molecules(&mut traj);
     molecule_find(&mut traj);
 }
+
+fn tng_example_num_particles(traj: &mut Trajectory) {
+    let n_particles = traj.num_particles_get();
+    assert_eq!(n_particles, 15);
+}
+
+fn tng_example_num_frames(traj: &mut Trajectory) {
+    let n_frames = traj.num_frames_get().unwrap();
+    assert_eq!(n_frames, 10);
+}
+
+fn tng_example_box_shape_read(traj: &mut Trajectory) {
+    let _err = traj
+        .util_box_shape_read()
+        .expect_err("no box shape was expected");
+}
+fn tng_example_box_read_then_position_partial_read(traj: &mut Trajectory) {
+    let _err = traj
+        .util_box_shape_read()
+        .expect_err("normal box not expected");
+    let (_positions, stride_length) = traj.util_pos_read_range(0, 2).unwrap();
+    assert_eq!(stride_length, 1);
+}
+fn tng_example_position_read(traj: &mut Trajectory) {
+    let (_positions, stride_length) = traj.util_pos_read().unwrap();
+    assert_eq!(stride_length, 1);
+}
+fn tng_example_position_values(traj: &mut Trajectory) {
+    let (positions, _stride_length) = traj.util_pos_read().unwrap();
+
+    // xyz first 10 atoms frame 0
+    // gmx dump frame 0
+    #[rustfmt::skip]
+    let frame_0_first_10_values = [
+        1.00000e+00,  1.00000e+00,  1.00000e+00,
+        2.00000e+00,  2.00000e+00,  2.00000e+00,
+        3.00000e+00,  3.00000e+00,  3.00000e+00,
+        1.10000e+01,  1.10000e+01,  1.10000e+01,
+        1.20000e+01,  1.20000e+01,  1.20000e+01,
+        1.30000e+01,  1.30000e+01,  1.30000e+01,
+        2.10000e+01,  2.10000e+01,  2.10000e+01,
+        2.20000e+01,  2.20000e+01,  2.20000e+01,
+        2.30000e+01,  2.30000e+01,  2.30000e+01,
+        8.25000e+00,  3.30000e+01,  3.30000e+01,
+    ];
+    for i in 0..30 {
+        assert_approx_eq!(positions[i], frame_0_first_10_values[i]);
+    }
+
+    // xyz first 10 atoms frame 9
+    // gmx dump frame 9
+    #[rustfmt::skip]
+    let frame_9_last_10_values = [
+        1.30000e+01,  1.30000e+01,  1.30000e+01,
+        2.10000e+01,  2.10000e+01,  2.10000e+01,
+        2.20000e+01,  2.20000e+01,  2.20000e+01,
+        2.30000e+01,  2.30000e+01,  2.30000e+01,
+        8.25000e+00,  3.30000e+01,  3.30000e+01,
+        8.25000e+00,  3.40000e+01,  3.30000e+01,
+        8.50000e+00,  3.30000e+01,  3.40000e+01,
+        5.00000e+01,  5.00000e+01,  5.00000e+01,
+        5.10000e+01,  5.10000e+01,  5.10000e+01,
+        1.00000e+02,  1.00000e+02,  1.00000e+02,
+    ];
+    for i in 0..30 {
+        assert_approx_eq!(positions[450 - 30 + i], frame_9_last_10_values[i]);
+    }
+}
+fn tng_example_force_read(traj: &mut Trajectory) {
+    let _ = traj
+        .util_force_read()
+        .expect_err("no forces expected in this file");
+}
+fn tng_example_vel_read(traj: &mut Trajectory) {
+    let _ = traj
+        .util_vel_read()
+        .expect_err("no velocities expected in this file");
+}
+fn tng_example_num_molecule_types(traj: &mut Trajectory) {
+    let count = traj.num_molecule_types_get();
+    assert_eq!(count, 1);
+}
+fn tng_example_num_molecules(traj: &mut Trajectory) {
+    let count = traj.num_molecules_get();
+    assert_eq!(count, 5);
+}
+fn tng_example_molecule_find(traj: &mut Trajectory) {
+    let _ = traj.molecule_find(Some("water"), None).unwrap();
+}
+
+#[test]
+fn tng_example_test() {
+    let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+    input_filename.push(TEST_FILES_DIR);
+    input_filename.push("tng_example.tng");
+
+    let mut traj = Trajectory::new();
+    traj.util_trajectory_open(input_filename.as_path(), 'r')
+        .unwrap();
+
+    tng_example_num_particles(&mut traj);
+
+    tng_example_num_frames(&mut traj);
+
+    tng_example_box_shape_read(&mut traj);
+
+    tng_example_box_read_then_position_partial_read(&mut traj);
+
+    tng_example_position_read(&mut traj);
+
+    tng_example_position_values(&mut traj);
+
+    tng_example_force_read(&mut traj);
+
+    tng_example_vel_read(&mut traj);
+
+    tng_example_num_molecule_types(&mut traj);
+
+    tng_example_num_molecules(&mut traj);
+
+    tng_example_molecule_find(&mut traj);
+}

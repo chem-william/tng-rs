@@ -624,7 +624,7 @@ impl Trajectory {
                 if self.endianness32 == Endianness32::Big {
                     self.input_swap32 = None;
                 } else {
-                    self.input_swap32 = Some(utils::swap_byte_order_little_endian_32);
+                    self.input_swap32 = Some(utils::swap_byte_order_big_endian_32);
                 }
 
                 if self.endianness64 == Endianness64::Big {
@@ -1472,7 +1472,16 @@ impl Trajectory {
             };
             (actual_contents, full_data_len)
         } else {
-            let full_data_len = block_data_len as usize;
+            let mut full_data_len = (n_frames_div as usize)
+                .checked_mul(size)
+                .and_then(|x| x.checked_mul(meta_info.n_values as usize))
+                .unwrap_or(0);
+            if is_particle_data {
+                full_data_len = full_data_len
+                    .checked_mul(meta_info.block_n_particles as usize)
+                    .expect("mul of meta_info.block_n_particles");
+            }
+            contents.truncate(full_data_len);
             (contents, full_data_len)
         };
 
