@@ -87,6 +87,7 @@ pub struct CodeLength {
 /// The `huffman_dict_unpacked` array should be at least `DICT_SIZE + 3`
 /// (131079 with current `DICT_SIZE`), to hold three header bytes plus one
 /// entry per symbol in the full dictionary range.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn ptngc_comp_conv_to_huffman(
     vals: &[u32],
     dict: &[u32],
@@ -378,7 +379,7 @@ pub(crate) fn ptngc_comp_conv_from_huffman(
 
             if bit != 0 {
                 codelength[j].length = readbits(&mut huffman_ptr, &mut bitptr, 5) as usize;
-                codelength[j].dict = i as u32;
+                codelength[j].dict = i;
 
                 debug!("{:?}", codelength[j]);
                 j += 1;
@@ -400,7 +401,7 @@ pub(crate) fn ptngc_comp_conv_from_huffman(
     // Decompress data
     let mut huffman_ptr = huffman;
     bitptr = 0;
-    for i in 0..nvals as usize {
+    for item in vals.iter_mut().take(nvals as usize) {
         let mut len = codelength[0].length;
         let mut symbol = readbits(&mut huffman_ptr, &mut bitptr, len as i32);
         let mut j = 0;
@@ -413,7 +414,7 @@ pub(crate) fn ptngc_comp_conv_from_huffman(
                 len = newlen;
             }
         }
-        vals[i] = codelength[j].dict;
+        *item = codelength[j].dict;
     }
 }
 

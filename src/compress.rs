@@ -537,6 +537,7 @@ pub(crate) fn tng_compress_pos_int(
     data
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn determine_best_pos_initial_coding(
     quant: &mut [i32],
     quant_intra: &mut [i32],
@@ -740,6 +741,7 @@ pub(crate) fn readbufferfix(buf: &[u8], num: i32) -> FixT {
 }
 
 /// Perform position compression from the quantized data
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn compress_quantized_pos(
     quant: &mut [i32],
     quant_inter: Option<&mut [i32]>,
@@ -948,6 +950,7 @@ pub(crate) fn compress_quantized_pos(
     bufloc
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn determine_best_pos_coding(
     quant: &mut [i32],
     quant_inter: &mut Option<&mut [i32]>,
@@ -1357,6 +1360,7 @@ pub(crate) fn tng_compress_vel_int(
     data
 }
 
+#[allow(clippy::too_many_arguments)]
 fn determine_best_vel_coding(
     quant: &mut [i32],
     quant_inter: &mut Option<&mut [i32]>,
@@ -1560,6 +1564,7 @@ fn determine_best_vel_coding(
 }
 
 /// Perform velocity compression from vel into the data block
+#[allow(clippy::too_many_arguments)]
 fn compress_quantized_vel(
     quant: &mut [i32],
     quant_inter: Option<&mut [i32]>,

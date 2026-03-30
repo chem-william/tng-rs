@@ -265,7 +265,7 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], _huffman_len: i32, vals
             let _nhuffdict = read3le(huffman, 14 + nhuff as usize);
             ptngc_comp_conv_from_huffman(
                 &huffman[14..],
-                &mut vals16,
+                vals16,
                 nvals16,
                 ndict as usize,
                 Some(&huffman[(20 + nhuff) as usize..]),
@@ -290,7 +290,7 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], _huffman_len: i32, vals
             // Then decompress the "real" data
             ptngc_comp_conv_from_huffman(
                 &huffman[14..],
-                &mut vals16,
+                vals16,
                 nvals16,
                 ndict as usize,
                 None,
@@ -320,7 +320,7 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], _huffman_len: i32, vals
             // Then decompress the "real" data
             ptngc_comp_conv_from_huffman(
                 &huffman[14..],
-                &mut vals16,
+                vals16,
                 nvals16,
                 ndict as usize,
                 None,
@@ -332,7 +332,7 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], _huffman_len: i32, vals
 
     // Do I need to convert from vals16?
     if isvals16 == 0 {
-        let shadowed_vals16 = vals16.iter().map(|x| *x).collect::<Vec<u32>>();
+        let shadowed_vals16 = vals16.to_vec();
         let _ = ptngc_comp_conv_from_vals16(&shadowed_vals16, nvals16 as usize, vals);
     }
 }

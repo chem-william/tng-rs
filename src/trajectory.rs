@@ -212,6 +212,12 @@ enum Slot {
     TrParticle,
 }
 
+impl Default for Trajectory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Trajectory {
     /// Detect the host’s native 32‐ and 64‐bit endianness and store the corresponding enum values.
     ///
@@ -2300,6 +2306,7 @@ impl Trajectory {
     /// # Errors
     ///
     /// This function will return an error if .
+    #[allow(clippy::too_many_arguments)]
     fn tng_compress(
         &self,
         compress_algo_pos: &mut Vec<i32>,
@@ -2403,11 +2410,7 @@ impl Trajectory {
                     compress_algo_pos[2] = -1;
                     compress_algo_pos[3] = -1;
                 }
-            // TODO: is it a bug in the original code that it checks twice for the compress_algo_pos?
-            } else if compress_algo_pos.is_empty()
-                || compress_algo_pos[2] == -1
-                || compress_algo_pos[2] == -1
-            {
+            } else if compress_algo_pos.is_empty() || compress_algo_pos[2] == -1 {
                 algo_find_n_frames = if n_frames > 6 { 5 } else { n_frames };
 
                 // If the algorithm parameters are -1 they will be determined during the compression.
@@ -2719,7 +2722,7 @@ impl Trajectory {
         block_index: usize,
         is_particle_data: bool,
         mapping: &Option<ParticleMapping>,
-        hash_mode: bool,
+        _hash_mode: bool,
     ) -> Result<(), TngError> {
         // If we have already started writing frame sets it is too late to write
         // non-trajectory data blocks
@@ -3100,7 +3103,7 @@ impl Trajectory {
                                 block_index,
                                 is_particle_data,
                                 mapping,
-                                hash_mode,
+                                _hash_mode,
                             )?;
                             return Ok(());
                         }

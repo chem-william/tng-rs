@@ -420,9 +420,8 @@ fn bwlzh_decompress_gen(input: &[u8], nvals: i32, vals: &mut [u32]) {
                         inpdata += bwlzhhufflen as usize;
                     } else {
                         debug!("Reading offset block.");
-                        for i in 0..noffsets as usize {
-                            offsets[i] =
-                                (input[inpdata] as u32) | ((input[inpdata + 1] as u32) << 8);
+                        for item in offsets.iter_mut().take(noffsets as usize) {
+                            *item = (input[inpdata] as u32) | ((input[inpdata + 1] as u32) << 8);
                             inpdata += 2;
                         }
                     }
