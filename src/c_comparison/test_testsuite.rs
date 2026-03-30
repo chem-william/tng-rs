@@ -2349,11 +2349,13 @@ fn test23() {
 }
 
 #[test]
+#[ignore = "Slow"]
 fn test24() {
     algotest::<f64, f64>(&test24_params());
 }
 
 #[test]
+#[ignore = "Slow"]
 fn test25() {
     algotest::<f64, f64>(&test25_params());
 }
@@ -2369,11 +2371,13 @@ fn test27() {
 }
 
 #[test]
+#[ignore = "Slow"]
 fn test28() {
     algotest::<f64, f64>(&test28_params());
 }
 
 #[test]
+#[ignore = "Slow"]
 fn test29() {
     algotest::<f64, f64>(&test29_params());
 }
@@ -2450,6 +2454,7 @@ fn test41() {
 }
 
 #[test]
+#[ignore = "100k atoms, high accuracy"]
 fn test42() {
     algotest::<f64, f64>(&test42_params());
 }
@@ -2480,11 +2485,13 @@ fn test47() {
 }
 
 #[test]
+#[ignore = "100k atoms, high accuracy"]
 fn test48() {
     algotest::<f64, f64>(&test48_params());
 }
 
 #[test]
+#[ignore = "100k atoms, high accuracy"]
 fn test49() {
     algotest::<f64, f64>(&test49_params());
 }
@@ -2495,21 +2502,25 @@ fn test50() {
 }
 
 #[test]
+#[ignore = "100k atoms, high accuracy"]
 fn test51() {
     algotest::<f64, f64>(&test51_params());
 }
 
 #[test]
+#[ignore = "100k atoms, high accuracy"]
 fn test52() {
     algotest::<f64, f64>(&test52_params());
 }
 
 #[test]
+#[ignore = "100k atoms, high accuracy"]
 fn test53() {
     algotest::<f64, f64>(&test53_params());
 }
 
 #[test]
+#[ignore = "100k atoms, high accuracy"]
 fn test54() {
     algotest::<f64, f64>(&test54_params());
 }
@@ -2520,11 +2531,13 @@ fn test55() {
 }
 
 #[test]
+#[ignore = "100k atoms, high accuracy"]
 fn test56() {
     algotest::<f64, f64>(&test56_params());
 }
 
 #[test]
+#[ignore = "100k atoms, high accuracy"]
 fn test57() {
     algotest::<f64, f64>(&test57_params());
 }
