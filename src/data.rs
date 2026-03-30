@@ -118,24 +118,6 @@ pub struct Data {
 }
 
 impl Data {
-    pub fn new(block_id: BlockID, block_name: impl Into<String>, data_type: DataType) -> Self {
-        Data {
-            block_id,
-            block_name: block_name.into(),
-            data_type,
-            dependency: 0,
-            first_frame_with_data: 0,
-            n_frames: 0,
-            n_values_per_frame: 0,
-            stride_length: 1,
-            codec_id: Compression::Uncompressed,
-            last_retrieved_frame: -1,
-            compression_multiplier: 1.0,
-            values: None,
-            strings: None,
-        }
-    }
-
     /// Allocate memory for storing particle data. The allocated block will be referred to by data->values.
     ///
     /// # Panic
