@@ -141,7 +141,7 @@ pub(crate) fn ptngc_comp_conv_from_mtf_partial(valsmtf: &[u32], vals: &mut [u32]
         let (src, dst) = tmp.split_at_mut(nvals);
         comp_conv_from_mtf_byte(src, dst);
         for i in 0..nvals {
-            vals[i] |= (tmp[nvals + i] as u32) << (8 * byte_shift);
+            vals[i] |= u32::from(tmp[nvals + i]) << (8 * byte_shift);
         }
     }
 }
@@ -164,7 +164,7 @@ pub(crate) fn ptngc_comp_conv_from_mtf_partial3(valsmtf: &[u8], vals: &mut [u32]
         let src = &valsmtf[j * nvals..(j + 1) * nvals];
         comp_conv_from_mtf_byte(src, &mut tmp);
         for i in 0..nvals {
-            vals[i] |= (tmp[i] as u32) << (8 * j);
+            vals[i] |= u32::from(tmp[i]) << (8 * j);
         }
     }
 }
@@ -190,7 +190,7 @@ pub(crate) fn ptngc_comp_conv_to_mtf_partial(vals: &[u32], valsmtf: &mut [u32]) 
 
         // pack each code byte back into the corresponding u32 output
         for i in 0..nvals {
-            valsmtf[i] |= (tmp[nvals + i] as u32) << (8 * byte_shift);
+            valsmtf[i] |= u32::from(tmp[nvals + i]) << (8 * byte_shift);
         }
     }
 }

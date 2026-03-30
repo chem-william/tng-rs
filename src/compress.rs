@@ -10,7 +10,7 @@ use crate::{
     fix_point::{FixT, f64_to_fixt_pair, fixt_pair_to_f64},
 };
 
-const MAX_FVAL: f32 = 2147483647.0;
+const MAX_FVAL: f32 = 2_147_483_647.0;
 
 // Compression algorithms (matching the original trajng assignments) The compression
 // backends require that some of the algorithms must have the same value
@@ -37,8 +37,8 @@ pub(crate) const TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE: i32 = TNG_COMPRESS_ALGO_B
 pub(crate) const TNG_COMPRESS_ALGO_MAX: i32 = 11;
 
 // This becomes TNGP for positions (little endian) and TNGV for velocities. In ASCII
-pub(crate) const MAGIC_INT_POS: u32 = 0x50474E54;
-pub(crate) const MAGIC_INT_VEL: u32 = 0x56474E54;
+pub(crate) const MAGIC_INT_POS: u32 = 0x5047_4E54;
+pub(crate) const MAGIC_INT_VEL: u32 = 0x5647_4E54;
 
 /// Default to relatively fast compression. For very good compression it makes sense
 /// to choose speed = 4 or speed = 5.
@@ -158,7 +158,7 @@ pub(crate) trait Float:
 
 impl Float for f64 {
     fn from_i32(v: i32) -> Self {
-        v as f64
+        f64::from(v)
     }
     fn from_f64(v: f64) -> Self {
         v
@@ -176,7 +176,7 @@ impl Float for f32 {
         v as f32
     }
     fn to_f64(self) -> f64 {
-        self as f64
+        f64::from(self)
     }
 }
 
@@ -703,9 +703,10 @@ pub(crate) fn determine_best_pos_initial_coding(
 /// # Panic
 /// Panics if `buf.len() < num`.
 fn bufferfix(buf: &mut [u8], v: FixT, num: usize) {
-    if buf.len() < num {
-        panic!("Buffer too small for requested number of bytes");
-    }
+    assert!(
+        buf.len() >= num,
+        "Buffer too small for requested number of bytes"
+    );
 
     // Store in little endian format
     let mut v: u32 = v.into(); // Convert to unsigned for bit operations
@@ -729,7 +730,7 @@ pub(crate) fn readbufferfix(buf: &[u8], num: i32) -> FixT {
     loop {
         b = buf[cnt];
         cnt += 1;
-        f |= (FixT::from(b as u32) & FixT::from(0xFF)) << FixT::from(shift);
+        f |= (FixT::from(u32::from(b)) & FixT::from(0xFF)) << FixT::from(shift);
         shift += 8;
 
         num -= 1;
@@ -1864,7 +1865,7 @@ pub(crate) fn determine_best_vel_initial_coding(
         } else {
             unreachable!("initial_coding != -1, but initial_coding_parameter != -1")
         }
-    };
+    }
 
     (resulting_coding, resulting_coding_parameter)
 }

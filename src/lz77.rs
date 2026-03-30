@@ -184,9 +184,7 @@ pub(crate) fn ptngc_comp_from_lz77(
 
             for _ in 0..length {
                 vals[i] = vals[i - offset as usize];
-                if i >= nvals {
-                    panic!("too many vals");
-                }
+                assert!(i < nvals, "too many vals");
 
                 i += 1;
             }

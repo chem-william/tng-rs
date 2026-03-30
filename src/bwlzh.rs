@@ -12,7 +12,7 @@ use crate::{
     rle::{ptngc_comp_conv_from_rle, ptngc_comp_conv_to_rle},
     utils::copy_bytes,
 };
-const MAX_VALS_PER_BLOCK: usize = 200000;
+const MAX_VALS_PER_BLOCK: usize = 200_000;
 
 // TODO: enable these as compile-time features?
 const PARTIAL_MTF3: bool = true;
@@ -20,7 +20,7 @@ const PARTIAL_MTF: bool = false;
 pub const N_HUFFMAN_ALGO: usize = 3;
 
 pub(crate) const fn bwlzh_get_buflen(nvals: usize) -> usize {
-    132000 + nvals * 8 + 12 * ((nvals + MAX_VALS_PER_BLOCK) / MAX_VALS_PER_BLOCK)
+    132_000 + nvals * 8 + 12 * ((nvals + MAX_VALS_PER_BLOCK) / MAX_VALS_PER_BLOCK)
 }
 
 /// Compress the integers (positive, small integers are preferable) using bwlzh compression. The
@@ -184,7 +184,7 @@ pub(crate) fn bwlzh_compress_gen(
                         "Huffman dictionary for algorithm {} is {}",
                         ptngc_comp_get_huff_algo_name(i).expect("algo name"),
                         nhl - huffdatalen
-                    )
+                    );
                 }
 
                 // Store the number of huffman values in this block
@@ -224,7 +224,7 @@ pub(crate) fn bwlzh_compress_gen(
                                 "Huffman dictionary for algorithm {} is {}",
                                 ptngc_comp_get_huff_algo_name(i).expect("algo name"),
                                 nhl - huffdatalen
-                            )
+                            );
                         }
                         debug!(
                             "Resulting algorithm: {}. Size={} B",
@@ -336,11 +336,10 @@ fn bwlzh_decompress_gen(input: &[u8], nvals: i32, vals: &mut [u32]) {
     let nvalsfile = i32::from_le_bytes(input[inpdata..inpdata + 4].try_into().unwrap());
     inpdata += 4;
 
-    if nvalsfile != nvals {
-        panic!(
-            "BWLZH: The number of values found in the file is different from the number of values expected."
-        );
-    }
+    assert_eq!(
+        nvalsfile, nvals,
+        "BWLZH: The number of values found in the file is different from the number of values expected."
+    );
 
     let mut valsleft = nvals;
     let mut valstart = 0;
@@ -380,7 +379,7 @@ fn bwlzh_decompress_gen(input: &[u8], nvals: i32, vals: &mut [u32]) {
         for imtfinner in 0..3 {
             debug!("Doing partial MTF: {imtfinner}");
 
-            let reducealgo = input[inpdata] as i32;
+            let reducealgo = i32::from(input[inpdata]);
             inpdata += 1;
 
             // Read the number of huffman values in this block
@@ -406,7 +405,7 @@ fn bwlzh_decompress_gen(input: &[u8], nvals: i32, vals: &mut [u32]) {
 
                 if noffsets > 0 {
                     // How are the offsets stored
-                    offstore = input[inpdata] as i32;
+                    offstore = i32::from(input[inpdata]);
                     inpdata += 1;
                     if offstore == 0 {
                         // Read the size of the huffman block
@@ -421,7 +420,8 @@ fn bwlzh_decompress_gen(input: &[u8], nvals: i32, vals: &mut [u32]) {
                     } else {
                         debug!("Reading offset block.");
                         for item in offsets.iter_mut().take(noffsets as usize) {
-                            *item = (input[inpdata] as u32) | ((input[inpdata + 1] as u32) << 8);
+                            *item =
+                                u32::from(input[inpdata]) | (u32::from(input[inpdata + 1]) << 8);
                             inpdata += 2;
                         }
                     }
@@ -484,22 +484,23 @@ fn bwlzh_decompress_gen(input: &[u8], nvals: i32, vals: &mut [u32]) {
             &mut vals[valstart..],
         );
 
-        if valsnew != thisvals {
-            panic!("BWLZH: Block contained different number of values than expected.");
-        }
+        assert_eq!(
+            valsnew, thisvals,
+            "BWLZH: Block contained different number of values than expected."
+        );
 
         valstart += thisvals as usize;
     }
 }
 
 pub(crate) fn bwlzh_decompress(input: &[u8], nvals: i32, vals: &mut [u32]) {
-    bwlzh_decompress_gen(input, nvals, vals)
+    bwlzh_decompress_gen(input, nvals, vals);
 }
 
 /// Burrows-Wheeler transform
 pub(crate) fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) -> usize {
-    if nvals > 0xFFFFFF {
-        println!("BWT cannot pack more than {} values.", 0xFFFFFF);
+    if nvals > 0x00FF_FFFF {
+        println!("BWT cannot pack more than {} values.", 0x00FF_FFFF);
     }
 
     // Also note that repeat pattern k (kmax) cannot be larger than 255
@@ -560,7 +561,6 @@ pub(crate) fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) 
                             }
                         }
                         j += k;
-                        continue;
                     } else {
                         // We know that it is no point in trying with more than `m`
                         if j == 0 {
@@ -613,9 +613,9 @@ pub(crate) fn ptngc_comp_to_bwt(vals: &[u32], nvals: usize, output: &mut [u32]) 
     index
 }
 
-/// Burrows-Wheeler inverse transform
+///C API: `Ptngc_comp_from_bwt`
 ///
-/// c version: Ptngc_comp_from_bwt
+/// Burrows-Wheeler inverse transform
 pub(crate) fn ptngc_comp_from_bwt(input: &[u32], index: usize, vals: &mut [u32]) {
     // Straightforward from the Burrows-Wheeler paper (page 13).
     let nvals = input.len();
@@ -628,7 +628,7 @@ pub(crate) fn ptngc_comp_from_bwt(input: &[u32], index: usize, vals: &mut [u32])
     }
 
     let mut sum = 0u32;
-    for count in c.iter_mut() {
+    for count in &mut c {
         sum += *count;
         *count = sum - *count;
     }
@@ -641,7 +641,7 @@ pub(crate) fn ptngc_comp_from_bwt(input: &[u32], index: usize, vals: &mut [u32])
     }
 }
 
-/// c version: ptngc_bwt_merge_sort_inner
+/// C API: `ptngc_bwt_merge_sort_inner`
 pub(crate) fn bwt_sort(indices: &mut [usize], nvals: usize, vals: &[u32], nrepeat: &[u32]) {
     // Only sort the [0..nvals] portion
     indices[..nvals].sort_by(|&ia, &ib| compare_index(ia, ib, nvals, vals, nrepeat));

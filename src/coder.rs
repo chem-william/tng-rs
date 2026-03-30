@@ -219,15 +219,15 @@ impl Coder {
         output: &'a mut [i32],
         length: i32,
         n_atoms: usize,
-    ) -> Result<(), TngError> {
+    ) {
         let n = length;
         let nframes = n as usize / n_atoms / 3;
         let mut pval = vec![0u32; n as usize];
         let mut cnt = 0;
-        let most_negative = (packed[0] as u32
-            | (packed[1] as u32) << 8
-            | (packed[2] as u32) << 16
-            | (packed[3] as u32) << 24) as i32;
+        let most_negative = (u32::from(packed[0])
+            | (u32::from(packed[1]) << 8)
+            | (u32::from(packed[2]) << 16)
+            | (u32::from(packed[3]) << 24)) as i32;
 
         bwlzh_decompress(&packed[4..], length, &mut pval);
 
@@ -240,7 +240,6 @@ impl Coder {
                 }
             }
         }
-        Ok(())
     }
 
     // C API: Ptngc_unpack_array coder.c line 592
@@ -255,19 +254,28 @@ impl Coder {
     ) -> Result<(), TngError> {
         match coding {
             TNG_COMPRESS_ALGO_STOPBIT | TNG_COMPRESS_ALGO_VEL_STOPBIT_INTER => {
-                self.unpack_array_stop_bits(packed, output, length, coding_parameter)
+                self.unpack_array_stop_bits(packed, output, length, coding_parameter);
+                Ok(())
             }
 
             TNG_COMPRESS_ALGO_TRIPLET
             | TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA
             | TNG_COMPRESS_ALGO_POS_TRIPLET_ONETOONE => {
-                self.unpack_array_triplet(packed, output, length, coding_parameter)
+                self.unpack_array_triplet(packed, output, length, coding_parameter);
+                Ok(())
             }
-            TNG_COMPRESS_ALGO_POS_XTC2 => self.unpack_array_xtc2(packed, output, length),
+            TNG_COMPRESS_ALGO_POS_XTC2 => {
+                self.unpack_array_xtc2(packed, output, length);
+                Ok(())
+            }
             TNG_COMPRESS_ALGO_BWLZH1 | TNG_COMPRESS_ALGO_BWLZH2 => {
-                self.unpack_array_bwlzh(packed, output, length, n_atoms)
+                self.unpack_array_bwlzh(packed, output, length, n_atoms);
+                Ok(())
             }
-            TNG_COMPRESS_ALGO_POS_XTC3 => ptngc_unpack_array_xtc3(packed, output, length, n_atoms),
+            TNG_COMPRESS_ALGO_POS_XTC3 => {
+                ptngc_unpack_array_xtc3(packed, output, length, n_atoms);
+                Ok(())
+            }
             _ => Err(TngError::Constraint(format!(
                 "encountered unknown unpack algorithm. Got {coding}"
             ))),
@@ -356,7 +364,7 @@ impl Coder {
         output: &mut Vec<u8>,
     ) -> bool {
         loop {
-            let extract = !(0xffffffffu32 << coding_parameter);
+            let extract = !(0xffff_ffff_u32 << coding_parameter);
             let mut this = (s & extract) << 1;
             s >>= coding_parameter;
             if s > 0 {
@@ -459,7 +467,7 @@ impl Coder {
         output: &'a mut [i32],
         length: i32,
         coding_parameter: i32,
-    ) -> Result<(), TngError> {
+    ) {
         let mut extract_mask = 0x80;
         let ptr = packed;
         let mut ptr_count = 0;
@@ -510,7 +518,6 @@ impl Coder {
             }
             output[i as usize] = s;
         }
-        Ok(())
     }
 
     pub(crate) fn unpack_array_triplet<'a>(
@@ -519,13 +526,15 @@ impl Coder {
         output: &'a mut [i32],
         length: i32,
         coding_parameter: i32,
-    ) -> Result<(), TngError> {
+    ) {
         let mut extract_mask = 0x80;
         let mut max_base = 1u32 << coding_parameter;
         let mut maxbits = coding_parameter;
         let ptr = packed;
-        let intmax =
-            (ptr[0] as u32) << 24 | (ptr[1] as u32) << 16 | (ptr[2] as u32) << 8 | ptr[3] as u32;
+        let intmax = (u32::from(ptr[0]) << 24)
+            | (u32::from(ptr[1]) << 16)
+            | (u32::from(ptr[2]) << 8)
+            | u32::from(ptr[3]);
         let mut ptr_count = 4;
 
         while intmax >= max_base {
@@ -575,7 +584,6 @@ impl Coder {
                 output[(i * 3 + j) as usize] = s;
             }
         }
-        Ok(())
     }
 
     // C API: Ptngc_unpack_array_xtc2
@@ -584,7 +592,7 @@ impl Coder {
         packed: &'a [u8],
         output: &'a mut [i32],
         length: i32,
-    ) -> Result<(), TngError> {
+    ) {
         let mut output_counter = 0;
         let mut ptr = packed;
         let mut bitptr = 0;
@@ -792,7 +800,5 @@ impl Coder {
             }
             debug!("Number of triplets left is {ntriplets_left}");
         }
-
-        Ok(())
     }
 }

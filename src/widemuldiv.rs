@@ -1,6 +1,6 @@
 // Multiply two 32 bit unsigned integers returning a 64 bit unsigned value (in two integers)
 fn ptngc_widemul(i1: u32, i2: u32) -> (u32, u32) {
-    let result = (i1 as u64) * (i2 as u64);
+    let result = u64::from(i1) * u64::from(i2);
     let olo = result as u32;
     let ohi = (result >> 32) as u32;
     (ohi, olo)
@@ -8,9 +8,9 @@ fn ptngc_widemul(i1: u32, i2: u32) -> (u32, u32) {
 
 // Divide a 64 bit unsigned value in hi:lo with the 32 bit value i and return (result, remainder)
 fn ptngc_widediv(hi: u32, lo: u32, i: u32) -> (u32, u32) {
-    let v = (hi as u64) << 32 | lo as u64;
-    let res = v / (i as u64);
-    let rem = v - res * (i as u64);
+    let v = u64::from(hi) << 32 | u64::from(lo);
+    let res = v / u64::from(i);
+    let rem = v - res * u64::from(i);
 
     let result = res as u32;
     let remainder = rem as u32;

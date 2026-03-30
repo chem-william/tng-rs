@@ -5,7 +5,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum TngError {
     /// A constraint or validation was violated (e.g. stride length ordering).
-    /// Corresponds to C's TNG_FAILURE for argument/state validation.
+    /// Corresponds to C's `TNG_FAILURE` for argument/state validation.
     #[error("{0}")]
     Constraint(String),
 
@@ -17,7 +17,7 @@ pub enum TngError {
     #[error("{0}")]
     Critical(String),
 
-    /// I/O error wrapping std::io::Error.
+    /// I/O error wrapping `std::io::Error`.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -516,16 +516,22 @@ mod integration {
                     temp_int, -1,
                     "File position of previous frame set not correct."
                 );
-            } else if temp_int != -1 {
-                panic!("File position of previous frame set not correct.");
+            } else {
+                assert_eq!(
+                    temp_int, -1,
+                    "File position of previous frame set not correct."
+                );
             }
             if i < N_FRAME_SETS - 1 {
                 assert_ne!(
                     temp_int2, -1,
                     "File position of next frame set not correct."
                 );
-            } else if temp_int2 != -1 {
-                panic!("File position of previous next set not correct.");
+            } else {
+                assert_eq!(
+                    temp_int2, -1,
+                    "File position of previous next set not correct."
+                );
             }
             i += 1;
         }

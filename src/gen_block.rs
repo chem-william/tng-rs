@@ -233,7 +233,7 @@ pub struct GenBlock {
     pub(crate) id: BlockID,
 
     /// The MD5 hash of the block to verify integrity
-    /// (fixed‐length array of exactly MD5_HASH_LEN bytes)
+    /// (fixed‐length array of exactly `MD5_HASH_LEN` bytes)
     pub md5_hash: [u8; MD5_HASH_LEN],
 
     /// The name of the block

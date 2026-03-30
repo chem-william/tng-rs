@@ -26,7 +26,7 @@ impl DataType {
         }
     }
 
-    pub fn get_size(&self) -> usize {
+    pub fn get_size(self) -> usize {
         match self {
             DataType::Char => 1,
             DataType::Int => size_of::<i64>(),
@@ -51,7 +51,6 @@ impl Compression {
     /// Try to interpret a raw i64 as one of our variants. Unknown values become `Uncompressed`
     pub fn from_i64(raw: i64) -> Self {
         match raw {
-            0 => Compression::Uncompressed,
             1 => Compression::XTC,
             2 => Compression::TNG,
             3 => Compression::GZip,
@@ -107,9 +106,9 @@ pub struct Data {
 
     /// Numeric data values, if any. Each entry corresponds to one data point.
     /// The total length should be `n_frames * n_particles * n_values_per_frame`,
-    /// where “n_particles” comes from the enclosing frame set.
+    /// where `n_particles` comes from the enclosing frame set.
     /// A 1-dimensional array of values of length
-    ///  n_frames * n_particles * n_values_per_frame
+    ///  `n_frames` * `n_particles`* `n_values_per_frame`
     // pub values: Option<DataValue>,
     pub values: Option<Vec<u8>>,
 
@@ -129,9 +128,10 @@ impl Data {
         n_particles: i64,
         n_values_per_frame: i64,
     ) {
-        if n_particles == 0 || n_values_per_frame == 0 {
-            panic!("n_particles == 0 || n_values_per_frame == 0")
-        }
+        assert!(
+            n_particles != 0 && n_values_per_frame != 0,
+            "n_particles == 0 || n_values_per_frame == 0"
+        );
 
         if self.strings.is_some() && self.data_type == DataType::Char {
             self.strings = None;
@@ -184,9 +184,10 @@ impl Data {
         stride_length: i64,
         n_values_per_frame: i64,
     ) {
-        if n_values_per_frame == 0 {
-            panic!("n_particles == 0 || n_values_per_frame == 0")
-        }
+        assert!(
+            n_values_per_frame != 0,
+            "n_particles == 0 || n_values_per_frame == 0"
+        );
 
         if self.strings.is_some() && self.data_type == DataType::Char {
             self.strings = None;

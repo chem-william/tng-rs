@@ -20,14 +20,14 @@ const MAGIC: [u32; MAX_MAGIC] = [
     322,        406,       512,        645,        812,        1024,       1290,
     1625,       2048,      2580,       3250,       4096,       5160,       6501,
     8192,       10321,     13003,      16384,      20642,      26007,      32768,
-    41285,      52015,     65536,      82570,      104031,     131072,     165140,
-    208063,     262144,    330280,     416127,     524288,     660561,     832255,
-    1048576,    1321122,   1664510,    2097152,    2642245,    3329021,    4194304,
-    5284491,    6658042,   8388608,    10568983,   13316085,   16777216,   21137967,
-    26632170,   33554432,  42275935,   53264340,   67108864,   84551870,   106528681,
-    134217728,  169103740, 213057362,  268435456,  338207481,  426114725,  536870912,
-    676414963,  852229450, 1073741824, 1352829926, 1704458900, 2147483648, 2705659852,
-    3408917801,
+    41_285,      52_015,     65_536,      82_570,      104_031,     131_072,     165_140,
+    208_063,     262_144,    330_280,     416_127,     524_288,     660_561,     832_255,
+    1_048_576,   1_321_122,  1_664_510,   2_097_152,   2_642_245,   3_329_021,   4_194_304,
+    5_284_491,   6_658_042,  8_388_608,   10_568_983,  13_316_085,  16_777_216,  21_137_967,
+    26_632_170,  33_554_432, 42_275_935,  53_264_340,  67_108_864,  84_551_870,  106_528_681,
+    134_217_728, 169_103_740, 213_057_362, 268_435_456, 338_207_481, 426_114_725, 536_870_912,
+    676_414_963, 852_229_450, 1_073_741_824, 1_352_829_926, 1_704_458_900, 2_147_483_648, 2_705_659_852,
+    3_408_917_801,
 ];
 
 pub(crate) const MAGIC_BITS: [[u32; 8]; MAX_MAGIC] = [
@@ -174,7 +174,7 @@ pub(crate) fn readbits(ptr: &mut &[u8], bitptr: &mut i32, nbits: i32) -> u32 {
     while nbits != 0 {
         nbits -= 1;
         val <<= 1;
-        val |= ((extract_mask & thisval as u32) != 0) as u32;
+        val |= u32::from((extract_mask & u32::from(thisval)) != 0);
         *bitptr += 1;
         extract_mask >>= 1;
         if extract_mask == 0 {
@@ -351,9 +351,7 @@ fn trajcoder_base_compress(input: &[i32], n: usize, index: &[u32], result: &mut 
         ptngc_largeint_add(input[i] as u32, &mut largeint, 19);
     }
 
-    if largeint[18] > 0 {
-        panic!("TRAJNG: BUG! Overflow in compression detected!")
-    }
+    assert!(largeint[18] == 0, "BUG! Overflow in compression detected!");
 
     // Convert the largeint to a sequence of bytes
     for i in 0..18 {
@@ -373,7 +371,7 @@ pub(crate) fn trajcoder_base_decompress(input: &[u8], n: i32, index: &[u32], out
     for i in 0..18 {
         let mut shift = 0;
         for j in 0..4 {
-            largeint[i] |= (input[i * 4 + j] as u32) << shift;
+            largeint[i] |= u32::from(input[i * 4 + j]) << shift;
             shift += 8;
         }
     }
@@ -486,7 +484,7 @@ pub(crate) fn ptngc_pack_array_xtc2(
             j, minint[j], j, maxint[j], j, large_index[j], MAGIC[large_index[j] as usize]
         );
     }
-    debug!("large_nbits={}", large_nbits);
+    debug!("large_nbits={large_nbits}");
 
     // Guess the initial small index
     let mut small_index = max_large_index / 2;
@@ -686,7 +684,7 @@ pub(crate) fn ptngc_pack_array_xtc2(
                     &minint,
                     &mut encode_ints,
                     min_runlength,
-                )
+                );
             }
             // Here we should only have differences for the atom coordinates.
             // Convert the ints to positive ints
@@ -822,7 +820,7 @@ pub(crate) fn ptngc_pack_array_xtc2(
                                 let mut isum = 0.0; // ints can be almost 32 bit so multiplication will overflow. So do doubles
                                 for ixyz in 0..3 {
                                     // encode_ints is already positive (and multiplied by 2 versus the original, just as magic ints)
-                                    let id = encode_ints[ixx * 3 + ixyz] as f64;
+                                    let id = f64::from(encode_ints[ixx * 3 + ixyz]);
                                     isum += id * id;
                                 }
                                 rejected = false;
@@ -972,7 +970,7 @@ pub(crate) fn ptngc_pack_array_xtc2(
                 );
                 debug!(
                     "nbits={nbits}, ({})",
-                    nbits as f64 / (runlength as f64 * 3.)
+                    f64::from(nbits) / (runlength as f64 * 3.)
                 );
                 // write out base compressed small integers
                 coder.ptngc_write_many_bits(&compress_buffer, nbits, &mut output);

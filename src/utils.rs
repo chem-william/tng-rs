@@ -390,7 +390,7 @@ pub fn write_u8(output_file: &mut File, value: u8) {
 }
 
 pub fn write_bool(output_file: &mut File, value: bool) {
-    let byte = if value { 1u8 } else { 0u8 };
+    let byte = u8::from(value);
     output_file
         .write_all(&[byte])
         .expect("to be able to write bool to output_file");
@@ -406,7 +406,7 @@ pub(crate) fn bounded_len(s: &str) -> usize {
 pub(crate) fn copy_bytes(source: u32, destination: &mut [u8], index: &mut usize) {
     let bytes = source.to_le_bytes();
     destination[*index..*index + 4].copy_from_slice(&bytes);
-    *index += 4
+    *index += 4;
 }
 
 #[cfg(test)]

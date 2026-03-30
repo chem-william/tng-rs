@@ -10,7 +10,7 @@ pub struct Atom {
     pub(crate) residue_index: Option<usize>,
     /// A unique (per molecule) ID number of the atom
     pub(crate) id: i64,
-    /// The atom_type (depending on the forcefield)
+    /// The atom type (depending on the forcefield)
     pub(crate) atom_type: String,
     /// The name of the atom
     pub(crate) name: String,

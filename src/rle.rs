@@ -51,10 +51,10 @@ pub(crate) fn ptngc_comp_conv_from_rle(rle: &[u32], output_len: usize) -> Vec<u3
             j += 1;
         }
 
-        if !has_rle {
-            len = 1;
-        } else {
+        if has_rle {
             len |= mask;
+        } else {
+            len = 1;
         }
 
         for _ in 0..len {

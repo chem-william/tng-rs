@@ -1,5 +1,4 @@
 use crate::{
-    TngError,
     bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_decompress, bwlzh_get_buflen},
     widemuldiv::{ptngc_largeint_add, ptngc_largeint_div, ptngc_largeint_mul},
     xtc2::{ptngc_find_magic_index, ptngc_magic},
@@ -461,7 +460,7 @@ fn insert_batch(
 pub(crate) fn is_quite_large(input: &[i32], small_index: u32, max_large_index: u32) -> bool {
     let mut is = false;
     if small_index + QUITE_LARGE >= max_large_index {
-        is = true
+        is = true;
     } else {
         for inp in input.iter().take(3) {
             if positive_int(*inp)
@@ -734,7 +733,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
 
             // Here we should only have differences for the atom coordinates.
             // Convert the ints to positive ints
-            for item in encode_ints[..nencode].iter_mut() {
+            for item in &mut encode_ints[..nencode] {
                 // Match the C encoder, which stores the `positive_int` result in `int`
                 // and therefore wraps when the value exceeds `i32::MAX`.
                 *item = positive_int(*item) as i32;
@@ -972,8 +971,8 @@ pub(crate) fn ptngc_pack_array_xtc3(
                         xtc3_context.instructions.push(INSTR_ONLY_SMALL);
                     }
                     // Insert the small integers into the small integer array
-                    for &item in encode_ints[..runlength * 3].iter() {
-                        xtc3_context.smallintra.push(item as u32);
+                    for item in &encode_ints[..runlength * 3] {
+                        xtc3_context.smallintra.push(*item as u32);
                     }
                     // Update `prevcoord`
                     for ienc in 0..runlength {
@@ -1087,7 +1086,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             &mut output,
             &bwlzh_buf,
             bwlzh_buf_len,
-            base_buf,
+            &base_buf,
             base_buf_len,
         );
     }
@@ -1133,7 +1132,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             &mut output,
             &bwlzh_buf,
             bwlzh_buf_len,
-            base_buf,
+            &base_buf,
             base_buf_len,
         );
     }
@@ -1179,7 +1178,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             &mut output,
             &bwlzh_buf,
             bwlzh_buf_len,
-            base_buf,
+            &base_buf,
             base_buf_len,
         );
     }
@@ -1220,7 +1219,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             &mut output,
             &bwlzh_buf,
             bwlzh_buf_len,
-            base_buf,
+            &base_buf,
             base_buf_len,
         );
     }
@@ -1244,7 +1243,7 @@ fn decompress_base_block(ptr: &mut &[u8], nvals: usize, vals: &mut Vec<u32>) {
 }
 
 fn base_decompress(input: &[u8], len: usize, output: &mut [u32]) {
-    let maxbasevals = (input[0] as u16 | ((input[1] as u16) << 8)) as usize;
+    let maxbasevals = (u16::from(input[0]) | (u16::from(input[1]) << 8)) as usize;
     let baseinterval = input[2] as usize;
     let mut input = &input[3..];
 
@@ -1277,7 +1276,7 @@ fn base_decompress(input: &[u8], len: usize, output: &mut [u32]) {
                 for (j, item) in input.iter().enumerate().take(numbytes) {
                     let ilarge = j / 4;
                     let ibyte = j % 4;
-                    largeint[ilarge] |= (*item as u32) << (ibyte * 8);
+                    largeint[ilarge] |= u32::from(*item) << (ibyte * 8);
                 }
             }
             input = &input[numbytes..];
@@ -1315,11 +1314,12 @@ fn unpack_one_large(
         large_ints[2] = ctx.large_direct[*ilargedir + 2] as i32 + minint[2];
         *ilargedir += 3;
     } else if current_large_type == 1 && !ctx.large_intra_delta.is_empty() {
-        large_ints[0] = unpositive_int(ctx.large_intra_delta[*ilargeintra] as i32) + prevcoord[0];
+        large_ints[0] =
+            unpositive_int(ctx.large_intra_delta[*ilargeintra].cast_signed()) + prevcoord[0];
         large_ints[1] =
-            unpositive_int(ctx.large_intra_delta[*ilargeintra + 1] as i32) + prevcoord[1];
+            unpositive_int(ctx.large_intra_delta[*ilargeintra + 1].cast_signed()) + prevcoord[1];
         large_ints[2] =
-            unpositive_int(ctx.large_intra_delta[*ilargeintra + 2] as i32) + prevcoord[2];
+            unpositive_int(ctx.large_intra_delta[*ilargeintra + 2].cast_signed()) + prevcoord[2];
         *ilargeintra += 3;
     } else if !ctx.large_inter_delta.is_empty() {
         let swap_offset = if didswap { 3 } else { 0 };
@@ -1342,7 +1342,7 @@ pub(crate) fn ptngc_unpack_array_xtc3(
     output: &mut [i32],
     length: i32,
     n_atoms: usize,
-) -> Result<(), TngError> {
+) {
     let mut xtc3_context = Xtc3Context::default();
     let mut ptr = packed;
     let mut minint = [0i32; 3];
@@ -1473,9 +1473,12 @@ pub(crate) fn ptngc_unpack_array_xtc3(
             }
             if instr != INSTR_ONLY_LARGE {
                 for i in 0..runlength {
-                    prevcoord[0] += unpositive_int(xtc3_context.smallintra[ismallintra] as i32);
-                    prevcoord[1] += unpositive_int(xtc3_context.smallintra[ismallintra + 1] as i32);
-                    prevcoord[2] += unpositive_int(xtc3_context.smallintra[ismallintra + 2] as i32);
+                    prevcoord[0] +=
+                        unpositive_int(xtc3_context.smallintra[ismallintra].cast_signed());
+                    prevcoord[1] +=
+                        unpositive_int(xtc3_context.smallintra[ismallintra + 1].cast_signed());
+                    prevcoord[2] +=
+                        unpositive_int(xtc3_context.smallintra[ismallintra + 2].cast_signed());
                     ismallintra += 3;
                     output[outdata + i * 3] = prevcoord[0];
                     output[outdata + i * 3 + 1] = prevcoord[1];
@@ -1522,8 +1525,6 @@ pub(crate) fn ptngc_unpack_array_xtc3(
             current_large_type = 2;
         }
     }
-
-    Ok(())
 }
 
 fn base_or_bwlzh_output(
@@ -1531,7 +1532,7 @@ fn base_or_bwlzh_output(
     output: &mut [u8],
     bwlzh_buf: &[u8],
     bwlzh_buf_len: usize,
-    base_buf: Vec<u8>,
+    base_buf: &[u8],
     base_buf_len: usize,
 ) {
     if base_buf_len < bwlzh_buf_len {
@@ -1542,7 +1543,7 @@ fn base_or_bwlzh_output(
             outdata,
             u32::try_from(base_buf_len).expect("u32 from usize"),
         );
-        output[*outdata..*outdata + base_buf_len].copy_from_slice(&base_buf);
+        output[*outdata..*outdata + base_buf_len].copy_from_slice(base_buf);
         *outdata += base_buf_len;
     } else {
         output[*outdata] = 1;

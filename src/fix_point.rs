@@ -4,19 +4,19 @@ use std::ops::{BitAnd, BitOr, BitOrAssign, Shl};
 pub struct FixT(u32);
 
 impl FixT {
-    pub(crate) const MAX32BIT: u32 = 4294967295; // (1 << 32) - 1
-    pub(crate) const MAX31BIT: u32 = 2147483647; // (1 << 31) - 1
-    pub(crate) const SIGN32BIT: u32 = 2147483648; // 1 << 31
+    pub(crate) const MAX32BIT: u32 = 4_294_967_295; // (1 << 32) - 1
+    pub(crate) const MAX31BIT: u32 = 2_147_483_647; // (1 << 31) - 1
+    pub(crate) const SIGN32BIT: u32 = 2_147_483_648; // 1 << 31
 
     /// Positive `f64` to 32 bit fixed point value
     ///
-    /// c version: Ptncg_ud_to_fix_t
+    /// C API: `Ptncg_ud_to_fix_t`
     pub fn from_f64_unsigned(d: f64, max: f64) -> Self {
         let d_clamped = d.clamp(0.0, max);
 
         // Scale into [0..u32::MAX] and round
-        let scaled = (d_clamped / max) * (u32::MAX as f64);
-        if scaled > (u32::MAX as f64) {
+        let scaled = (d_clamped / max) * f64::from(u32::MAX);
+        if scaled > f64::from(u32::MAX) {
             FixT(u32::MAX)
         } else {
             FixT(scaled as u32)
@@ -25,13 +25,13 @@ impl FixT {
 
     /// `f64` to signed 32 bit fixed point value
     ///
-    /// c version: Ptngc_d_to_fix_t
+    /// C API: `Ptngc_d_to_fix_t`
     pub fn from_f64_signed(d: f64, max: f64) -> Self {
         // compute ratio, clamped into [−1.0..1.0]
         let ratio = (d / max).clamp(-1.0, 1.0);
 
         // magnitude = floor(|ratio| * MAX31BIT), guaranteed ≤ MAX31BIT
-        let mag_f = (ratio.abs() * (Self::MAX31BIT as f64)).floor();
+        let mag_f = (ratio.abs() * f64::from(Self::MAX31BIT)).floor();
         let mag = mag_f as u32; // now in [0..MAX31BIT]
 
         // if negative, set the sign bit; otherwise leave it as-is
@@ -44,16 +44,16 @@ impl FixT {
 
     /// 32 bit fixed point value to positive `f64`
     ///
-    /// c version: Ptncg_fix_t_to_ud
+    /// C API: `Ptncg_fix_t_to_ud`
     pub(crate) fn to_f64_unsigned(self, max: f64) -> f64 {
-        (self.0 as f64) * (max / (u32::MAX as f64))
+        f64::from(self.0) * (max / f64::from(u32::MAX))
     }
 
     /// Signed 32 bit fixed point value to `f64`
     ///
-    /// c version: Ptngc_fix_t_to_d
+    /// C API: `Ptngc_fix_t_to_d`
     pub(crate) fn to_f64_signed(self, max: f64) -> f64 {
-        self.0 as f64 * (max / (Self::MAX32BIT as f64))
+        f64::from(self.0) * (max / f64::from(Self::MAX32BIT))
     }
 }
 
@@ -116,7 +116,7 @@ impl std::fmt::Display for FixT {
 /// Convert a floating point variable to two 32 bit integers with range
 /// -2.1e9 to 2.1e9 and precision somewhere around 1e-9
 ///
-/// c version: Ptngc_d_to_i32x2
+/// C API: `Ptngc_d_to_i32x2`
 pub(crate) fn f64_to_fixt_pair(d: f64) -> (FixT, FixT) {
     // Handle sign & work with absolute value
     let mut abs = d;
@@ -131,7 +131,7 @@ pub(crate) fn f64_to_fixt_pair(d: f64) -> (FixT, FixT) {
     let frac = abs - ent_f;
 
     // Clamp the integer part at MAX31BIT if it’s too big, then cast
-    let mut hi = if ent_f > (FixT::MAX31BIT as f64) {
+    let mut hi = if ent_f > f64::from(FixT::MAX31BIT) {
         FixT::MAX31BIT
     } else {
         ent_f as u32
@@ -149,7 +149,7 @@ pub(crate) fn f64_to_fixt_pair(d: f64) -> (FixT, FixT) {
 /// Convert two 32 bit integers to a floating point variable
 /// -2.1e9 to 2.1e9 and precision to somewhere around 1e-0
 ///
-/// c version: Ptngc_i32x2_to_d
+/// C API: `Ptngc_i32x2_to_d`
 pub(crate) fn fixt_pair_to_f64(hi: FixT, lo: FixT) -> f64 {
     let negative = (u32::from(hi) & FixT::SIGN32BIT) != 0;
     // Mask away the sign bit to get the absolute integer part
@@ -159,7 +159,7 @@ pub(crate) fn fixt_pair_to_f64(hi: FixT, lo: FixT) -> f64 {
         u32::from(hi)
     };
 
-    let ent = magnitude_hi as f64;
+    let ent = f64::from(magnitude_hi);
     let frac = lo.to_f64_signed(1.0);
     let val = ent + frac;
 

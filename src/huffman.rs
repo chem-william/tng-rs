@@ -174,9 +174,8 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
                     let pc = htree[new_place - 1].prob();
                     if new_prob < pc {
                         break;
-                    } else {
-                        new_place -= 1;
                     }
+                    new_place -= 1;
                 }
 
                 if new_place != nleft {
@@ -234,7 +233,9 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
 
         // If the codes are too long alter the probabilities
         if longcodes {
-            prob.iter_mut().for_each(|p| *p = (*p >> 1).max(1));
+            for p in prob.iter_mut() {
+                *p = (*p >> 1).max(1);
+            }
         }
     }
 
@@ -269,16 +270,7 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
     //  well, either we compress well, or we have many values anyway.
     // First sort the dictionary wrt symbol
     // codelength.sort_by_key(|c| c.dict);
-    codelength.sort_by(|a, b| {
-        if a.dict > b.dict {
-            Ordering::Greater
-        } else if a.dict < b.dict {
-            Ordering::Less
-        } else {
-            // covers both a.dict < b.dict AND a.dict == b.dict
-            Ordering::Less
-        }
-    });
+    codelength.sort_by(|a, b| a.dict.cmp(&b.dict));
 
     bitptr = 0;
     let mut huffman_dict_index = 0usize; // Instead of the huffman_ptr
@@ -298,9 +290,9 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
     huffman_dict_index += 1;
 
     // Write to huffman_dict_unpacked
-    huffman_dict_unpacked[0] = byte0 as u32;
-    huffman_dict_unpacked[1] = byte1 as u32;
-    huffman_dict_unpacked[2] = byte2 as u32;
+    huffman_dict_unpacked[0] = u32::from(byte0);
+    huffman_dict_unpacked[1] = u32::from(byte1);
+    huffman_dict_unpacked[2] = u32::from(byte2);
 
     for i in 0..codelength[ndict - 1].dict + 1 {
         // Do I have this value?
@@ -369,8 +361,9 @@ pub(crate) fn ptngc_comp_conv_from_huffman(
         }
     } else {
         let mut huffman_ptr = huffman_dict.unwrap();
-        maxdict =
-            huffman_ptr[0] as u32 | (huffman_ptr[1] as u32) << 8 | (huffman_ptr[2] as u32) << 16;
+        maxdict = u32::from(huffman_ptr[0])
+            | (u32::from(huffman_ptr[1]) << 8)
+            | (u32::from(huffman_ptr[2]) << 16);
         huffman_ptr = &huffman_ptr[3..];
         bitptr = 0;
         let mut j = 0;
@@ -439,7 +432,7 @@ fn writebits(
     bitptr: &mut usize,
 ) {
     // Read current byte from output position
-    let mut combine = output[*output_index] as u32;
+    let mut combine = u32::from(output[*output_index]);
     // let mut combine: u32 = if *output_index < output.len() {
     //     output[*output_index] as u32
     // } else {

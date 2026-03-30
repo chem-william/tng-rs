@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub(crate) const fn ptngc_comp_huff_buflen(nvals: usize) -> usize {
-    132000 + nvals * 8
+    132_000 + nvals * 8
 }
 
 const HUFF_ALGO_NAMES: [&str; 3] = [
@@ -20,7 +20,7 @@ const HUFF_ALGO_NAMES: [&str; 3] = [
 pub const fn ptngc_comp_get_huff_algo_name(algo: usize) -> Option<&'static str> {
     if algo >= N_HUFFMAN_ALGO {
         return None;
-    };
+    }
     Some(HUFF_ALGO_NAMES[algo])
 }
 
@@ -38,13 +38,13 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     let mut nvals = vals.len();
 
     // Do I need to convert to vals16?
-    if !isvals16 {
+    if isvals16 {
+        nvals16 = nvals;
+    } else {
         let mut vals16 = vec![0; nvals * 3];
         nvals16 = ptngc_comp_conv_to_vals16(vals, &mut vals16);
         nvals = nvals16;
         vals.clone_from_slice(&vals16[..nvals]);
-    } else {
-        nvals16 = nvals;
     }
 
     // Determine probabilities
@@ -134,7 +134,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     {
         *chosen_algo = 0;
         *huffman_len = i32::try_from(huffman_lengths[0]).expect("i32 from usize");
-        huffman[0] = isvals16 as u8;
+        huffman[0] = u8::from(isvals16);
         huffman[1] = 0;
         huffman[2] = (nvals16 & 0xFF) as u8;
         huffman[3] = ((nvals16 >> 8) & 0xFF) as u8;
@@ -162,7 +162,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     {
         *chosen_algo = 1;
         *huffman_len = i32::try_from(huffman_lengths[1]).expect("i32 from usize");
-        huffman[0] = isvals16 as u8;
+        huffman[0] = u8::from(isvals16);
         huffman[1] = 1;
         huffman[2] = ((nvals16) & 0xFF) as u8;
         huffman[3] = (((nvals16) >> 8) & 0xFF) as u8;
@@ -200,7 +200,7 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
     } else {
         *chosen_algo = 2;
         *huffman_len = i32::try_from(huffman_lengths[2]).expect("i32 from usize");
-        huffman[0] = isvals16 as u8;
+        huffman[0] = u8::from(isvals16);
         huffman[1] = 2;
         huffman[2] = ((nvals16) & 0xFF) as u8;
         huffman[3] = (((nvals16) >> 8) & 0xFF) as u8;
@@ -242,12 +242,14 @@ pub(crate) fn ptngc_comp_huff_compress_verbose(
 }
 
 fn read3le(data: &[u8], offset: usize) -> i32 {
-    (data[offset] as i32) | ((data[offset + 1] as i32) << 8) | ((data[offset + 2] as i32) << 16)
+    i32::from(data[offset])
+        | (i32::from(data[offset + 1]) << 8)
+        | (i32::from(data[offset + 2]) << 16)
 }
 
 pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], _huffman_len: i32, vals: &mut [u32]) {
-    let isvals16 = huffman[0] as i32;
-    let algo = huffman[1] as i32;
+    let isvals16 = i32::from(huffman[0]);
+    let algo = i32::from(huffman[1]);
     let mut nvals16 = i32::from_le_bytes(huffman[2..2 + 4].try_into().expect("error handling"));
     let nvals = i32::from_le_bytes(huffman[6..6 + 4].try_into().expect("error handling"));
     let nhuff = i32::from_le_bytes(huffman[10..10 + 4].try_into().expect("error handling"));
