@@ -302,3 +302,120 @@ fn tng_example_test() {
 
     tng_example_molecule_find(&mut traj);
 }
+
+fn water_trj_num_particles(traj: &mut Trajectory) {
+    let n_particles = traj.num_particles_get();
+    assert_eq!(n_particles, 2700);
+}
+fn water_trj_num_frames(traj: &mut Trajectory) {
+    let n_frames = traj.num_frames_get().unwrap();
+    assert_eq!(n_frames, 500001);
+}
+fn water_trj_box_shape_read(traj: &mut Trajectory) {
+    let (_box_shape, stride_length) = traj.util_box_shape_read().unwrap();
+    assert_eq!(stride_length, 5000);
+}
+fn water_trj_box_shape_values(traj: &mut Trajectory) {
+    let (box_shape, _stride_length) = traj.util_box_shape_read().unwrap();
+    let frame_0 = [
+        3.01125e+00,
+        0.00000e+00,
+        0.00000e+00,
+        0.00000e+00,
+        3.01125e+00,
+        0.00000e+00,
+        0.00000e+00,
+        0.00000e+00,
+        3.01125e+00,
+    ];
+    for i in 0..9 {
+        assert_approx_eq!(box_shape[i], frame_0[i]);
+    }
+
+    let frame_100 = [
+        2.870210, 0.000000, 0.000000, 0.000000, 2.870210, 0.000000, 0.000000, 0.000000, 2.870210,
+    ];
+    for i in 0..9 {
+        assert_approx_eq!(box_shape[909 - 9 + i], frame_100[i]);
+    }
+}
+fn water_trj_position_read(traj: &mut Trajectory) {
+    let (_positions, stride_length) = traj.util_pos_read().unwrap();
+    assert_eq!(stride_length, 5000);
+}
+fn water_trj_position_values(traj: &mut Trajectory) {
+    let (positions, _stride_length) = traj.util_pos_read().unwrap();
+    // xyz first 10 atoms frame 0
+    // gmx dump frame 100
+    #[rustfmt::skip]
+    let frame_0_first_10_values = [
+        7.43000e-01,  2.42200e+00,  2.25100e+00,
+        7.29000e-01,  2.48600e+00,  2.32000e+00,
+        6.60000e-01,  2.37500e+00,  2.24500e+00,
+        9.44000e-01,  1.43200e+00,  1.51800e+00,
+        1.02100e+00,  1.48600e+00,  1.50000e+00,
+        8.76000e-01,  1.46800e+00,  1.46000e+00,
+        2.55700e+00,  2.11600e+00,  1.38800e+00,
+        2.64500e+00,  2.14600e+00,  1.41200e+00,
+        2.50000e+00,  2.15500e+00,  1.45400e+00,
+        1.04500e+00,  2.51300e+00,  2.47000e-01,
+    ];
+    for i in 0..30 {
+        assert_approx_eq!(positions[i], frame_0_first_10_values[i]);
+    }
+
+    // xyz last 10 atoms frame 100
+    // gmx dump frame 100
+    #[rustfmt::skip]
+    let frame_100_first_10_values = [
+        8.56000e-01,  2.24800e+00,  2.79100e+00,
+        9.53000e-01,  7.58000e-01,  8.59000e-01,
+        9.24000e-01,  7.24000e-01,  7.74000e-01,
+        8.73000e-01,  7.67000e-01,  9.10000e-01,
+        5.08000e-01,  2.31100e+00,  1.85000e-01,
+        5.25000e-01,  2.32700e+00,  9.30000e-02,
+        5.14000e-01,  2.21600e+00,  1.95000e-01,
+        6.67000e-01,  2.15500e+00,  1.65700e+00,
+        5.84000e-01,  2.14800e+00,  1.61000e+00,
+        7.18000e-01,  2.21700e+00,  1.60500e+00,
+    ];
+    for i in 0..30 {
+        assert_approx_eq!(positions[818100 - 30 + i], frame_100_first_10_values[i]);
+    }
+}
+fn water_trj_force_read(traj: &mut Trajectory) {
+    let _ = traj
+        .util_force_read()
+        .expect_err("no forces expected in this file");
+}
+fn water_trj_vel_read(traj: &mut Trajectory) {
+    let _ = traj
+        .util_vel_read()
+        .expect_err("no forces expected in this file");
+}
+#[test]
+fn water_trj_conv_test() {
+    let mut input_filename = std::env::current_dir().expect("able to get current working dir");
+    input_filename.push(TEST_FILES_DIR);
+    input_filename.push("water_npt_compressed_trjconv.tng");
+
+    let mut traj = Trajectory::new();
+    traj.util_trajectory_open(input_filename.as_path(), 'r')
+        .unwrap();
+
+    water_trj_num_particles(&mut traj);
+
+    water_trj_num_frames(&mut traj);
+
+    water_trj_box_shape_read(&mut traj);
+
+    water_trj_box_shape_values(&mut traj);
+
+    water_trj_position_read(&mut traj);
+
+    water_trj_position_values(&mut traj);
+
+    water_trj_force_read(&mut traj);
+
+    water_trj_vel_read(&mut traj);
+}
