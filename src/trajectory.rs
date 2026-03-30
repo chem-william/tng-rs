@@ -1798,17 +1798,19 @@ impl Trajectory {
             }
         }
 
-        let proto_mol = &self.molecules[0];
         length += size_of_val(&self.n_molecules);
-        length += size_of_val(&proto_mol.id);
-        length += size_of_val(&proto_mol.quaternary_str);
-        length += size_of_val(&proto_mol.n_chains);
-        length += size_of_val(&proto_mol.n_residues);
-        length += size_of_val(&proto_mol.n_atoms);
-        length += size_of_val(&proto_mol.n_bonds) * self.n_molecules as usize;
+        if let Some(proto_mol) = self.molecules.first() {
+            let per_molecule_len = size_of_val(&proto_mol.id)
+                + size_of_val(&proto_mol.quaternary_str)
+                + size_of_val(&proto_mol.n_chains)
+                + size_of_val(&proto_mol.n_residues)
+                + size_of_val(&proto_mol.n_atoms)
+                + size_of_val(&proto_mol.n_bonds);
+            length += per_molecule_len * self.n_molecules as usize;
+        }
 
         if !self.var_num_atoms {
-            length += usize::try_from(self.n_molecules).expect("usize from i64") * size_of::<u64>();
+            length += usize::try_from(self.n_molecules).expect("usize from i64") * size_of::<i64>();
         }
         u64::try_from(length).expect("u64 from usize")
     }
@@ -1854,10 +1856,10 @@ impl Trajectory {
             if is_particle_data {
                 for i in 0..n_frames {
                     let first_dim_values = &strings_3d[i as usize];
-                    for j in num_first_particle..n_particles {
+                    for j in num_first_particle..num_first_particle + n_particles {
                         let second_dim_values = &first_dim_values[j as usize];
                         for k in 0..data.n_values_per_frame {
-                            length += second_dim_values[k as usize].len();
+                            length += second_dim_values[k as usize].len() + 1;
                         }
                     }
                 }
@@ -3172,7 +3174,15 @@ impl Trajectory {
                 let data = &self.non_tr_particle_data[i];
                 block.name = Some(data.block_name.clone());
                 total_len += block.calculate_header_len();
-                total_len += Self::data_block_len_calculate(data, true, 1, 1, 1, 0, 1);
+                total_len += Self::data_block_len_calculate(
+                    data,
+                    true,
+                    1,
+                    1,
+                    1,
+                    0,
+                    u64::try_from(self.n_particles).expect("u64 from i64"),
+                );
             }
 
             let orig_len = u64::try_from(orig_len).expect("u64 from usize");
@@ -3275,6 +3285,7 @@ impl Trajectory {
         let orig_pos = self.get_input_file_position();
         let curr_frame_set_pos =
             u64::try_from(self.current_trajectory_frame_set_input_file_pos).expect("u64 from i64");
+        let mut pos = curr_frame_set_pos;
         let mut len = 0;
 
         self.input_file
@@ -3295,11 +3306,14 @@ impl Trajectory {
             self.input_file
                 .as_mut()
                 .expect("init input_file")
-                .seek(SeekFrom::Start(curr_frame_set_pos))
+                .seek(SeekFrom::Current(
+                    i64::try_from(block.block_contents_size).expect("i64 from u64"),
+                ))
                 .expect("no error handling");
 
             len += block.header_contents_size + block.block_contents_size;
-            if len >= self.input_file_len {
+            pos += block.header_contents_size + block.block_contents_size;
+            if pos >= self.input_file_len {
                 break;
             }
             self.block_header_read(&mut block);
@@ -3589,20 +3603,25 @@ impl Trajectory {
         new_pos: u64,
         hash_mode: bool,
     ) {
+        let mut updated = false;
         self.input_file_init();
-        let inp_file = self.input_file.as_mut().expect("init input_file");
-        let out_file = self.output_file.as_mut().expect("init input_file");
-        inp_file
-            .seek(SeekFrom::Start(
-                u64::try_from(block_start_pos).expect("u64 from i64"),
-            ))
-            .expect("no error handling");
         let mut contents: Vec<u8> = vec![0u8; block_len];
-        inp_file.read_exact(&mut contents);
-        out_file
-            .seek(SeekFrom::Start(new_pos))
-            .expect("no error handling");
-        out_file.write_all(&contents);
+        {
+            let inp_file = self.input_file.as_mut().expect("init input_file");
+            inp_file
+                .seek(SeekFrom::Start(
+                    u64::try_from(block_start_pos).expect("u64 from i64"),
+                ))
+                .expect("no error handling");
+            inp_file.read_exact(&mut contents);
+        }
+        {
+            let out_file = self.output_file.as_mut().expect("init input_file");
+            out_file
+                .seek(SeekFrom::Start(new_pos))
+                .expect("no error handling");
+            out_file.write_all(&contents);
+        }
 
         self.current_trajectory_frame_set_output_file_pos =
             i64::try_from(new_pos).expect("i64 from u64");
@@ -3617,6 +3636,33 @@ impl Trajectory {
         }
 
         self.frame_set_pointers_update(hash_mode);
+
+        if block_start_pos == self.first_trajectory_frame_set_output_file_pos {
+            self.first_trajectory_frame_set_output_file_pos =
+                i64::try_from(new_pos).expect("i64 from u64");
+            updated = true;
+        }
+        if block_start_pos == self.last_trajectory_frame_set_output_file_pos {
+            self.last_trajectory_frame_set_output_file_pos =
+                i64::try_from(new_pos).expect("i64 from u64");
+            updated = true;
+        }
+        if updated {
+            self.header_pointers_update(hash_mode)
+                .expect("header pointers update after frame set migration");
+        }
+
+        // Clear the old block so stale headers are not left behind after migration.
+        contents.fill(0);
+        let out_file = self.output_file.as_mut().expect("init input_file");
+        out_file
+            .seek(SeekFrom::Start(
+                u64::try_from(block_start_pos).expect("u64 from i64"),
+            ))
+            .expect("no error handling");
+        out_file
+            .write_all(&contents)
+            .expect("Could not clear migrated frame set contents.");
     }
 
     /// Migrate data blocks in the file to make room for new data in a block. This
@@ -4712,7 +4758,6 @@ impl Trajectory {
             i64::try_from(self.get_output_file_position()).expect("i64 from u64");
         self.last_trajectory_frame_set_output_file_pos =
             self.current_trajectory_frame_set_output_file_pos;
-
         if self.current_trajectory_frame_set_output_file_pos <= 0 {
             return Err(TngError::Constraint(
                 "output file position is invalid; cannot write frame set".to_string(),
@@ -7861,7 +7906,6 @@ impl Trajectory {
             );
             let curr_file_pos = self.get_output_file_position();
             let pos = self.current_trajectory_frame_set_output_file_pos;
-
             self.output_file
                 .as_ref()
                 .expect("init input_file")
@@ -7886,10 +7930,7 @@ impl Trajectory {
                 })?;
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file
-                .write_all(
-                    &(size_of_val(&self.current_trajectory_frame_set.first_frame) as i64)
-                        .to_ne_bytes(),
-                )
+                .write_all(&self.current_trajectory_frame_set.n_frames.to_ne_bytes())
                 .expect("able to write to output_file");
 
             // TODO: hash mode tng_io.c line 6242
