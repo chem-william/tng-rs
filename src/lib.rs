@@ -489,7 +489,7 @@ mod integration {
 
         test_molecules(traj);
 
-        let (masses, n_frames, read_n_particles, n_values_per_frame, _data_type) = traj
+        let (masses, _n_frames, read_n_particles, _n_values_per_frame, _data_type) = traj
             .particle_data_get(BlockID::TrajMasses)
             .expect("failed getting particle masses");
 
@@ -546,7 +546,7 @@ mod integration {
             ));
 
         let frame_set = traj.current_frame_set_get();
-        let (temp_int, temp_int2) = traj.frame_set_frame_range_get(frame_set);
+        let (temp_int, _temp_int2) = traj.frame_set_frame_range_get(frame_set);
         assert_eq!(temp_int, 75 * n_frames_per_frame_set);
 
         traj.frame_set_read_current_only_data_from_block_id(hash_mode, BlockID::TrajPositions)
