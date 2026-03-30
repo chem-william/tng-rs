@@ -470,8 +470,17 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: `tng_time_per_frame_get`
+    ///
+    /// Get the current time per frame of the trajectory.
+    pub(crate) fn time_per_frame_get(&self) -> f64 {
+        self.time_per_frame
+    }
+
     /// C API: `tng_first_computer_name_set`.
-    pub fn set_first_computer_name(&mut self, new_name: &str) {
+    ///
+    /// Set the name of the computer used when creating the trajectory
+    pub fn first_computer_name_set(&mut self, new_name: &str) {
         let length = new_name.floor_char_boundary(MAX_STR_LEN - 1);
         self.first_computer_name = new_name[..length].to_string();
     }
@@ -4953,6 +4962,10 @@ impl Trajectory {
         count
     }
 
+    pub(crate) fn current_frame_set_get(&self) -> &TrajectoryFrameSet {
+        &self.current_trajectory_frame_set
+    }
+
     /// C API: `tng_frame_set_nr_find`.
     ///
     /// Find the requested frame set number
@@ -8204,6 +8217,28 @@ impl Trajectory {
             values.into_iter().map(|x| x as f32).collect(),
             stride_length,
         ))
+    }
+
+    /// C API: `tng_frame_set_next_frame_set_file_pos_get`
+    ///
+    /// Get the file position of the next frame set in the input file
+    pub(crate) fn frame_set_next_frame_set_file_pos_get(
+        &self,
+        frame_set: &TrajectoryFrameSet,
+    ) -> i64 {
+        frame_set.next_frame_set_file_pos
+    }
+
+    /// C API: `tng_frame_set_prev_frame_set_file_pos_get`
+    ///
+    /// Get the file position of the previous frame set in the input file
+    pub(crate) fn frame_set_prev_frame_set_file_pos(&self, frame_set: &TrajectoryFrameSet) -> i64 {
+        frame_set.prev_frame_set_file_pos
+    }
+
+    pub(crate) fn frame_set_frame_range_get(&self, frame_set: &TrajectoryFrameSet) -> (i64, i64) {
+        let first_frame = frame_set.first_frame;
+        (first_frame, first_frame + frame_set.n_frames - 1)
     }
 }
 

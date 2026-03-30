@@ -67,7 +67,7 @@ const PARTICLE_DEPENDENT: u8 = 2;
 #[cfg(test)]
 mod integration {
     use crate::{
-        MAX_STR_LEN,
+        FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT,
         data::{Compression, DataType},
         gen_block::BlockID,
         molecule::Molecule,
@@ -219,13 +219,13 @@ mod integration {
     }
 
     /// C API: tng_test_write_and_read_traj() in tng_io_testing.c:420
-    fn write_and_read_traj(traj: &mut Trajectory) {
+    fn write_and_read_traj(traj: &mut Trajectory, hash_mode: bool) {
         traj.set_medium_stride_length(MEDIUM_STRIDE_LEN).unwrap();
         traj.set_long_stride_length(LONG_STRIDE_LEN).unwrap();
 
         traj.first_user_name_set(USER_NAME);
         traj.set_first_program_name(PROGRAM_NAME);
-        traj.set_first_computer_name(COMPUTER_NAME);
+        traj.first_computer_name_set(COMPUTER_NAME);
         traj.set_forcefield_name(FORCEFIELD_NAME);
 
         traj.compression_precision = COMPRESSION_PRECISION;
@@ -505,16 +505,84 @@ mod integration {
         assert_approx_eq!((*masses.last().unwrap() - 1.008).abs(), 0.0);
 
         // Read all frame sets (tng_io_testing.c:804-842)
-        while traj.frame_set_read_next(USE_HASH).is_ok() {}
+        let mut i = 0;
+        while traj.frame_set_read_next(USE_HASH).is_ok() {
+            let frame_set = traj.current_frame_set_get();
+            let temp_int = traj.frame_set_prev_frame_set_file_pos(frame_set);
+            let temp_int2 = traj.frame_set_next_frame_set_file_pos_get(frame_set);
 
-        // TODO: remaining checks from tng_io_testing.c:844-922
-        // - time_per_frame check
-        // - frame_set_nr_find
-        // - frame_set_read_current_only_data_from_block_id
-        // - frame_set_read_next_only_data_from_block_id
-        // - data_block_name_get, data_block_dependency_get
-        // - data_block_num_values_per_frame_get, data_get_stride_length
+            if i > 0 {
+                assert_ne!(
+                    temp_int, -1,
+                    "File position of previous frame set not correct."
+                );
+            } else if temp_int != -1 {
+                panic!("File position of previous frame set not correct.");
+            }
+            if i < N_FRAME_SETS - 1 {
+                assert_ne!(
+                    temp_int2, -1,
+                    "File position of next frame set not correct."
+                );
+            } else if temp_int2 != -1 {
+                panic!("File position of previous next set not correct.");
+            }
+            i += 1;
+        }
 
+        let temp_double = traj.time_per_frame_get();
+        assert_approx_eq!(temp_double, TIME_PER_FRAME, 1e-6);
+
+        traj.frame_set_nr_find((0.3 * N_FRAME_SETS as f64) as i64)
+            .expect(&format!(
+                "Could not find frame set {}",
+                (0.3 * N_FRAME_SETS as f64) as i64
+            ));
+
+        traj.frame_set_nr_find((0.75 * N_FRAME_SETS as f64) as i64)
+            .expect(&format!(
+                "Could not find frame set {}",
+                (0.75 * N_FRAME_SETS as f64) as i64
+            ));
+
+        let frame_set = traj.current_frame_set_get();
+        let (temp_int, temp_int2) = traj.frame_set_frame_range_get(frame_set);
+        assert_eq!(temp_int, 75 * n_frames_per_frame_set);
+
+        traj.frame_set_read_current_only_data_from_block_id(hash_mode, BlockID::TrajPositions)
+            .expect("Cannot read positions in current frame set.");
+
+        traj.frame_set_read_next_only_data_from_block_id(hash_mode, BlockID::TrajPositions)
+            .expect("Cannot read positions in next frame set.");
+        let temp_str = traj
+            .data_block_name_get(BlockID::TrajPositions)
+            .expect("Could not get name of data block");
+        assert_eq!("POSITIONS", temp_str, "Unexpected block name");
+
+        traj.data_block_name_get(BlockID::TrajForces).expect_err(
+            "Trying to retrieve name of non-existent data block did not return failure. %s: ",
+        );
+        let dependency = traj
+            .data_block_dependency_get(BlockID::TrajPositions)
+            .expect("Cannot get dependency of data block");
+        assert_eq!(
+            FRAME_DEPENDENT + PARTICLE_DEPENDENT,
+            dependency,
+            "Unexpected dependency"
+        );
+
+        let temp_int = traj
+            .data_block_num_values_per_frame_get(BlockID::TrajPositions)
+            .unwrap();
+        assert_eq!(
+            3, temp_int,
+            "Cannot get number of values per frame of data block or unexpected value"
+        );
+
+        let temp_int = traj
+            .data_get_stride_length(BlockID::TrajPositions, 100)
+            .expect("Cannot get stride length of data block");
+        assert_eq!(1, temp_int, "Unexpected value");
     }
 
     /// C API: tng_test_get_positions_data() in tng_io_testing.c:953
@@ -722,7 +790,7 @@ mod integration {
         traj.output_file_set(output_filename.as_path());
 
         // tng_io_testing.c:1329
-        write_and_read_traj(&mut traj);
+        write_and_read_traj(&mut traj, USE_HASH);
 
         // tng_io_testing.c:1339
         get_positions_data(&mut traj, USE_HASH);

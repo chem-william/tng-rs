@@ -1784,7 +1784,6 @@ fn test78_params() -> TestParams<f64> {
     }
 }
 
-
 // Position coding. Inter frame BWLZH algorithm. Large system. Cubic cell.
 fn test40_params() -> TestParams<f64> {
     TestParams {
