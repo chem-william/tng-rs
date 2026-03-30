@@ -1,3 +1,3 @@
 /target
-*.tng
 test_files/tng_test.tng
+test_files/tng_example_out.tng
