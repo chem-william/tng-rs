@@ -93,7 +93,6 @@ pub fn ptngc_comp_to_lz77(vals: &[u32]) -> Lz77Result {
                         }
                     }
                     j_usize += 1;
-                    j += 1;
                 }
             }
 

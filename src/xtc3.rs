@@ -5,6 +5,7 @@ use crate::{
     xtc2::{ptngc_find_magic_index, ptngc_magic},
 };
 
+#[allow(clippy::excessive_precision)]
 pub(crate) const IFLIPGAINCHECK: f64 = 0.890_898_718_140_339_27; /*  1./(2**(1./6)) */
 
 // Maximum number of large atoms for large RLE
@@ -598,7 +599,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
             xtc3_context.flush_large(xtc3_context.has_large); // Flush all
         } else {
             let mut min_runlength = 0;
-            let mut largest_required_base = 0;
+            let mut largest_required_base;
             let mut largest_runlength_base;
             let mut largest_runlength_index;
             let mut new_runlength;
@@ -1054,7 +1055,7 @@ pub(crate) fn ptngc_pack_array_xtc3(
         u32::try_from(xtc3_context.large_direct.len()).expect("u32 from usize"),
     );
     let mut bwlzh_buf;
-    let mut bwlzh_buf_len = 0;
+    let mut bwlzh_buf_len;
     if !xtc3_context.large_direct.is_empty() {
         if *speed <= 2
             || (*speed <= 5
@@ -1230,7 +1231,7 @@ fn decompress_bwlzh_block(ptr: &mut &[u8], nvals: usize, vals: &mut Vec<u32>) {
     let bwlzh_buf_len = u32::from_le_bytes(ptr[..4].try_into().expect("error handling")) as usize;
     *ptr = &ptr[4..];
     vals.resize(nvals, 0);
-    bwlzh_decompress(*ptr, nvals as i32, vals);
+    bwlzh_decompress(ptr, nvals as i32, vals);
     *ptr = &ptr[bwlzh_buf_len..];
 }
 
@@ -1273,10 +1274,10 @@ fn base_decompress(input: &[u8], len: usize, output: &mut [u32]) {
             largeint.fill(0);
 
             if numbytes / 4 < maxbasevals + 1 {
-                for j in 0..numbytes {
+                for (j, item) in input.iter().enumerate().take(numbytes) {
                     let ilarge = j / 4;
                     let ibyte = j % 4;
-                    largeint[ilarge] |= (input[j] as u32) << (ibyte * 8);
+                    largeint[ilarge] |= (*item as u32) << (ibyte * 8);
                 }
             }
             input = &input[numbytes..];
@@ -1293,6 +1294,7 @@ fn base_decompress(input: &[u8], len: usize, output: &mut [u32]) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn unpack_one_large(
     ctx: &Xtc3Context,
     ilargedir: &mut usize,
@@ -1345,8 +1347,8 @@ pub(crate) fn ptngc_unpack_array_xtc3(
     let mut ptr = packed;
     let mut minint = [0i32; 3];
 
-    for i in 0..3 {
-        minint[i] = unpositive_int(i32::from_le_bytes(
+    for item in &mut minint {
+        *item = unpositive_int(i32::from_le_bytes(
             ptr[..4].try_into().expect("error handling"),
         ));
         ptr = &ptr[4..];

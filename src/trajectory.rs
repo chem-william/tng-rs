@@ -850,7 +850,7 @@ impl Trajectory {
             .stream_position()
             // TODO
             .expect("no error handling");
-        self.block_header_write(block);
+        self.block_header_write(block)?;
 
         // TODO: hash mode
 
@@ -1708,6 +1708,8 @@ impl Trajectory {
     }
 
     /// C API: `tng_file_headers_read`.
+    ///
+    /// Read the header blocks from the input_file of [`Self`]
     pub fn file_headers_read(&mut self, hash_mode: bool) -> Result<(), TngError> {
         if self.input_file.is_some() {
             self.n_trajectory_frame_sets = 0;
@@ -1715,17 +1717,30 @@ impl Trajectory {
             // TODO: do we need to call this here? aren't we guaranteed to
             // have init the input file?
             self.input_file_init();
+            self.input_file
+                .as_mut()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(0))?;
 
             let mut prev_pos: u64 = 0;
             let mut block = GenBlock::new();
-            self.block_header_read(&mut block)?;
-            while prev_pos < self.input_file_len
-                && block.id != BlockID::Unknown
-                && block.id != BlockID::TrajectoryFrameSet
-            {
+            while prev_pos < self.input_file_len {
+                match self.block_header_read(&mut block) {
+                    Ok(()) => {}
+                    Err(TngError::Constraint(msg))
+                        if msg == "header_contents_size was 0. block.id is BlockID::Unknown" =>
+                    {
+                        break;
+                    }
+                    Err(err) => return Err(err),
+                }
+
+                if block.id == BlockID::Unknown || block.id == BlockID::TrajectoryFrameSet {
+                    break;
+                }
+
                 self.block_read_next(&mut block, hash_mode);
                 prev_pos = self.get_input_file_position();
-                self.block_header_read(&mut block)?;
             }
 
             if block.id == BlockID::TrajectoryFrameSet {
@@ -1890,7 +1905,7 @@ impl Trajectory {
     }
 
     /// Write the header of a data block, regardless of its type
-    fn block_header_write(&mut self, block: &mut GenBlock) {
+    fn block_header_write(&mut self, block: &mut GenBlock) -> Result<(), TngError> {
         self.output_file_init();
         let out_file = self.output_file.as_mut().expect("init output_file");
 
@@ -1917,17 +1932,18 @@ impl Trajectory {
         out_file
             .write_all(&block.md5_hash)
             .expect("able to write to output_file");
-        utils::fwrite_str(out_file, block.name.as_ref().expect("block to have name"));
+        utils::fwrite_str(out_file, block.name.as_ref().expect("block to have name"))?;
         utils::write_u64(
             out_file,
             block.version,
             self.endianness64,
             self.output_swap64,
         );
+        Ok(())
     }
 
     /// Write a general info block. This is the first block of a TNG file
-    fn general_info_block_write(&mut self) {
+    fn general_info_block_write(&mut self) -> Result<(), TngError> {
         self.output_file_init();
 
         let out_file = self.output_file.as_mut().expect("init input_file");
@@ -1940,20 +1956,20 @@ impl Trajectory {
         block.id = BlockID::GeneralInfo;
         block.block_contents_size = self.general_info_block_len_calculate();
         let _header_file_pos = 0;
-        self.block_header_write(&mut block);
+        self.block_header_write(&mut block)?;
 
         // TODO: HASH
 
         let out_file = self.output_file.as_mut().expect("init input_file");
-        utils::fwrite_str(out_file, &self.first_program_name);
-        utils::fwrite_str(out_file, &self.last_program_name);
-        utils::fwrite_str(out_file, &self.first_user_name);
-        utils::fwrite_str(out_file, &self.last_user_name);
-        utils::fwrite_str(out_file, &self.first_computer_name);
-        utils::fwrite_str(out_file, &self.last_computer_name);
-        utils::fwrite_str(out_file, &self.first_pgp_signature);
-        utils::fwrite_str(out_file, &self.last_pgp_signature);
-        utils::fwrite_str(out_file, &self.forcefield_name);
+        utils::fwrite_str(out_file, &self.first_program_name)?;
+        utils::fwrite_str(out_file, &self.last_program_name)?;
+        utils::fwrite_str(out_file, &self.first_user_name)?;
+        utils::fwrite_str(out_file, &self.last_user_name)?;
+        utils::fwrite_str(out_file, &self.first_computer_name)?;
+        utils::fwrite_str(out_file, &self.last_computer_name)?;
+        utils::fwrite_str(out_file, &self.first_pgp_signature)?;
+        utils::fwrite_str(out_file, &self.last_pgp_signature)?;
+        utils::fwrite_str(out_file, &self.forcefield_name)?;
 
         utils::write_u64(out_file, self.time, self.endianness64, self.output_swap64);
         utils::write_bool(out_file, self.var_num_atoms);
@@ -1995,10 +2011,11 @@ impl Trajectory {
         );
 
         //TODO: HASH
+        Ok(())
     }
 
     /// Write a molecules block.
-    fn molecules_block_write(&mut self) {
+    fn molecules_block_write(&mut self) -> Result<(), TngError> {
         self.output_file_init();
 
         let mut block = GenBlock::new();
@@ -2006,7 +2023,7 @@ impl Trajectory {
         block.id = BlockID::Molecules;
         block.block_contents_size = self.molecules_block_len_calculate();
 
-        self.block_header_write(&mut block);
+        self.block_header_write(&mut block)?;
 
         // TODO: HASH
 
@@ -2020,7 +2037,7 @@ impl Trajectory {
 
         for (molecule, mol_count) in self.molecules.iter().zip(&self.molecule_cnt_list) {
             utils::write_i64(out_file, molecule.id, self.endianness64, self.output_swap64);
-            utils::fwrite_str(out_file, &molecule.name);
+            utils::fwrite_str(out_file, &molecule.name)?;
             utils::write_i64(
                 out_file,
                 molecule.quaternary_str,
@@ -2053,7 +2070,7 @@ impl Trajectory {
             if molecule.n_chains > 0 {
                 for chain in &molecule.chains {
                     utils::write_u64(out_file, chain.id, self.endianness64, self.output_swap64);
-                    utils::fwrite_str(out_file, &chain.name);
+                    utils::fwrite_str(out_file, &chain.name)?;
                     utils::write_u64(
                         out_file,
                         chain.n_residues,
@@ -2069,7 +2086,7 @@ impl Trajectory {
                             self.endianness64,
                             self.output_swap64,
                         );
-                        utils::fwrite_str(out_file, &residue.name);
+                        utils::fwrite_str(out_file, &residue.name)?;
                         utils::write_u64(
                             out_file,
                             residue.n_atoms,
@@ -2087,15 +2104,15 @@ impl Trajectory {
                                 self.endianness64,
                                 self.output_swap64,
                             );
-                            utils::fwrite_str(out_file, &atom.name);
-                            utils::fwrite_str(out_file, &atom.atom_type);
+                            utils::fwrite_str(out_file, &atom.name)?;
+                            utils::fwrite_str(out_file, &atom.atom_type)?;
                         }
                     }
                 }
             } else if molecule.n_residues > 0 {
                 for residue in &molecule.residues {
                     utils::write_u64(out_file, residue.id, self.endianness64, self.output_swap64);
-                    utils::fwrite_str(out_file, &residue.name);
+                    utils::fwrite_str(out_file, &residue.name)?;
                     utils::write_u64(
                         out_file,
                         residue.n_atoms,
@@ -2107,15 +2124,15 @@ impl Trajectory {
                     let atom_slice = &molecule.atoms[atom_start..atom_end];
                     for atom in atom_slice {
                         utils::write_i64(out_file, atom.id, self.endianness64, self.output_swap64);
-                        utils::fwrite_str(out_file, &atom.name);
-                        utils::fwrite_str(out_file, &atom.atom_type);
+                        utils::fwrite_str(out_file, &atom.name)?;
+                        utils::fwrite_str(out_file, &atom.atom_type)?;
                     }
                 }
             } else {
                 for atom in &molecule.atoms {
                     utils::write_i64(out_file, atom.id, self.endianness64, self.output_swap64);
-                    utils::fwrite_str(out_file, &atom.name);
-                    utils::fwrite_str(out_file, &atom.atom_type);
+                    utils::fwrite_str(out_file, &atom.name)?;
+                    utils::fwrite_str(out_file, &atom.atom_type)?;
                 }
             }
 
@@ -2143,6 +2160,7 @@ impl Trajectory {
         }
 
         // TODO; HASH
+        Ok(())
     }
 
     fn frame_set_block_len_calculate(&self) -> u64 {
@@ -2157,7 +2175,7 @@ impl Trajectory {
         u64::try_from(length).expect("u64 from usize")
     }
 
-    fn frame_set_block_write(&mut self, block: &mut GenBlock) {
+    fn frame_set_block_write(&mut self, block: &mut GenBlock) -> Result<(), TngError> {
         self.output_file_init();
 
         block.name = Some("TRAJECTORY FRAME SET".to_string());
@@ -2174,7 +2192,7 @@ impl Trajectory {
             // TODO
             .expect("no error handling");
 
-        self.block_header_write(block);
+        self.block_header_write(block)?;
 
         // TODO: hash mode. line 3616 tng_io.c
 
@@ -2266,6 +2284,7 @@ impl Trajectory {
         );
 
         // TODO: hash mode tng_io.c line 3706
+        Ok(())
     }
 
     fn trajectory_mapping_block_len_calculate(&self, n_particles: i64) -> usize {
@@ -2290,23 +2309,25 @@ impl Trajectory {
         n_particles: i64,
         data_type: &DataType,
         data: &[u8],
-    ) -> Result<Vec<u8>, ()> {
+    ) -> Result<Option<Vec<u8>>, TngError> {
         let dest;
 
         let algo_find_n_frames;
         if block.id != BlockID::TrajPositions && block.id != BlockID::TrajVelocities {
-            eprintln!("Can only compress positions and velocities with the TNG method");
-            return Err(());
+            return Err(TngError::Constraint(
+                "Can only compress positions and velocities with the TNG method".to_string(),
+            ));
         }
 
         if *data_type != DataType::Float && *data_type != DataType::Double {
-            eprintln!("Data type not supported");
-            return Err(());
+            return Err(TngError::Constraint("Data type not supported.".to_string()));
         }
 
         if n_frames <= 0 || n_particles <= 0 {
-            eprintln!("Missing frames or particles. Cannot compress data with the TNG method");
-            return Err(());
+            return Err(TngError::Constraint(
+                "Missing frames or particles. Cannot compress data with the TNG method."
+                    .to_string(),
+            ));
         }
 
         let f_precision: f32 = 1.0 / (self.compression_precision as f32);
@@ -2554,11 +2575,7 @@ impl Trajectory {
                     compress_algo_vel[2] = -1;
                     compress_algo_vel[3] = -1;
                 }
-            // TODO: is it a bug in the original code that it checks twice for the compress_algo_vel?
-            } else if compress_algo_vel.is_empty()
-                || compress_algo_vel[2] == -1
-                || compress_algo_vel[2] == -1
-            {
+            } else if compress_algo_vel.is_empty() || compress_algo_vel[2] == -1 {
                 algo_find_n_frames = if n_frames > 6 { 5 } else { n_frames };
 
                 // If the algorithm parameters are -1 they will be determined during the compression
@@ -2657,11 +2674,12 @@ impl Trajectory {
                 }
             }
         } else {
-            error!("Can only compress positions and velocities using TNG-MF1 algorithms");
-            return Err(());
+            return Err(TngError::Constraint(
+                "Can only compress positions and velocities using TNG-MF1 algorithms".to_string(),
+            ));
         }
 
-        dest.ok_or(())
+        Ok(dest)
     }
 
     fn tng_uncompress(
@@ -2702,7 +2720,7 @@ impl Trajectory {
         is_particle_data: bool,
         mapping: &Option<ParticleMapping>,
         hash_mode: bool,
-    ) {
+    ) -> Result<(), TngError> {
         // If we have already started writing frame sets it is too late to write
         // non-trajectory data blocks
         let is_trajectory_block = self.current_trajectory_frame_set_output_file_pos > 0;
@@ -2730,7 +2748,7 @@ impl Trajectory {
             if is_trajectory_block
                 && data_mut.first_frame_with_data < self.current_trajectory_frame_set.first_frame
             {
-                return;
+                return Ok(());
             }
             data_mut.stride_length.max(1)
         };
@@ -2844,7 +2862,7 @@ impl Trajectory {
 
         let header_file_pos = self.get_output_file_position();
 
-        self.block_header_write(block);
+        self.block_header_write(block)?;
 
         // TODO: hash mode
 
@@ -2916,14 +2934,14 @@ impl Trajectory {
                         for j in num_first_particle..num_first_particle + n_particles {
                             let second_dim_values = &first_dim_values[j as usize];
                             for k in 0..cloned_data.n_values_per_frame {
-                                utils::fwrite_str(out_file, &second_dim_values[k as usize]);
+                                utils::fwrite_str(out_file, &second_dim_values[k as usize])?;
                             }
                         }
                     }
                 } else {
                     for i in 0..frame_step {
                         for j in 0..cloned_data.n_values_per_frame {
-                            utils::fwrite_str(out_file, &strings_3d[0][i as usize][j as usize]);
+                            utils::fwrite_str(out_file, &strings_3d[0][i as usize][j as usize])?;
                         }
                     }
                 }
@@ -3052,8 +3070,11 @@ impl Trajectory {
                         &contents,
                     ) {
                         Ok(compressed) => {
-                            block_data_len = compressed.len();
-                            contents = compressed;
+                            block_data_len = compressed
+                                .as_ref()
+                                .expect("compressed to be something")
+                                .len();
+                            contents = compressed.expect("compressed to be something");
                         }
                         Err(_) => {
                             error!("Could not write TNG compressed block data.");
@@ -3080,8 +3101,8 @@ impl Trajectory {
                                 is_particle_data,
                                 mapping,
                                 hash_mode,
-                            );
-                            return;
+                            )?;
+                            return Ok(());
                         }
                     }
                     self.compress_algo_pos = compress_algo_pos;
@@ -3152,6 +3173,7 @@ impl Trajectory {
         self.current_trajectory_frame_set.n_written_frames *=
             self.current_trajectory_frame_set.n_unwritten_frames;
         self.current_trajectory_frame_set.n_unwritten_frames = 0;
+        Ok(())
     }
 
     /// C API: `tng_file_headers_write`.
@@ -3215,9 +3237,9 @@ impl Trajectory {
             self.current_trajectory_frame_set_output_file_pos = -1;
         }
 
-        self.general_info_block_write();
+        self.general_info_block_write()?;
 
-        self.molecules_block_write();
+        self.molecules_block_write()?;
 
         // FIXME(from c): Currently writing non-trajectory data blocks here.
         // Should perhaps be moved
@@ -3225,12 +3247,12 @@ impl Trajectory {
 
         for i in 0..self.n_data_blocks {
             block.id = self.non_tr_data[i].block_id;
-            self.data_block_write(&mut block, i, false, &None, hash_mode)
+            self.data_block_write(&mut block, i, false, &None, hash_mode)?;
         }
 
         for i in 0..self.n_particle_data_blocks {
             block.id = self.non_tr_particle_data[i].block_id;
-            self.data_block_write(&mut block, i, true, &None, hash_mode);
+            self.data_block_write(&mut block, i, true, &None, hash_mode)?;
         }
 
         // Continue writing at the end of the file
@@ -4336,12 +4358,15 @@ impl Trajectory {
         self.frame_set_of_frame_find(start_frame_nr)?;
 
         // Do not re-read the frame set.
-        if (is_particle_data
-            && (first_frame != self.current_trajectory_frame_set.first_frame
-                || self.current_trajectory_frame_set.n_particle_data_blocks <= 0))
-            || (!is_particle_data
-                && (first_frame != self.current_trajectory_frame_set.first_frame
-                    || self.current_trajectory_frame_set.n_data_blocks <= 0))
+        if first_frame != self.current_trajectory_frame_set.first_frame
+            || is_particle_data && self.current_trajectory_frame_set.n_particle_data_blocks == 0
+            || !is_particle_data && self.current_trajectory_frame_set.n_data_blocks == 0
+        // if (is_particle_data
+        //     && (first_frame != self.current_trajectory_frame_set.first_frame
+        //         || self.current_trajectory_frame_set.n_particle_data_blocks == 0))
+        //     || (!is_particle_data
+        //         && (first_frame != self.current_trajectory_frame_set.first_frame
+        //             || self.current_trajectory_frame_set.n_data_blocks == 0))
         {
             let mut file_pos = self.get_input_file_position();
             // Read all blocks until next frame set block
@@ -4743,12 +4768,12 @@ impl Trajectory {
 
         let mut block = GenBlock::new();
 
-        self.frame_set_block_write(&mut block);
+        self.frame_set_block_write(&mut block)?;
 
         // Write non-particle data blocks
         for i in 0..self.current_trajectory_frame_set.n_data_blocks {
             block.id = self.current_trajectory_frame_set.tr_data[i].block_id;
-            self.data_block_write(&mut block, i, false, &None, hash_mode);
+            self.data_block_write(&mut block, i, false, &None, hash_mode)?;
         }
 
         // Write the mapping blocks and particle data blocks
@@ -4769,14 +4794,14 @@ impl Trajectory {
                             true,
                             &Some(self.current_trajectory_frame_set.mappings[i].clone()),
                             hash_mode,
-                        );
+                        )?;
                     }
                 }
             }
         } else {
             for i in 0..self.current_trajectory_frame_set.n_particle_data_blocks {
                 block.id = self.current_trajectory_frame_set.tr_particle_data[i].block_id;
-                self.data_block_write(&mut block, i, true, &None, hash_mode);
+                self.data_block_write(&mut block, i, true, &None, hash_mode)?;
             }
         }
 
@@ -5331,7 +5356,7 @@ impl Trajectory {
     /// C API: `tng_data_block_name_get`.
     ///
     /// Get the name of a data block of a specific ID.
-    pub fn data_block_name_get(&mut self, match_block_id: BlockID) -> Result<String, ()> {
+    pub fn data_block_name_get(&mut self, match_block_id: BlockID) -> Result<String, TngError> {
         for i in 0..self.n_particle_data_blocks {
             let data = &self.non_tr_particle_data[i];
             if data.block_id == match_block_id {
@@ -5355,11 +5380,7 @@ impl Trajectory {
             if data_result.is_some() {
                 particle_block_data = false;
             } else {
-                let result =
-                    self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id);
-                if result.is_err() {
-                    return Err(());
-                }
+                self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id)?;
                 let particle_data_result = self.particle_data_find(match_block_id);
                 if particle_data_result.is_some() {
                     particle_block_data = true;
@@ -5389,13 +5410,13 @@ impl Trajectory {
             }
         }
 
-        Err(())
+        Err(TngError::NotFound("".to_string()))
     }
 
     /// C API: `tng_data_block_dependency_get`.
     ///
     /// Get the dependency of a data block of a specific ID.
-    pub fn data_block_dependency_get(&mut self, match_block_id: BlockID) -> Result<u8, ()> {
+    pub fn data_block_dependency_get(&mut self, match_block_id: BlockID) -> Result<u8, TngError> {
         for i in 0..self.n_particle_data_blocks {
             let data = &self.non_tr_particle_data[i];
             if data.block_id == match_block_id {
@@ -5418,11 +5439,7 @@ impl Trajectory {
             if data_result.is_some() {
                 return Ok(FRAME_DEPENDENT);
             } else {
-                let result =
-                    self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id);
-                if result.is_err() {
-                    return Err(());
-                }
+                self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id)?;
                 let particle_data_result = self.particle_data_find(match_block_id);
                 if particle_data_result.is_some() {
                     return Ok(PARTICLE_DEPENDENT + FRAME_DEPENDENT);
@@ -5435,7 +5452,7 @@ impl Trajectory {
             }
         }
 
-        Err(())
+        Err(TngError::NotFound("".to_string()))
     }
 
     /// C API: `tng_data_block_num_values_per_frame_get`.
@@ -5444,7 +5461,7 @@ impl Trajectory {
     pub fn data_block_num_values_per_frame_get(
         &mut self,
         match_block_id: BlockID,
-    ) -> Result<i64, ()> {
+    ) -> Result<i64, TngError> {
         for i in 0..self.n_particle_data_blocks {
             let data = &self.non_tr_particle_data[i];
             if data.block_id == match_block_id {
@@ -5467,11 +5484,10 @@ impl Trajectory {
             if let Some(data) = stat {
                 return Ok(data.n_values_per_frame);
             } else {
-                let stat =
-                    self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id);
-                if stat.is_err() {
-                    return Err(());
-                }
+                self.frame_set_read_current_only_data_from_block_id(USE_HASH, match_block_id)?;
+                // if stat.is_err() {
+                //     return Err(TngError::Constraint(()));
+                // }
                 let stat = self.particle_data_find(match_block_id);
                 if let Some(data) = stat {
                     return Ok(data.n_values_per_frame);
@@ -5483,7 +5499,7 @@ impl Trajectory {
                 }
             }
         }
-        Err(())
+        Err(TngError::NotFound("".to_string()))
     }
 
     /// Read the number of the first frame of the next frame set.
@@ -6155,8 +6171,10 @@ impl Trajectory {
     ///
     /// Add a chain with a specific id to a molecule
     fn molecule_chain_w_id_add(&self, molecule: &mut Molecule, name: &str, id: u64) {
-        let mut new_chain = Chain::default();
-        new_chain.name = String::new();
+        let mut new_chain = Chain {
+            name: String::new(),
+            ..Default::default()
+        };
 
         new_chain.set_name(name);
         new_chain.parent_molecule_idx = molecule.id as usize;
@@ -6323,7 +6341,10 @@ impl Trajectory {
     }
 
     /// C API: `tng_data_block_add`.
-    pub fn add_data_block(
+    ///
+    /// Add a non-particle dependent data block.
+    #[allow(clippy::too_many_arguments)]
+    pub fn data_block_add(
         &mut self,
         id: BlockID,
         block_name: &str,
@@ -6358,6 +6379,7 @@ impl Trajectory {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn gen_data_block_add(
         &mut self,
         id: BlockID,
@@ -6390,9 +6412,9 @@ impl Trajectory {
         } else {
             // If the block does not exist, create it
             if is_particle_data {
-                self.particle_data_block_create(&block_type_flag);
+                self.particle_data_block_create(block_type_flag);
             } else {
-                self.data_block_create(&block_type_flag);
+                self.data_block_create(block_type_flag);
             }
 
             let mut data = Data {
@@ -6582,6 +6604,9 @@ impl Trajectory {
     }
 
     /// C API: `tng_particle_data_block_add`.
+    ///
+    /// Add a particle dependent data block.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn particle_data_block_add(
         &mut self,
         id: BlockID,
@@ -7476,8 +7501,8 @@ impl Trajectory {
         }
 
         // Check for data blocks only if they have not already been found
-        if self.current_trajectory_frame_set.n_particle_data_blocks <= 0
-            && self.current_trajectory_frame_set.n_data_blocks <= 0
+        if self.current_trajectory_frame_set.n_particle_data_blocks == 0
+            && self.current_trajectory_frame_set.n_data_blocks == 0
         {
             let mut file_pos = self.get_input_file_position();
             if file_pos < self.input_file_len {
@@ -7953,6 +7978,7 @@ impl Trajectory {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn util_generic_with_time_double_write(
         &mut self,
         frame_nr: i64,
@@ -7975,6 +8001,7 @@ impl Trajectory {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn util_generic_double_write(
         &mut self,
         frame_nr: i64,

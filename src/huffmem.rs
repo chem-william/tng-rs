@@ -245,7 +245,7 @@ fn read3le(data: &[u8], offset: usize) -> i32 {
     (data[offset] as i32) | ((data[offset + 1] as i32) << 8) | ((data[offset + 2] as i32) << 16)
 }
 
-pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals: &mut [u32]) {
+pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], _huffman_len: i32, vals: &mut [u32]) {
     let isvals16 = huffman[0] as i32;
     let algo = huffman[1] as i32;
     let mut nvals16 = i32::from_le_bytes(huffman[2..2 + 4].try_into().expect("error handling"));
@@ -262,7 +262,7 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals:
 
     match algo {
         0 => {
-            let nhuffdict = read3le(huffman, 14 + nhuff as usize);
+            let _nhuffdict = read3le(huffman, 14 + nhuff as usize);
             ptngc_comp_conv_from_huffman(
                 &huffman[14..],
                 &mut vals16,
@@ -277,7 +277,7 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals:
             // First the dictionary needs to be uncompressed
             let nhuffdictunpack = read3le(huffman, 14 + nhuff as usize);
             let nhuff1 = read3le(huffman, 20 + nhuff as usize);
-            let nhuffdict1 = read3le(huffman, 23 + nhuff as usize);
+            let _nhuffdict1 = read3le(huffman, 23 + nhuff as usize);
             let ndict1 = read3le(huffman, 26 + nhuff as usize);
             ptngc_comp_conv_from_huffman(
                 &huffman[(29 + nhuff) as usize..],
@@ -304,7 +304,7 @@ pub(crate) fn ptngc_comp_huff_decompress(huffman: &[u8], huffman_len: i32, vals:
             let nhuffdictunpack = read3le(huffman, 14 + nhuff as usize);
             let nhuffrle = read3le(huffman, 20 + nhuff as usize);
             let nhuff2 = read3le(huffman, 23 + nhuff as usize);
-            let nhuffdict2 = read3le(huffman, 26 + nhuff as usize);
+            let _nhuffdict2 = read3le(huffman, 26 + nhuff as usize);
             let ndict2 = read3le(huffman, 29 + nhuff as usize);
             ptngc_comp_conv_from_huffman(
                 &huffman[(32 + nhuff) as usize..],

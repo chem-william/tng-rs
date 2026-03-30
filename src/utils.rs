@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::fs::File;
 use std::io::{Read, Write};
 
-use crate::MAX_STR_LEN;
+use crate::{MAX_STR_LEN, TngError};
 
 /// Represents the endianness of 32 bit values
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -194,11 +194,12 @@ pub fn read_bool_le_bytes(input_file: &mut File) -> bool {
     buf[0] != 0
 }
 
-pub(crate) fn fwrite_str<W: Write>(output_file: &mut W, str_data: &str) {
+pub(crate) fn fwrite_str<W: Write>(output_file: &mut W, str_data: &str) -> Result<(), TngError> {
     let mut bytes = str_data.as_bytes().to_vec();
     bytes.push(0); // null-terminate
     let len = bytes.len().min(MAX_STR_LEN);
-    output_file.write_all(&bytes[..len]);
+    output_file.write_all(&bytes[..len])?;
+    Ok(())
 
     // TODO: HASH
 }

@@ -241,7 +241,7 @@ mod integration {
         box_shape[4] = BOX_SHAPE_Y;
         box_shape[8] = BOX_SHAPE_Z;
         let bytes: Vec<_> = box_shape.iter().flat_map(|f| f.to_ne_bytes()).collect();
-        traj.add_data_block(
+        traj.data_block_add(
             BlockID::TrajBoxShape,
             "BOX SHAPE",
             DataType::Double,
@@ -322,7 +322,7 @@ mod integration {
         // Create a custom annotation data block
         let annotation =
             "This trajectory was generated from tng_io_testing. It is not a real MD trajectory.";
-        traj.add_data_block(
+        traj.data_block_add(
             BlockID::TrajGeneralComments,
             "COMMENTS",
             DataType::Char,
