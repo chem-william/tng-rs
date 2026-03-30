@@ -73,6 +73,7 @@ mod integration {
         molecule::Molecule,
         trajectory::{BlockType, Trajectory},
     };
+    use assert_approx_eq::assert_approx_eq;
     use rand::RngExt;
 
     const TIME_PER_FRAME: f64 = 2e-15;
@@ -110,7 +111,7 @@ mod integration {
     }
 
     /// C API: tng_test_molecules() in tng_io_testing.c:141
-    fn check_molecules(traj: &mut Trajectory) {
+    fn test_molecules(traj: &mut Trajectory) {
         let cnt = traj.num_molecule_types_get();
         assert_eq!(cnt, 1, "Molecule reading error");
 
@@ -218,7 +219,7 @@ mod integration {
     }
 
     /// C API: tng_test_write_and_read_traj() in tng_io_testing.c:420
-    fn test_write_and_read_traj(traj: &mut Trajectory) -> Trajectory {
+    fn write_and_read_traj(traj: &mut Trajectory) {
         traj.set_medium_stride_length(MEDIUM_STRIDE_LEN).unwrap();
         traj.set_long_stride_length(LONG_STRIDE_LEN).unwrap();
 
@@ -431,7 +432,7 @@ mod integration {
         }
 
         // tng_io_testing.c:709-922
-        let mut traj = Trajectory::new();
+        *traj = Trajectory::new();
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
         input_filename.push(TEST_FILES_DIR);
         input_filename.push("tng_test.tng");
@@ -486,9 +487,22 @@ mod integration {
             "Distance unit exponential does not match when reading written file"
         );
 
-        check_molecules(&mut traj);
+        test_molecules(traj);
 
-        // TODO: particle_data_vector_get for masses (tng_io_testing.c:779-801)
+        let (masses, n_frames, read_n_particles, n_values_per_frame, _data_type) = traj
+            .particle_data_get(BlockID::TrajMasses)
+            .expect("failed getting particle masses");
+
+        assert_eq!(
+            read_n_particles, n_particles,
+            "Number of particles does not match when reading atom masses."
+        );
+        // Above we have written only water molecules (in the order oxygen, hydrogen, hydrogen ...).
+        // Test that the first and second as well as the very last atoms (oxygen, hydrogen and hydrogen)
+        // have the correct atom masses.
+        assert_approx_eq!((masses[0] - 16.0).abs(), 0.0);
+        assert_approx_eq!((masses[1] - 1.008).abs(), 0.0);
+        assert_approx_eq!((*masses.last().unwrap() - 1.008).abs(), 0.0);
 
         // Read all frame sets (tng_io_testing.c:804-842)
         while traj.frame_set_read_next(USE_HASH).is_ok() {}
@@ -501,7 +515,6 @@ mod integration {
         // - data_block_name_get, data_block_dependency_get
         // - data_block_num_values_per_frame_get, data_get_stride_length
 
-        traj
     }
 
     /// C API: tng_test_get_positions_data() in tng_io_testing.c:953
@@ -709,7 +722,7 @@ mod integration {
         traj.output_file_set(output_filename.as_path());
 
         // tng_io_testing.c:1329
-        let mut traj = test_write_and_read_traj(&mut traj);
+        write_and_read_traj(&mut traj);
 
         // tng_io_testing.c:1339
         get_positions_data(&mut traj, USE_HASH);

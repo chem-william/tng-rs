@@ -648,7 +648,6 @@ impl Trajectory {
             self.endianness64,
             self.input_swap64,
         ));
-
         inp_file
             .read_exact(&mut block.md5_hash)
             .expect("no error handling");
@@ -1449,6 +1448,9 @@ impl Trajectory {
 
         // TODO: hash mode
         let (actual_contents, full_data_len) = if data.codec_id != Compression::Uncompressed {
+            if meta_info.datatype == DataType::Char {
+                unimplemented!("compressed char data blocks are not implemented");
+            }
             let mut full_data_len = (n_frames_div as usize)
                 .checked_mul(size)
                 .and_then(|x| x.checked_mul(meta_info.n_values as usize))
@@ -1471,6 +1473,9 @@ impl Trajectory {
                 }
             };
             (actual_contents, full_data_len)
+        } else if meta_info.datatype == DataType::Char {
+            let full_data_len = usize::try_from(block_data_len).expect("u64 to usize");
+            (contents, full_data_len)
         } else {
             let mut full_data_len = (n_frames_div as usize)
                 .checked_mul(size)
@@ -1800,8 +1805,7 @@ impl Trajectory {
         length += size_of_val(&proto_mol.n_chains);
         length += size_of_val(&proto_mol.n_residues);
         length += size_of_val(&proto_mol.n_atoms);
-        length += size_of_val(&proto_mol.n_bonds);
-        length += size_of_val(&self.n_molecules);
+        length += size_of_val(&proto_mol.n_bonds) * self.n_molecules as usize;
 
         if !self.var_num_atoms {
             length += usize::try_from(self.n_molecules).expect("usize from i64") * size_of::<u64>();
@@ -1989,7 +1993,7 @@ impl Trajectory {
         let mut block = GenBlock::new();
         block.name = Some("MOLECULES".to_string());
         block.id = BlockID::Molecules;
-        self.molecules_block_len_calculate();
+        block.block_contents_size = self.molecules_block_len_calculate();
 
         self.block_header_write(&mut block);
 

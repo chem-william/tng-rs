@@ -4,7 +4,7 @@ use crate::{API_VERSION, MAX_STR_LEN, MD5_HASH_LEN};
 /// Block IDs of standard non-trajectory blocks
 #[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 #[repr(u64)]
-pub(crate) enum BlockID {
+pub enum BlockID {
     // === Standard non-trajectory blocks ===
     GeneralInfo = 0x0000_0000_0000_0000,
     Molecules = 0x0000_0000_0000_0001,
