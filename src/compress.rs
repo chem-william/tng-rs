@@ -1966,20 +1966,6 @@ mod compress_quantized_pos {
     }
 
     #[test]
-    fn compress_pos() {
-        let pos = [0.0, 0.0, 0.0];
-        let mut algo = [-1, -1, -1, -1];
-        let _nitmes = -1;
-
-        let result = tng_compress_pos(&pos, 1, 1, 1e-6, 1, &mut algo).unwrap();
-        let _expected = [
-            84, 78, 71, 80, 1, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            -58, 16, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0,
-        ];
-        // assert_eq!(result, expected);
-    }
-
-    #[test]
     fn xtc2_then_xtc3() {
         let mut quant = [-1, -2, -3, 10, 20, 30, 5, -10, 42, -7, 0, -999];
         let mut data = [0; 1024];

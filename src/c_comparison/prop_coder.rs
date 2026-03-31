@@ -73,14 +73,16 @@ fn c_run_unpack(
 fn rust_run_unpack(packed: &[u8], length: i32, coding: i32, coding_parameter: i32) -> Vec<i32> {
     let coder = Coder::default();
     let mut output = vec![0i32; length as usize];
-    coder.unpack_array(
-        packed,
-        &mut output,
-        length,
-        coding,
-        coding_parameter,
-        (length / 3) as usize,
-    );
+    coder
+        .unpack_array(
+            packed,
+            &mut output,
+            length,
+            coding,
+            coding_parameter,
+            (length / 3) as usize,
+        )
+        .unwrap();
     output
 }
 

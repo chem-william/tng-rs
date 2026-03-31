@@ -201,7 +201,7 @@ mod integration {
 
     /// C API: tng_test_read_and_write_file() in tng_io_testing.c:371
     fn test_read_and_write_file(traj: &mut Trajectory) {
-        traj.file_headers_read(USE_HASH);
+        traj.file_headers_read(USE_HASH).unwrap();
         traj.file_headers_write(USE_HASH).unwrap();
 
         while traj.frame_set_read_next(USE_HASH).is_ok() {
@@ -438,7 +438,7 @@ mod integration {
         input_filename.push("tng_test.tng");
         traj.input_file_set(input_filename.as_path());
 
-        traj.file_headers_read(USE_HASH);
+        traj.file_headers_read(USE_HASH).unwrap();
 
         let temp_str = traj.first_user_name_get(MAX_STR_LEN).unwrap();
         assert_eq!(
