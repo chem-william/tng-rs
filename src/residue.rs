@@ -1,3 +1,5 @@
+use md5::Md5;
+
 use crate::{trajectory::Trajectory, utils};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -29,7 +31,11 @@ impl Residue {
         }
     }
     /// Read the residue data of a molecules block.
-    pub(crate) fn read_data(&mut self, trajectory_data: &mut Trajectory) {
+    pub(crate) fn read_data(
+        &mut self,
+        trajectory_data: &mut Trajectory,
+        mut hasher: Option<&mut Md5>,
+    ) {
         let inp_file = trajectory_data
             .input_file
             .as_mut()
@@ -38,12 +44,14 @@ impl Residue {
             inp_file,
             trajectory_data.endianness64,
             trajectory_data.input_swap64,
+            hasher.as_deref_mut(),
         );
         self.name = utils::fread_str(inp_file);
         self.n_atoms = utils::read_u64(
             inp_file,
             trajectory_data.endianness64,
             trajectory_data.input_swap64,
+            hasher.as_deref_mut(),
         );
     }
 }

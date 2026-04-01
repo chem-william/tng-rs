@@ -2,6 +2,8 @@ use std::cmp::min;
 use std::fs::File;
 use std::io::{Read, Write};
 
+use md5::{Digest, Md5};
+
 use crate::{MAX_STR_LEN, TngError};
 
 /// Represents the endianness of 32 bit values
@@ -114,24 +116,32 @@ pub fn swap_byte_order_little_endian_64(endianness: Endianness64, raw: &mut u64)
 ///
 /// # Panic
 /// Panics (or unwraps) on any I/O error.
-pub(crate) fn read_exact_array<const N: usize, R: Read>(reader: &mut R) -> [u8; N] {
+pub(crate) fn read_exact_array<const N: usize, R: Read>(
+    reader: &mut R,
+    hasher: Option<&mut Md5>,
+) -> [u8; N] {
     let mut buf = [0u8; N];
     reader
         .read_exact(&mut buf)
         .expect("could not read bytes from file");
+    if let Some(hasher) = hasher {
+        hasher.update(&buf);
+    }
     buf
 }
 
-pub fn read_u8(input_file: &mut File) -> u8 {
-    read_exact_array::<1, _>(input_file)[0]
+pub fn read_u8(input_file: &mut File, hasher: Option<&mut Md5>) -> u8 {
+    read_exact_array::<1, _>(input_file, hasher)[0]
 }
 
 pub fn read_u64(
     input_file: &mut File,
     endianness: Endianness64,
     input_swap64: Option<SwapFn64>,
+    hasher: Option<&mut Md5>,
 ) -> u64 {
-    let raw_bytes = read_exact_array(input_file);
+    let raw_bytes = read_exact_array(input_file, hasher);
+
     let mut val: u64 = u64::from_ne_bytes(raw_bytes);
     if let Some(swap_fn_64) = input_swap64 {
         swap_fn_64(endianness, &mut val);
@@ -143,18 +153,21 @@ pub fn read_i64(
     input_file: &mut File,
     endianness: Endianness64,
     input_swap64: Option<SwapFn64>,
+    hasher: Option<&mut Md5>,
 ) -> i64 {
-    let intermediate_val: u64 = read_u64(input_file, endianness, input_swap64);
-    // Reinterpret the bit‐pattern as an i64:
-    i64::from_ne_bytes(intermediate_val.to_ne_bytes())
+    let intermediate_val: u64 = read_u64(input_file, endianness, input_swap64, hasher);
+    let read_bytes = intermediate_val.to_ne_bytes();
+
+    i64::from_ne_bytes(read_bytes)
 }
 
 pub fn read_f64(
     input_file: &mut File,
     endianness: Endianness64,
     input_swap64: Option<SwapFn64>,
+    hasher: Option<&mut Md5>,
 ) -> f64 {
-    let u: u64 = read_u64(input_file, endianness, input_swap64);
+    let u: u64 = read_u64(input_file, endianness, input_swap64, hasher);
     f64::from_bits(u)
 }
 
@@ -162,8 +175,9 @@ pub fn read_u32_and_swap(
     input_file: &mut File,
     endianness: Endianness32,
     input_swap32: Option<SwapFn32>,
+    hasher: Option<&mut Md5>,
 ) -> u32 {
-    let raw_bytes: [u8; 4] = read_exact_array(input_file);
+    let raw_bytes: [u8; 4] = read_exact_array(input_file, hasher);
     let mut val: u32 = u32::from_ne_bytes(raw_bytes);
     if let Some(swap_fn_32) = input_swap32 {
         swap_fn_32(endianness, &mut val);
@@ -175,8 +189,9 @@ pub fn read_i32_and_swap(
     input_file: &mut File,
     endianness: Endianness32,
     input_swap32: Option<SwapFn32>,
+    hasher: Option<&mut Md5>,
 ) -> i32 {
-    let u: u32 = read_u32_and_swap(input_file, endianness, input_swap32);
+    let u: u32 = read_u32_and_swap(input_file, endianness, input_swap32, hasher);
     i32::from_ne_bytes(u.to_ne_bytes())
 }
 
@@ -184,13 +199,14 @@ pub fn read_f32_and_swap(
     input_file: &mut File,
     endianness: Endianness32,
     input_swap32: Option<SwapFn32>,
+    hasher: Option<&mut Md5>,
 ) -> f32 {
-    let u: u32 = read_u32_and_swap(input_file, endianness, input_swap32);
+    let u: u32 = read_u32_and_swap(input_file, endianness, input_swap32, hasher);
     f32::from_bits(u)
 }
 
-pub fn read_bool_le_bytes(input_file: &mut File) -> bool {
-    let buf = read_exact_array::<1, _>(input_file);
+pub fn read_bool_le_bytes(input_file: &mut File, hasher: Option<&mut Md5>) -> bool {
+    let buf = read_exact_array::<1, _>(input_file, hasher);
     buf[0] != 0
 }
 
@@ -287,6 +303,7 @@ pub fn write_i64(
     src: i64,
     endianness: Endianness64,
     output_swap64: Option<SwapFn64>,
+    hasher: Option<&mut Md5>,
 ) {
     // Convert i64 → [u8; 8] in *native* endianness:
     let src_bytes: [u8; 8] = src.to_ne_bytes();
@@ -301,6 +318,10 @@ pub fn write_i64(
     output_file
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
+
+    if let Some(hasher) = hasher {
+        hasher.update(&out_bytes);
+    }
 }
 
 pub fn write_f64(

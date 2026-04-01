@@ -92,7 +92,7 @@ mod integration {
     const COMPRESSION_PRECISION: f64 = 1000.0;
     const DISTANCE_UNIT_EXPONENTIAL: i64 = 9;
 
-    const USE_HASH: bool = false;
+    const USE_HASH: bool = true;
 
     /// C API: tng_test_setup_molecules() in tng_io_testing.c:45
     fn setup_molecules(traj: &mut Trajectory) {

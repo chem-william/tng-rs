@@ -1,8 +1,9 @@
 use log::{debug, error, warn};
+use md5::{Digest, Md5};
 use std::cmp::{max, min};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::TngError;
+use crate::{MD5_HASH_LEN, TngError};
 
 use crate::atom::Atom;
 use crate::bond::Bond;
@@ -38,7 +39,7 @@ use std::path::{Path, PathBuf};
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 
-const USE_HASH: bool = false;
+const USE_HASH: bool = true;
 const SKIP_HASH: bool = false;
 
 fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
@@ -341,6 +342,56 @@ impl Trajectory {
             .expect("no error handling")
     }
 
+    fn write_md5_hash(
+        &mut self,
+        hash: &[u8; MD5_HASH_LEN],
+        block_md5_hash: &mut [u8],
+        header_file_pos: u64,
+    ) -> Result<(), TngError> {
+        block_md5_hash.copy_from_slice(hash);
+
+        let curr_file_pos = self.get_output_file_position();
+        self.output_file
+            .as_ref()
+            .expect("init output_file")
+            .seek(SeekFrom::Start(
+                header_file_pos + 3 * size_of::<i64>() as u64,
+            ))?;
+        self.output_file
+            .as_mut()
+            .expect("init output_file")
+            .write_all(&block_md5_hash[..MD5_HASH_LEN])?;
+        self.output_file
+            .as_ref()
+            .expect("init output_file")
+            .seek(SeekFrom::Start(curr_file_pos))?;
+        Ok(())
+    }
+
+    /// C API: `tng_md5_remaining_append`
+    ///
+    /// If there is data left in the block read that to append that to the MD5 hash.
+    pub(crate) fn md5_remaining_append(
+        &mut self,
+        block: &mut GenBlock,
+        start_pos: u64,
+        hasher: &mut Md5,
+    ) -> Result<(), TngError> {
+        let curr_file_pos = self.get_input_file_position();
+        if curr_file_pos < start_pos + block.block_contents_size {
+            let n = (start_pos + block.block_contents_size - curr_file_pos) as usize;
+            let mut temp_data = vec![0; n];
+
+            self.input_file
+                .as_ref()
+                .expect("init input_file")
+                .read_exact(&mut temp_data)?;
+            hasher.update(&mut temp_data);
+        };
+
+        Ok(())
+    }
+
     /// C API: `tng_output_file_set`.
     ///
     /// Set the name of the output file.
@@ -627,8 +678,10 @@ impl Trajectory {
 
         let start_pos = self.get_input_file_position();
 
-        let header_contents_size_bytes =
-            utils::read_exact_array::<8, _>(self.input_file.as_mut().expect("init input_file"));
+        let header_contents_size_bytes = utils::read_exact_array::<8, _>(
+            self.input_file.as_mut().expect("init input_file"),
+            None,
+        );
         block.header_contents_size = u64::from_ne_bytes(header_contents_size_bytes);
 
         if block.header_contents_size == 0 {
@@ -680,18 +733,20 @@ impl Trajectory {
 
         let inp_file = self.input_file.as_mut().expect("init input_file");
 
-        block.block_contents_size = utils::read_u64(inp_file, self.endianness64, self.input_swap64);
+        block.block_contents_size =
+            utils::read_u64(inp_file, self.endianness64, self.input_swap64, None);
 
         block.id = BlockID::from_u64(utils::read_u64(
             inp_file,
             self.endianness64,
             self.input_swap64,
+            None,
         ));
         inp_file.read_exact(&mut block.md5_hash)?;
 
         block.name = Some(utils::fread_str(inp_file));
 
-        block.version = utils::read_u64(inp_file, self.endianness64, self.input_swap64);
+        block.version = utils::read_u64(inp_file, self.endianness64, self.input_swap64, None);
 
         let new_pos: u64 = (i128::from(start_pos) + i128::from(block.header_contents_size))
             .try_into()
@@ -709,7 +764,11 @@ impl Trajectory {
         Ok(())
     }
 
-    fn frame_set_block_read(&mut self, block: &mut GenBlock) -> Result<(), TngError> {
+    fn frame_set_block_read(
+        &mut self,
+        block: &mut GenBlock,
+        hash_mode: bool,
+    ) -> Result<(), TngError> {
         self.input_file_init();
         let start_pos = self.get_input_file_position();
 
@@ -721,10 +780,22 @@ impl Trajectory {
 
         self.frame_set_particle_mapping_free();
 
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
+
         let frame_set = &mut self.current_trajectory_frame_set;
         let inp_file = self.input_file.as_mut().expect("init input_file");
-        frame_set.first_frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        frame_set.n_frames = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        frame_set.first_frame = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
+        frame_set.n_frames = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
 
         if self.var_num_atoms {
             // let prev_n_particles = frame_set.n_particles;
@@ -735,7 +806,12 @@ impl Trajectory {
                 .iter()
                 .zip(frame_set.molecule_cnt_list.iter_mut())
             {
-                *mol_count = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+                *mol_count = utils::read_i64(
+                    inp_file,
+                    self.endianness64,
+                    self.input_swap64,
+                    hasher.as_mut(),
+                );
                 frame_set.n_particles += mol.n_atoms * *mol_count;
             }
 
@@ -745,23 +821,56 @@ impl Trajectory {
             // }
         }
 
-        frame_set.next_frame_set_file_pos =
-            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        frame_set.prev_frame_set_file_pos =
-            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        frame_set.medium_stride_next_frame_set_file_pos =
-            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        frame_set.medium_stride_prev_frame_set_file_pos =
-            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        frame_set.long_stride_next_frame_set_file_pos =
-            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        frame_set.long_stride_prev_frame_set_file_pos =
-            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        frame_set.next_frame_set_file_pos = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
+        frame_set.prev_frame_set_file_pos = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
+        frame_set.medium_stride_next_frame_set_file_pos = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
+        frame_set.medium_stride_prev_frame_set_file_pos = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
+        frame_set.long_stride_next_frame_set_file_pos = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
+        frame_set.long_stride_prev_frame_set_file_pos = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
 
         if block.version >= 3 {
-            frame_set.first_frame_time =
-                utils::read_f64(inp_file, self.endianness64, self.input_swap64);
-            self.time_per_frame = utils::read_f64(inp_file, self.endianness64, self.input_swap64);
+            frame_set.first_frame_time = utils::read_f64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_mut(),
+            );
+            self.time_per_frame = utils::read_f64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_mut(),
+            );
         } else {
             frame_set.first_frame_time = -1.0;
             self.time_per_frame = -1.0;
@@ -791,7 +900,11 @@ impl Trajectory {
         Ok(())
     }
 
-    fn trajectory_mapping_block_read(&mut self, block: &mut GenBlock) -> Result<(), TngError> {
+    fn trajectory_mapping_block_read(
+        &mut self,
+        block: &mut GenBlock,
+        hash_mode: bool,
+    ) -> Result<(), TngError> {
         self.input_file_init();
 
         let start_pos = self.get_input_file_position();
@@ -803,11 +916,20 @@ impl Trajectory {
         frame_set.n_mapping_blocks += 1;
         let mut mapping = ParticleMapping::new();
 
-        // TODO: hash mode
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
-        mapping.num_first_particle =
-            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        mapping.n_particles = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        mapping.num_first_particle = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
+        mapping.n_particles = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
         mapping.real_particle_numbers.resize(
             usize::try_from(mapping.n_particles).expect("i64 to usize"),
             0,
@@ -818,8 +940,12 @@ impl Trajectory {
         if self.input_swap64.is_some() {
             let inp_file = self.input_file.as_mut().expect("init input_file");
             for i in 0..mapping.n_particles as usize {
-                mapping.real_particle_numbers[i] =
-                    utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+                mapping.real_particle_numbers[i] = utils::read_i64(
+                    inp_file,
+                    self.endianness64,
+                    self.input_swap64,
+                    hasher.as_mut(),
+                );
             }
         } else {
             let bytes_to_read = usize::try_from(mapping.n_particles).expect("i64 to usize")
@@ -836,14 +962,35 @@ impl Trajectory {
                 eprintln!("Cannot read block. {}:{}", file!(), line!());
                 panic!()
             }
+            if let Some(hasher) = hasher.as_mut() {
+                // TODO: replace with bytemuck
+                let bytes = mapping
+                    .real_particle_numbers
+                    .as_slice()
+                    .iter()
+                    .flat_map(|&x| x.to_ne_bytes())
+                    .collect::<Vec<_>>();
+                hasher.update(&bytes);
+            }
         }
-        // TODO: Handle hashing
+
         self.current_trajectory_frame_set.mappings.push(mapping);
 
-        self.input_file
-            .as_ref()
-            .expect("init input_file")
-            .seek(SeekFrom::Start(start_pos + block.block_contents_size))?;
+        if let Some(mut hasher) = hasher {
+            // If there is data left in the block that the current version of the library
+            // cannot interpret still read that to generate the MD5 hash
+            self.md5_remaining_append(block, start_pos, &mut hasher)?;
+            let hash = hasher.finalize();
+            if block.md5_hash != [0u8; MD5_HASH_LEN] && block.md5_hash != hash {
+                eprintln!("Particle mapping block contents corrupt. Hashes do not match.");
+            }
+        } else {
+            self.input_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(start_pos + block.block_contents_size))?;
+        }
+
         Ok(())
     }
 
@@ -856,7 +1003,7 @@ impl Trajectory {
         &mut self,
         block: &mut GenBlock,
         mapping_block_nr: usize,
-        _hash_mode: bool,
+        hash_mode: bool,
     ) -> Result<(), TngError> {
         self.output_file_init();
 
@@ -868,8 +1015,7 @@ impl Trajectory {
             u64::try_from(self.trajectory_mapping_block_len_calculate(mapping.n_particles))
                 .expect("u64 from usize");
 
-        // TODO: hash mode
-        let _header_file_pos = self
+        let header_file_pos = self
             .output_file
             .as_mut()
             .expect("init output_file")
@@ -877,7 +1023,7 @@ impl Trajectory {
 
         self.block_header_write(block)?;
 
-        // TODO: hash mode
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
         let out_file = self.output_file.as_mut().expect("init output_file");
         let mapping = &self.current_trajectory_frame_set.mappings[mapping_block_nr];
@@ -886,6 +1032,7 @@ impl Trajectory {
             mapping.num_first_particle,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         utils::write_i64(
@@ -893,31 +1040,43 @@ impl Trajectory {
             mapping.n_particles,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         // we don't need the if-else branch here from the C code as utils::write_* already handles the
         // case where output_swap64 is None
         // line 3946 tng_io.c
-        // TODO: hash mode
         for i in 0..mapping.n_particles {
             utils::write_i64(
                 out_file,
                 mapping.real_particle_numbers[usize::try_from(i).expect("usize from i64")],
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
         }
 
-        // TODO: hash mode
-        // lien 3973 tng_io.c
+        if let Some(hasher) = hasher {
+            self.write_md5_hash(
+                &hasher.finalize().into(),
+                &mut block.md5_hash,
+                header_file_pos,
+            )?;
+        }
 
         Ok(())
     }
 
-    fn general_info_block_read(&mut self, block: &mut GenBlock) -> Result<(), TngError> {
+    fn general_info_block_read(
+        &mut self,
+        block: &mut GenBlock,
+        hash_mode: bool,
+    ) -> Result<(), TngError> {
         self.input_file_init();
 
         let start_pos = self.get_input_file_position();
+
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
         let inp_file = self.input_file.as_mut().expect("init input_file");
 
         self.first_program_name = utils::fread_str(inp_file);
@@ -930,47 +1089,100 @@ impl Trajectory {
         self.last_pgp_signature = utils::fread_str(inp_file);
         self.forcefield_name = utils::fread_str(inp_file);
 
-        self.time = utils::read_u64(inp_file, self.endianness64, self.input_swap64);
-        self.var_num_atoms = utils::read_bool_le_bytes(inp_file);
-        self.frame_set_n_frames = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        self.first_trajectory_frame_set_input_file_pos =
-            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        self.time = utils::read_u64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
+        self.var_num_atoms = utils::read_bool_le_bytes(inp_file, hasher.as_mut());
+        self.frame_set_n_frames = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
+        self.first_trajectory_frame_set_input_file_pos = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
 
         self.current_trajectory_frame_set.next_frame_set_file_pos =
             self.first_trajectory_frame_set_input_file_pos;
-        self.last_trajectory_frame_set_input_file_pos =
-            utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        self.last_trajectory_frame_set_input_file_pos = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
 
-        self.medium_stride_length = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        self.medium_stride_length = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
 
-        self.long_stride_length = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        self.long_stride_length = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_mut(),
+        );
 
         if block.version >= 3 {
-            self.distance_unit_exponential =
-                utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+            self.distance_unit_exponential = utils::read_i64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_mut(),
+            );
         }
 
-        // TODO: Handle MD5 hashing here
-        let new_pos = (i128::from(start_pos) + i128::from(block.block_contents_size))
-            .try_into()
-            .expect("set new position when reading block header");
-        self.input_file
-            .as_ref()
-            .expect("init input_file")
-            .seek(SeekFrom::Start(new_pos))?;
+        if let Some(mut hasher) = hasher {
+            // If there is data left in the block that the current version of the library
+            // cannot interpret still read that to generate the MD5 hash
+            self.md5_remaining_append(block, start_pos, &mut hasher)?;
+            let hash = hasher.finalize();
+            if block.md5_hash != [0u8; MD5_HASH_LEN] && block.md5_hash != hash {
+                eprintln!("Particle mapping block contents corrupt. Hashes do not match.");
+            }
+        } else {
+            // Seek to the end of the block
+            let new_pos = (i128::from(start_pos) + i128::from(block.block_contents_size))
+                .try_into()
+                .expect("set new position when reading block header");
+            self.input_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(new_pos))?;
+        }
+
         Ok(())
     }
 
-    fn molecules_block_read(&mut self, block: &mut GenBlock) -> Result<(), TngError> {
+    /// C API: `tng_molecules_block_read`
+    ///
+    /// Read a molecules block. Contains chain, residue, and atom data
+    fn molecules_block_read(
+        &mut self,
+        block: &mut GenBlock,
+        hash_mode: bool,
+    ) -> Result<(), TngError> {
         self.input_file_init();
         let start_pos = self.get_input_file_position();
 
         self.molecules.clear();
 
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
+
         self.n_molecules = utils::read_i64(
             self.input_file.as_mut().expect("init input_file"),
             self.endianness64,
             self.input_swap64,
+            hasher.as_mut(),
         );
 
         self.n_particles = 0;
@@ -984,19 +1196,48 @@ impl Trajectory {
         for mol_idx in 0..self.n_molecules {
             let inp_file = self.input_file.as_mut().expect("init input_file");
             let mut molecule = Molecule::new();
-            molecule.id = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+            molecule.id = utils::read_i64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_mut(),
+            );
             molecule.name = utils::fread_str(inp_file);
-            molecule.quaternary_str =
-                utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+            molecule.quaternary_str = utils::read_i64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_mut(),
+            );
 
             if !self.var_num_atoms {
-                let count = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+                let count = utils::read_i64(
+                    inp_file,
+                    self.endianness64,
+                    self.input_swap64,
+                    hasher.as_mut(),
+                );
                 self.molecule_cnt_list.push(count);
             }
 
-            molecule.n_chains = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-            molecule.n_residues = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-            molecule.n_atoms = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+            molecule.n_chains = utils::read_i64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_mut(),
+            );
+            molecule.n_residues = utils::read_i64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_mut(),
+            );
+            molecule.n_atoms = utils::read_i64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_mut(),
+            );
 
             self.n_particles += molecule.n_atoms
                 * self.molecule_cnt_list
@@ -1026,7 +1267,7 @@ impl Trajectory {
                 chain.parent_molecule_idx = mol_idx as usize;
                 chain.name = String::new();
 
-                chain.read_data(self);
+                chain.read_data(self, hasher.as_mut());
 
                 // Determine this chain’s slice of `self.residues`:
                 let start = residue_idx;
@@ -1044,7 +1285,7 @@ impl Trajectory {
                     residue.chain_index = Some(chain_idx as usize);
                     residue.name = String::new();
 
-                    residue.read_data(self);
+                    residue.read_data(self, hasher.as_mut());
 
                     // Compute atoms_offset = `atom - molecule->atoms` in C
                     residue.atoms_offset = atom_idx;
@@ -1061,7 +1302,7 @@ impl Trajectory {
                         atom.residue_index =
                             Some(usize::try_from(local_idx).expect("local_idx to usize"));
 
-                        atom.read_data(self);
+                        atom.read_data(self, hasher.as_mut());
 
                         atom_idx += 1;
                         molecule.atoms.push(atom);
@@ -1081,7 +1322,7 @@ impl Trajectory {
                     residue.chain_index = None;
                     residue.name = String::new();
 
-                    residue.read_data(self);
+                    residue.read_data(self, hasher.as_mut());
 
                     residue.atoms_offset = atom_idx;
                     let atom_count = residue.n_atoms;
@@ -1091,7 +1332,7 @@ impl Trajectory {
                         atom.parent_molecule_idx = mol_idx as usize;
                         atom.residue_index =
                             Some(usize::try_from(r_index).expect("r_index to usize"));
-                        atom.read_data(self);
+                        atom.read_data(self, hasher.as_mut());
                         atom_idx += 1;
                     }
                 }
@@ -1103,63 +1344,115 @@ impl Trajectory {
                     let mut atom = Atom::new();
                     atom.parent_molecule_idx = mol_idx as usize;
                     atom.residue_index = None;
-                    atom.read_data(self);
+                    atom.read_data(self, hasher.as_mut());
                 }
             }
 
             let inp_file = self.input_file.as_mut().expect("init input_file");
-            molecule.n_bonds = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+            molecule.n_bonds = utils::read_i64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_mut(),
+            );
 
             for _ in 0..molecule.n_bonds {
                 let mut bond = Bond::new();
-                bond.from_atom_id = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-                bond.from_atom_id = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+                bond.from_atom_id = utils::read_i64(
+                    inp_file,
+                    self.endianness64,
+                    self.input_swap64,
+                    hasher.as_mut(),
+                );
+                bond.from_atom_id = utils::read_i64(
+                    inp_file,
+                    self.endianness64,
+                    self.input_swap64,
+                    hasher.as_mut(),
+                );
                 molecule.bonds.push(bond);
             }
 
             self.molecules.push(molecule);
         }
 
-        let new_pos = (i128::from(start_pos) + i128::from(block.block_contents_size))
-            .try_into()
-            .expect("set new position when reading block header");
-        self.input_file
-            .as_mut()
-            .expect("init input_file")
-            .seek(SeekFrom::Start(new_pos))?;
+        if let Some(mut hasher) = hasher {
+            // If there is data left in the block that the current version of the library
+            // cannot interpret still read that to generate the MD5 hash
+            self.md5_remaining_append(block, start_pos, &mut hasher)?;
+            let hash = hasher.finalize();
+            if block.md5_hash != [0u8; MD5_HASH_LEN] && block.md5_hash != hash {
+                eprintln!("Particle mapping block contents corrupt. Hashes do not match.");
+            }
+        } else {
+            let new_pos = (i128::from(start_pos) + i128::from(block.block_contents_size))
+                .try_into()
+                .expect("set new position when reading block header");
+            self.input_file
+                .as_mut()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(new_pos))?;
+        }
+
         Ok(())
     }
 
+    /// C API: `tng_data_block_meta_information_read`
+    ///
     /// Read the meta information of a data block (particle or non-particle data).
-    fn data_block_meta_information_read(&mut self, _block: &mut GenBlock) -> BlockMetaInfo {
+    fn data_block_meta_information_read(
+        &mut self,
+        _block: &mut GenBlock,
+        mut hasher: Option<&mut Md5>,
+    ) -> BlockMetaInfo {
         let mut block_meta_info = BlockMetaInfo::default();
         let inp_file = self.input_file.as_mut().expect("init input_file");
 
-        block_meta_info.datatype = DataType::from_u8(utils::read_u8(inp_file));
-        block_meta_info.dependency = utils::read_u8(inp_file);
+        block_meta_info.datatype =
+            DataType::from_u8(utils::read_u8(inp_file, hasher.as_deref_mut()));
+        block_meta_info.dependency = utils::read_u8(inp_file, hasher.as_deref_mut());
 
         if block_meta_info.dependency & FRAME_DEPENDENT != 0 {
-            block_meta_info.sparse_data = utils::read_u8(inp_file);
+            block_meta_info.sparse_data = utils::read_u8(inp_file, hasher.as_deref_mut());
         }
-        block_meta_info.n_values = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        block_meta_info.n_values = utils::read_i64(
+            inp_file,
+            self.endianness64,
+            self.input_swap64,
+            hasher.as_deref_mut(),
+        );
         block_meta_info.codec_id = Compression::from_i64(utils::read_i64(
             inp_file,
             self.endianness64,
             self.input_swap64,
+            hasher.as_deref_mut(),
         ));
 
         block_meta_info.multiplier = if block_meta_info.codec_id == Compression::Uncompressed {
             1.0
         } else {
-            utils::read_f64(inp_file, self.endianness64, self.input_swap64)
+            utils::read_f64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_deref_mut(),
+            )
         };
 
         if block_meta_info.dependency & FRAME_DEPENDENT != 0 {
             if block_meta_info.sparse_data != 0 {
-                block_meta_info.first_frame_with_data =
-                    utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-                block_meta_info.stride_length =
-                    utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+                block_meta_info.first_frame_with_data = utils::read_i64(
+                    inp_file,
+                    self.endianness64,
+                    self.input_swap64,
+                    hasher.as_deref_mut(),
+                );
+                block_meta_info.stride_length = utils::read_i64(
+                    inp_file,
+                    self.endianness64,
+                    self.input_swap64,
+                    hasher.as_deref_mut(),
+                );
                 block_meta_info.n_frames = self.current_trajectory_frame_set.n_frames
                     - (block_meta_info.first_frame_with_data
                         - self.current_trajectory_frame_set.first_frame);
@@ -1176,10 +1469,18 @@ impl Trajectory {
         }
 
         if block_meta_info.dependency & PARTICLE_DEPENDENT != 0 {
-            block_meta_info.num_first_particle =
-                utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-            block_meta_info.block_n_particles =
-                utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+            block_meta_info.num_first_particle = utils::read_i64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_deref_mut(),
+            );
+            block_meta_info.block_n_particles = utils::read_i64(
+                inp_file,
+                self.endianness64,
+                self.input_swap64,
+                hasher.as_deref_mut(),
+            );
         } else {
             block_meta_info.num_first_particle = -1;
             block_meta_info.block_n_particles = 0;
@@ -1686,11 +1987,17 @@ impl Trajectory {
     }
 
     /// Read the contents of a data block (particle or non-particle data)
-    fn data_block_contents_read(&mut self, block: &mut GenBlock) -> Result<(), TngError> {
+    fn data_block_contents_read(
+        &mut self,
+        block: &mut GenBlock,
+        hash_mode: bool,
+    ) -> Result<(), TngError> {
         self.input_file_init();
         let start_pos = self.get_input_file_position();
 
-        let meta_info = self.data_block_meta_information_read(block);
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
+
+        let meta_info = self.data_block_meta_information_read(block, hasher.as_mut());
 
         let current_pos = self.get_input_file_position();
         let remaining_len = block.block_contents_size - (current_pos - start_pos);
@@ -1699,9 +2006,20 @@ impl Trajectory {
             // TODO
             .expect("error handling");
 
-        // TODO: handle md5 hash
-
-        // if hash_mode == TNG_USE_HASH {}
+        if let Some(mut hasher) = hasher {
+            // If there is data left in the block that the current version of the library
+            // cannot interpret still read that to generate the MD5 hash
+            self.md5_remaining_append(block, start_pos, &mut hasher)?;
+            let hash = hasher.finalize();
+            if block.md5_hash != [0u8; MD5_HASH_LEN] && block.md5_hash != hash {
+                eprintln!("Particle mapping block contents corrupt. Hashes do not match.");
+            }
+        } else {
+            self.input_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(start_pos + block.block_contents_size))?;
+        }
 
         let new_pos = start_pos + block.block_contents_size;
         self.input_file
@@ -1711,17 +2029,19 @@ impl Trajectory {
         Ok(())
     }
 
+    /// C API: `tng_block_read_next`
+    ///
     /// Read one (the next) block (of any kind) from the `input_file` of [`Self`]
-    fn block_read_next(&mut self, block: &mut GenBlock, _hash_mode: bool) -> Result<(), TngError> {
+    fn block_read_next(&mut self, block: &mut GenBlock, hash_mode: bool) -> Result<(), TngError> {
         match block.id {
-            BlockID::TrajectoryFrameSet => self.frame_set_block_read(block)?,
-            BlockID::ParticleMapping => self.trajectory_mapping_block_read(block)?,
-            BlockID::GeneralInfo => self.general_info_block_read(block)?,
-            BlockID::Molecules => self.molecules_block_read(block)?,
+            BlockID::TrajectoryFrameSet => self.frame_set_block_read(block, hash_mode)?,
+            BlockID::ParticleMapping => self.trajectory_mapping_block_read(block, hash_mode)?,
+            BlockID::GeneralInfo => self.general_info_block_read(block, hash_mode)?,
+            BlockID::Molecules => self.molecules_block_read(block, hash_mode)?,
             // id if id >= BlockID::TrajBoxShape => self.data_block_contents_read(block),
             id => {
                 if id >= BlockID::TrajBoxShape {
-                    self.data_block_contents_read(block)?;
+                    self.data_block_contents_read(block, hash_mode)?;
                 } else {
                     // We skip to the next block
                     let current_pos = self.get_input_file_position();
@@ -1981,7 +2301,7 @@ impl Trajectory {
     }
 
     /// Write a general info block. This is the first block of a TNG file
-    fn general_info_block_write(&mut self) -> Result<(), TngError> {
+    fn general_info_block_write(&mut self, hash_mode: bool) -> Result<(), TngError> {
         self.output_file_init();
 
         let out_file = self.output_file.as_mut().expect("init input_file");
@@ -1991,9 +2311,12 @@ impl Trajectory {
         block.name = Some("GENERAL INFO".to_string());
         block.id = BlockID::GeneralInfo;
         block.block_contents_size = self.general_info_block_len_calculate();
+
+        let header_file_pos = 0;
+
         self.block_header_write(&mut block)?;
 
-        // TODO: HASH
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
         let out_file = self.output_file.as_mut().expect("init input_file");
         utils::fwrite_str(out_file, &self.first_program_name)?;
@@ -2013,44 +2336,56 @@ impl Trajectory {
             self.frame_set_n_frames,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
         utils::write_i64(
             out_file,
             self.first_trajectory_frame_set_output_file_pos,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
         utils::write_i64(
             out_file,
             self.last_trajectory_frame_set_output_file_pos,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
         utils::write_i64(
             out_file,
             self.medium_stride_length,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
         utils::write_i64(
             out_file,
             self.long_stride_length,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
         utils::write_i64(
             out_file,
             self.distance_unit_exponential,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
-        //TODO: HASH
+        if let Some(hasher) = hasher {
+            self.write_md5_hash(
+                &hasher.finalize().into(),
+                &mut block.md5_hash,
+                header_file_pos,
+            )?;
+        }
         Ok(())
     }
 
     /// Write a molecules block.
-    fn molecules_block_write(&mut self) -> Result<(), TngError> {
+    fn molecules_block_write(&mut self, hash_mode: bool) -> Result<(), TngError> {
         self.output_file_init();
 
         let mut block = GenBlock::new();
@@ -2058,9 +2393,11 @@ impl Trajectory {
         block.id = BlockID::Molecules;
         block.block_contents_size = self.molecules_block_len_calculate();
 
+        let header_file_pos = self.get_output_file_position();
+
         self.block_header_write(&mut block)?;
 
-        // TODO: HASH
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
         let out_file = self.output_file.as_mut().expect("init output_file");
         utils::write_i64(
@@ -2068,38 +2405,55 @@ impl Trajectory {
             self.n_molecules,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         for (molecule, mol_count) in self.molecules.iter().zip(&self.molecule_cnt_list) {
-            utils::write_i64(out_file, molecule.id, self.endianness64, self.output_swap64);
+            utils::write_i64(
+                out_file,
+                molecule.id,
+                self.endianness64,
+                self.output_swap64,
+                hasher.as_mut(),
+            );
             utils::fwrite_str(out_file, &molecule.name)?;
             utils::write_i64(
                 out_file,
                 molecule.quaternary_str,
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
 
             if !self.var_num_atoms {
-                utils::write_i64(out_file, *mol_count, self.endianness64, self.output_swap64);
+                utils::write_i64(
+                    out_file,
+                    *mol_count,
+                    self.endianness64,
+                    self.output_swap64,
+                    hasher.as_mut(),
+                );
             }
             utils::write_i64(
                 out_file,
                 molecule.n_chains,
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
             utils::write_i64(
                 out_file,
                 molecule.n_residues,
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
             utils::write_i64(
                 out_file,
                 molecule.n_atoms,
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
 
             if molecule.n_chains > 0 {
@@ -2138,6 +2492,7 @@ impl Trajectory {
                                 atom.id,
                                 self.endianness64,
                                 self.output_swap64,
+                                hasher.as_mut(),
                             );
                             utils::fwrite_str(out_file, &atom.name)?;
                             utils::fwrite_str(out_file, &atom.atom_type)?;
@@ -2158,14 +2513,26 @@ impl Trajectory {
                     let atom_end = atom_start + residue.n_atoms as usize;
                     let atom_slice = &molecule.atoms[atom_start..atom_end];
                     for atom in atom_slice {
-                        utils::write_i64(out_file, atom.id, self.endianness64, self.output_swap64);
+                        utils::write_i64(
+                            out_file,
+                            atom.id,
+                            self.endianness64,
+                            self.output_swap64,
+                            hasher.as_mut(),
+                        );
                         utils::fwrite_str(out_file, &atom.name)?;
                         utils::fwrite_str(out_file, &atom.atom_type)?;
                     }
                 }
             } else {
                 for atom in &molecule.atoms {
-                    utils::write_i64(out_file, atom.id, self.endianness64, self.output_swap64);
+                    utils::write_i64(
+                        out_file,
+                        atom.id,
+                        self.endianness64,
+                        self.output_swap64,
+                        hasher.as_mut(),
+                    );
                     utils::fwrite_str(out_file, &atom.name)?;
                     utils::fwrite_str(out_file, &atom.atom_type)?;
                 }
@@ -2176,6 +2543,7 @@ impl Trajectory {
                 molecule.n_bonds,
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
 
             for bond in &molecule.bonds {
@@ -2184,17 +2552,25 @@ impl Trajectory {
                     bond.from_atom_id,
                     self.endianness64,
                     self.output_swap64,
+                    hasher.as_mut(),
                 );
                 utils::write_i64(
                     out_file,
                     bond.to_atom_id,
                     self.endianness64,
                     self.output_swap64,
+                    hasher.as_mut(),
                 );
             }
         }
 
-        // TODO; HASH
+        if let Some(hasher) = hasher {
+            self.write_md5_hash(
+                &hasher.finalize().into(),
+                &mut block.md5_hash,
+                header_file_pos,
+            )?;
+        }
         Ok(())
     }
 
@@ -2210,7 +2586,11 @@ impl Trajectory {
         u64::try_from(length).expect("u64 from usize")
     }
 
-    fn frame_set_block_write(&mut self, block: &mut GenBlock) -> Result<(), TngError> {
+    fn frame_set_block_write(
+        &mut self,
+        block: &mut GenBlock,
+        hash_mode: bool,
+    ) -> Result<(), TngError> {
         self.output_file_init();
 
         block.name = Some("TRAJECTORY FRAME SET".to_string());
@@ -2218,16 +2598,11 @@ impl Trajectory {
 
         block.block_contents_size = self.frame_set_block_len_calculate();
 
-        // TODO: hash mode - headeR_file_pos is only used for hash mode
-        let _header_file_pos = self
-            .output_file
-            .as_mut()
-            .expect("init output_file")
-            .stream_position()?;
+        let header_file_pos = self.get_output_file_position();
 
         self.block_header_write(block)?;
 
-        // TODO: hash mode. line 3616 tng_io.c
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
         // let frame_set = self.current_trajectory_frame_set;
         let out_file = self.output_file.as_mut().expect("init input_file");
@@ -2236,6 +2611,7 @@ impl Trajectory {
             self.current_trajectory_frame_set.first_frame,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         utils::write_i64(
@@ -2243,6 +2619,7 @@ impl Trajectory {
             self.current_trajectory_frame_set.n_frames,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         if self.var_num_atoms {
@@ -2253,6 +2630,7 @@ impl Trajectory {
                         [usize::try_from(i).expect("usize from u64")],
                     self.endianness64,
                     self.output_swap64,
+                    hasher.as_mut(),
                 );
             }
         }
@@ -2261,6 +2639,7 @@ impl Trajectory {
             self.current_trajectory_frame_set.next_frame_set_file_pos,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         utils::write_i64(
@@ -2268,6 +2647,7 @@ impl Trajectory {
             self.current_trajectory_frame_set.prev_frame_set_file_pos,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         utils::write_i64(
@@ -2276,6 +2656,7 @@ impl Trajectory {
                 .medium_stride_next_frame_set_file_pos,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         utils::write_i64(
@@ -2284,6 +2665,7 @@ impl Trajectory {
                 .medium_stride_prev_frame_set_file_pos,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         utils::write_i64(
@@ -2292,6 +2674,7 @@ impl Trajectory {
                 .long_stride_next_frame_set_file_pos,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         utils::write_i64(
@@ -2300,6 +2683,7 @@ impl Trajectory {
                 .long_stride_prev_frame_set_file_pos,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         utils::write_f64(
@@ -2316,7 +2700,13 @@ impl Trajectory {
             self.output_swap64,
         );
 
-        // TODO: hash mode tng_io.c line 3706
+        if let Some(hasher) = hasher {
+            self.write_md5_hash(
+                &hasher.finalize().into(),
+                &mut block.md5_hash,
+                header_file_pos,
+            )?;
+        }
         Ok(())
     }
 
@@ -2749,7 +3139,7 @@ impl Trajectory {
         block_index: usize,
         is_particle_data: bool,
         mapping: Option<&ParticleMapping>,
-        _hash_mode: bool,
+        hash_mode: bool,
     ) -> Result<(), TngError> {
         // If we have already started writing frame sets it is too late to write
         // non-trajectory data blocks
@@ -2894,7 +3284,7 @@ impl Trajectory {
 
         self.block_header_write(block)?;
 
-        // TODO: hash mode
+        let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
         let out_file = self.output_file.as_mut().expect("init output_file");
         utils::write_u8(out_file, cloned_data.data_type as u8);
@@ -2910,6 +3300,7 @@ impl Trajectory {
             cloned_data.n_values_per_frame,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
         utils::write_u64(
             out_file,
@@ -2937,12 +3328,14 @@ impl Trajectory {
                 cloned_data.first_frame_with_data,
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
             utils::write_i64(
                 out_file,
                 stride_length,
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
         }
 
@@ -2952,8 +3345,15 @@ impl Trajectory {
                 num_first_particle,
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
-            utils::write_i64(out_file, n_particles, self.endianness64, self.output_swap64);
+            utils::write_i64(
+                out_file,
+                n_particles,
+                self.endianness64,
+                self.output_swap64,
+                hasher.as_mut(),
+            );
         }
 
         if cloned_data.data_type == DataType::Char {
@@ -3125,7 +3525,7 @@ impl Trajectory {
                             block_index,
                             is_particle_data,
                             mapping,
-                            _hash_mode,
+                            hash_mode,
                         )?;
                         return Ok(());
                     }
@@ -3184,13 +3584,18 @@ impl Trajectory {
             out_file
                 .write_all(&contents[..block_data_len])
                 .expect("Could not write all block data.");
-            // TODO: hash mode lib/tng_io.c 5851
+            if let Some(hasher) = hasher.as_mut() {
+                hasher.update(&contents[..block_data_len]);
+            }
         }
 
-        // if hash_mode == TNG_USE_HASH {
-        //     unimplemented!("tng/lib_io.c 5859")
-        // }
-        // frame_set
+        if let Some(hasher) = hasher {
+            self.write_md5_hash(
+                &hasher.finalize().into(),
+                &mut block.md5_hash,
+                header_file_pos,
+            )?;
+        }
         self.current_trajectory_frame_set.n_written_frames *=
             self.current_trajectory_frame_set.n_unwritten_frames;
         self.current_trajectory_frame_set.n_unwritten_frames = 0;
@@ -3263,9 +3668,9 @@ impl Trajectory {
             self.current_trajectory_frame_set_output_file_pos = -1;
         }
 
-        self.general_info_block_write()?;
+        self.general_info_block_write(hash_mode)?;
 
-        self.molecules_block_write()?;
+        self.molecules_block_write(hash_mode)?;
 
         // FIXME(from c): Currently writing non-trajectory data blocks here.
         // Should perhaps be moved
@@ -4786,7 +5191,7 @@ impl Trajectory {
 
         let mut block = GenBlock::new();
 
-        self.frame_set_block_write(&mut block)?;
+        self.frame_set_block_write(&mut block, hash_mode)?;
 
         // Write non-particle data blocks
         for i in 0..self.current_trajectory_frame_set.n_data_blocks {
@@ -5548,7 +5953,7 @@ impl Trajectory {
         }
 
         let inp_file = self.input_file.as_mut().expect("init input_file");
-        let frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        let frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64, None);
 
         inp_file.seek(SeekFrom::Start(file_pos))?;
         Ok(frame)
@@ -5586,8 +5991,8 @@ impl Trajectory {
         }
 
         let inp_file = self.input_file.as_mut().expect("init input_file");
-        let first_frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
-        let n_frames = utils::read_i64(inp_file, self.endianness64, self.input_swap64);
+        let first_frame = utils::read_i64(inp_file, self.endianness64, self.input_swap64, None);
+        let n_frames = utils::read_i64(inp_file, self.endianness64, self.input_swap64, None);
         inp_file.seek(SeekFrom::Start(file_pos))?;
 
         Ok(first_frame + n_frames)
@@ -5916,7 +6321,7 @@ impl Trajectory {
     /// Update the frame set pointers in the file header (general info block),
     /// already written to disk
     /// `hash_mode` specifies whether to update the block md5 hash when updating the pointers
-    fn header_pointers_update(&mut self, _hash_mode: bool) -> Result<(), TngError> {
+    fn header_pointers_update(&mut self, hash_mode: bool) -> Result<(), TngError> {
         self.output_file_init();
 
         // Save original input_file, replace with a dup of output_file
@@ -5953,7 +6358,7 @@ impl Trajectory {
             .expect("just initialized output file");
 
         // TODO: hash mode
-        let _contents_start_pos = output_file.stream_position()?;
+        let contents_start_pos = output_file.stream_position()?;
         output_file.seek(SeekFrom::Current(
             i64::try_from(
                 block.block_contents_size
@@ -5980,10 +6385,43 @@ impl Trajectory {
             self.input_swap64,
         );
 
-        // TODO: hash mode
-        // tng_io.c line 1282
+        if hash_mode {
+            self.md5_hash_update(&mut block, 0, contents_start_pos)?;
+        }
 
-        output_file.seek(SeekFrom::Start(output_file_pos))?;
+        self.output_file
+            .as_mut()
+            .expect("just initialized output file")
+            .seek(SeekFrom::Start(output_file_pos))?;
+
+        Ok(())
+    }
+
+    /// C API: `tng_md5_hash_update`
+    ///
+    /// Update the md5 hash of a block already written to the file
+    fn md5_hash_update(
+        &self,
+        block: &mut GenBlock,
+        header_start_pos: usize,
+        contents_start_pos: u64,
+    ) -> Result<(), TngError> {
+        self.output_file
+            .as_ref()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(contents_start_pos))?;
+        block.md5_hash_generate();
+        self.output_file
+            .as_ref()
+            .expect("init input_file")
+            .seek(SeekFrom::Start(
+                header_start_pos as u64 + 3 * size_of::<i64>() as u64,
+            ))?;
+
+        self.output_file
+            .as_ref()
+            .expect("init output_file")
+            .write_all(&block.md5_hash[..MD5_HASH_LEN])?;
 
         Ok(())
     }
@@ -6764,6 +7202,7 @@ impl Trajectory {
                     self.input_file.as_mut().expect("init input_file"),
                     self.endianness64,
                     self.input_swap64,
+                    None,
                 );
 
                 // Set the long range pointers
@@ -6804,6 +7243,7 @@ impl Trajectory {
                             self.input_file.as_mut().expect("init input_file"),
                             self.endianness64,
                             self.input_swap64,
+                            None,
                         );
                     }
                 }
@@ -7424,7 +7864,7 @@ impl Trajectory {
         let mut metainfo = None;
         while block.id != BlockID::TrajectoryFrameSet && !found {
             if block.id == block_id {
-                let temp = self.data_block_meta_information_read(&mut block);
+                let temp = self.data_block_meta_information_read(&mut block, None);
                 metainfo = Some(temp);
                 found = true;
             } else {
@@ -7905,7 +8345,7 @@ impl Trajectory {
         dest
     }
 
-    fn frame_set_finalize(&mut self, _use_hash: bool) -> Result<(), TngError> {
+    fn frame_set_finalize(&mut self, hash_mode: bool) -> Result<(), TngError> {
         if self.current_trajectory_frame_set.n_written_frames
             == self.current_trajectory_frame_set.n_frames
         {
@@ -7955,7 +8395,10 @@ impl Trajectory {
                 .write_all(&self.current_trajectory_frame_set.n_frames.to_ne_bytes())
                 .expect("able to write to output_file");
 
-            // TODO: hash mode tng_io.c line 6242
+            if hash_mode {
+                let header_contents_size = block.header_contents_size;
+                self.md5_hash_update(&mut block, pos as usize, pos as u64 + header_contents_size)?;
+            }
 
             self.output_file
                 .as_ref()

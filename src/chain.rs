@@ -1,3 +1,5 @@
+use md5::Md5;
+
 use crate::trajectory::Trajectory;
 use crate::{MAX_STR_LEN, utils};
 
@@ -30,8 +32,14 @@ impl Chain {
         }
     }
 
-    // C API: `tng_chain_data_read`
-    pub(crate) fn read_data(&mut self, trajectory_data: &mut Trajectory) {
+    /// C API: `tng_chain_data_read`
+    ///
+    /// Read the chain data of a molecules block
+    pub(crate) fn read_data(
+        &mut self,
+        trajectory_data: &mut Trajectory,
+        mut hasher: Option<&mut Md5>,
+    ) {
         let inp_file = trajectory_data
             .input_file
             .as_mut()
@@ -40,12 +48,14 @@ impl Chain {
             inp_file,
             trajectory_data.endianness64,
             trajectory_data.input_swap64,
+            hasher.as_deref_mut(),
         );
         self.name = utils::fread_str(inp_file);
         self.n_residues = utils::read_u64(
             inp_file,
             trajectory_data.endianness64,
             trajectory_data.input_swap64,
+            hasher.as_deref_mut(),
         );
     }
 

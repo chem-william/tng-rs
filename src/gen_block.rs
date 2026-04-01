@@ -1,3 +1,5 @@
+use md5::{Digest, Md5};
+
 use crate::{API_VERSION, MAX_STR_LEN, MD5_HASH_LEN};
 
 /// Standard non-trajectory blocks
@@ -270,7 +272,22 @@ impl GenBlock {
         }
     }
 
-    // c function: block_header_len_calculate
+    /// C API: `tng_block_md5_hash_generate`
+    ///
+    /// Generate the MD5 hash of a block. The hash is created based on
+    /// the actual block contents
+    pub(crate) fn md5_hash_generate(&mut self) {
+        let mut hasher = Md5::new();
+        hasher.update(
+            self.block_contents
+                .as_ref()
+                .expect("block must have Some contents")
+                .as_slice(),
+        );
+        self.md5_hash.copy_from_slice(&hasher.finalize());
+    }
+
+    // C API: `block_header_len_calculate`
     /// Calculates the size (in bytes) of the block header, including
     /// fixed fields and the bounded name string length.
     ///
