@@ -869,3 +869,22 @@ mod var_num_atoms_regression {
         let _ = fs::remove_file(path);
     }
 }
+
+#[cfg(test)]
+mod particle_lookup_regression {
+    use crate::trajectory::Trajectory;
+
+    #[test]
+    fn residue_id_lookup_uses_residue_id_not_atom_id() {
+        let mut traj = Trajectory::new();
+        let molecule_idx = traj.add_molecule("mol");
+        let chain_idx = traj.add_chain(molecule_idx, "A");
+        let residue_idx = traj.chain_residue_add(molecule_idx, chain_idx, "RES");
+
+        traj.residue_atom_add(molecule_idx, residue_idx, "A1", "A");
+        traj.residue_atom_add(molecule_idx, residue_idx, "A2", "A");
+        traj.molecule_cnt_set(molecule_idx, 1);
+
+        assert_eq!(traj.residue_id_of_particle_nr_get(1), Some(0));
+    }
+}

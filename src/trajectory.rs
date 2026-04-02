@@ -4331,15 +4331,16 @@ impl Trajectory {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut atom_id = None;
+        let mut residue_id = None;
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
                 continue;
             }
-            atom_id = Some(mol.atoms[(nr % mol.n_atoms) as usize].id);
+            let residue_idx = mol.atoms[(nr % mol.n_atoms) as usize].residue_index?;
+            residue_id = Some(i64::try_from(mol.residues[residue_idx].id).expect("u64 to i64"));
         }
-        atom_id
+        residue_id
     }
 
     /// C API: `tng_global_residue_id_of_particle_nr_get`.
