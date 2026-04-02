@@ -50,7 +50,7 @@ impl Chain {
             trajectory_data.input_swap64,
             hasher.as_deref_mut(),
         );
-        self.name = utils::fread_str(inp_file);
+        self.name = utils::fread_str(inp_file, hasher.as_deref_mut());
         self.n_residues = utils::read_u64(
             inp_file,
             trajectory_data.endianness64,

@@ -8,10 +8,7 @@ A Rust port of the Trajectory Next Generation (TNG) library. The original librar
 The port matches the behavior at commit `f8d55273` at [https://gitlab.com/gromacs/tng](https://gitlab.com/gromacs/tng).
 
  ## Notes
- Currently assumes that files have only been written on 64-bit systems
-
-## Divergences From the C API
-Searches over molecule-owned collections are exposed on `Molecule` in Rust. In practice, `chain_find` and `atom_find` correspond to C's `tng_molecule_chain_find` and `tng_molecule_atom_find`, while `residue_find` is a Rust convenience. Trajectory-level APIs are kept where resolving data still requires trajectory-owned context.
+ Currently assumes that files have only been written on 64-bit systems.
 
  ## Development
  You can run the tests with debug output in the following way:
@@ -26,6 +23,8 @@ Searches over molecule-owned collections are exposed on `Molecule` in Rust. In p
  ## Differences from the C lib
  There are some patterns that are quite difficult to port where I decided to change the public API slightly. One being the fact that the original C lib makes use of circular references to have a molecule point to its parent residue while the parent residue points to that molecule. [It's not impossible to have in Rust](https://rust-classes.com/chapter_advanced_cicular_references), just a bit more cumbersome than in C.
 Due to this, in some places the takes/returns an index to the residue, chain, molecules, etc. instead of the entity itself.
+
+Searches over molecule-owned collections are exposed on `Molecule` in Rust. In practice, `chain_find` and `atom_find` correspond to C's `tng_molecule_chain_find` and `tng_molecule_atom_find`, while `residue_find` is a Rust convenience.
 
  ## LLM usage
  Parts of the code has been translated with the use of large language models (LLMs). All code has been reviewed by humans.

@@ -31,7 +31,11 @@ impl Atom {
 
     // C API: `tng_atom_data_read`
     /// Read the atom data of a molecules block
-    pub(crate) fn read_data(&mut self, trajectory_data: &mut Trajectory, hasher: Option<&mut Md5>) {
+    pub(crate) fn read_data(
+        &mut self,
+        trajectory_data: &mut Trajectory,
+        mut hasher: Option<&mut Md5>,
+    ) {
         let inp_file = trajectory_data
             .input_file
             .as_mut()
@@ -40,9 +44,9 @@ impl Atom {
             inp_file,
             trajectory_data.endianness64,
             trajectory_data.input_swap64,
-            hasher,
+            hasher.as_deref_mut(),
         );
-        self.name = utils::fread_str(inp_file);
-        self.atom_type = utils::fread_str(inp_file);
+        self.name = utils::fread_str(inp_file, hasher.as_deref_mut());
+        self.atom_type = utils::fread_str(inp_file, hasher.as_deref_mut());
     }
 }

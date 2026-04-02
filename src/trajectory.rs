@@ -744,7 +744,7 @@ impl Trajectory {
         ));
         inp_file.read_exact(&mut block.md5_hash)?;
 
-        block.name = Some(utils::fread_str(inp_file));
+        block.name = Some(utils::fread_str(inp_file, None));
 
         block.version = utils::read_u64(inp_file, self.endianness64, self.input_swap64, None);
 
@@ -1096,15 +1096,15 @@ impl Trajectory {
         let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
         let inp_file = self.input_file.as_mut().expect("init input_file");
 
-        self.first_program_name = utils::fread_str(inp_file);
-        self.last_program_name = utils::fread_str(inp_file);
-        self.first_user_name = utils::fread_str(inp_file);
-        self.last_user_name = utils::fread_str(inp_file);
-        self.first_computer_name = utils::fread_str(inp_file);
-        self.last_computer_name = utils::fread_str(inp_file);
-        self.first_pgp_signature = utils::fread_str(inp_file);
-        self.last_pgp_signature = utils::fread_str(inp_file);
-        self.forcefield_name = utils::fread_str(inp_file);
+        self.first_program_name = utils::fread_str(inp_file, hasher.as_mut());
+        self.last_program_name = utils::fread_str(inp_file, hasher.as_mut());
+        self.first_user_name = utils::fread_str(inp_file, hasher.as_mut());
+        self.last_user_name = utils::fread_str(inp_file, hasher.as_mut());
+        self.first_computer_name = utils::fread_str(inp_file, hasher.as_mut());
+        self.last_computer_name = utils::fread_str(inp_file, hasher.as_mut());
+        self.first_pgp_signature = utils::fread_str(inp_file, hasher.as_mut());
+        self.last_pgp_signature = utils::fread_str(inp_file, hasher.as_mut());
+        self.forcefield_name = utils::fread_str(inp_file, hasher.as_mut());
 
         self.time = utils::read_u64(
             inp_file,
@@ -1219,7 +1219,7 @@ impl Trajectory {
                 self.input_swap64,
                 hasher.as_mut(),
             );
-            molecule.name = utils::fread_str(inp_file);
+            molecule.name = utils::fread_str(inp_file, hasher.as_mut());
             molecule.quaternary_str = utils::read_i64(
                 inp_file,
                 self.endianness64,
@@ -2294,29 +2294,37 @@ impl Trajectory {
             block.header_contents_size,
             self.endianness64,
             self.output_swap64,
+            None,
         );
         utils::write_u64(
             out_file,
             block.block_contents_size,
             self.endianness64,
             self.output_swap64,
+            None,
         );
         utils::write_u64(
             out_file,
             block.id as u64,
             self.endianness64,
             self.output_swap64,
+            None,
         );
 
         out_file
             .write_all(&block.md5_hash)
             .expect("able to write to output_file");
-        utils::fwrite_str(out_file, block.name.as_ref().expect("block to have name"))?;
+        utils::fwrite_str(
+            out_file,
+            block.name.as_ref().expect("block to have name"),
+            None,
+        )?;
         utils::write_u64(
             out_file,
             block.version,
             self.endianness64,
             self.output_swap64,
+            None,
         );
         Ok(())
     }
@@ -2340,18 +2348,24 @@ impl Trajectory {
         let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
         let out_file = self.output_file.as_mut().expect("init input_file");
-        utils::fwrite_str(out_file, &self.first_program_name)?;
-        utils::fwrite_str(out_file, &self.last_program_name)?;
-        utils::fwrite_str(out_file, &self.first_user_name)?;
-        utils::fwrite_str(out_file, &self.last_user_name)?;
-        utils::fwrite_str(out_file, &self.first_computer_name)?;
-        utils::fwrite_str(out_file, &self.last_computer_name)?;
-        utils::fwrite_str(out_file, &self.first_pgp_signature)?;
-        utils::fwrite_str(out_file, &self.last_pgp_signature)?;
-        utils::fwrite_str(out_file, &self.forcefield_name)?;
+        utils::fwrite_str(out_file, &self.first_program_name, hasher.as_mut())?;
+        utils::fwrite_str(out_file, &self.last_program_name, hasher.as_mut())?;
+        utils::fwrite_str(out_file, &self.first_user_name, hasher.as_mut())?;
+        utils::fwrite_str(out_file, &self.last_user_name, hasher.as_mut())?;
+        utils::fwrite_str(out_file, &self.first_computer_name, hasher.as_mut())?;
+        utils::fwrite_str(out_file, &self.last_computer_name, hasher.as_mut())?;
+        utils::fwrite_str(out_file, &self.first_pgp_signature, hasher.as_mut())?;
+        utils::fwrite_str(out_file, &self.last_pgp_signature, hasher.as_mut())?;
+        utils::fwrite_str(out_file, &self.forcefield_name, hasher.as_mut())?;
 
-        utils::write_u64(out_file, self.time, self.endianness64, self.output_swap64);
-        utils::write_bool(out_file, self.var_num_atoms);
+        utils::write_u64(
+            out_file,
+            self.time,
+            self.endianness64,
+            self.output_swap64,
+            hasher.as_mut(),
+        );
+        utils::write_bool(out_file, self.var_num_atoms, hasher.as_mut());
         utils::write_i64(
             out_file,
             self.frame_set_n_frames,
@@ -2437,7 +2451,7 @@ impl Trajectory {
                 self.output_swap64,
                 hasher.as_mut(),
             );
-            utils::fwrite_str(out_file, &molecule.name)?;
+            utils::fwrite_str(out_file, &molecule.name, hasher.as_mut())?;
             utils::write_i64(
                 out_file,
                 molecule.quaternary_str,
@@ -2479,13 +2493,20 @@ impl Trajectory {
 
             if molecule.n_chains > 0 {
                 for chain in &molecule.chains {
-                    utils::write_u64(out_file, chain.id, self.endianness64, self.output_swap64);
-                    utils::fwrite_str(out_file, &chain.name)?;
+                    utils::write_u64(
+                        out_file,
+                        chain.id,
+                        self.endianness64,
+                        self.output_swap64,
+                        hasher.as_mut(),
+                    );
+                    utils::fwrite_str(out_file, &chain.name, hasher.as_mut())?;
                     utils::write_u64(
                         out_file,
                         chain.n_residues,
                         self.endianness64,
                         self.output_swap64,
+                        hasher.as_mut(),
                     );
                     let (start, end) = chain.residues_indices;
                     for res_index in start..end {
@@ -2495,13 +2516,15 @@ impl Trajectory {
                             residue.id,
                             self.endianness64,
                             self.output_swap64,
+                            hasher.as_mut(),
                         );
-                        utils::fwrite_str(out_file, &residue.name)?;
+                        utils::fwrite_str(out_file, &residue.name, hasher.as_mut())?;
                         utils::write_u64(
                             out_file,
                             residue.n_atoms,
                             self.endianness64,
                             self.output_swap64,
+                            hasher.as_mut(),
                         );
 
                         let atom_start = residue.atoms_offset;
@@ -2515,20 +2538,27 @@ impl Trajectory {
                                 self.output_swap64,
                                 hasher.as_mut(),
                             );
-                            utils::fwrite_str(out_file, &atom.name)?;
-                            utils::fwrite_str(out_file, &atom.atom_type)?;
+                            utils::fwrite_str(out_file, &atom.name, hasher.as_mut())?;
+                            utils::fwrite_str(out_file, &atom.atom_type, hasher.as_mut())?;
                         }
                     }
                 }
             } else if molecule.n_residues > 0 {
                 for residue in &molecule.residues {
-                    utils::write_u64(out_file, residue.id, self.endianness64, self.output_swap64);
-                    utils::fwrite_str(out_file, &residue.name)?;
+                    utils::write_u64(
+                        out_file,
+                        residue.id,
+                        self.endianness64,
+                        self.output_swap64,
+                        hasher.as_mut(),
+                    );
+                    utils::fwrite_str(out_file, &residue.name, hasher.as_mut())?;
                     utils::write_u64(
                         out_file,
                         residue.n_atoms,
                         self.endianness64,
                         self.output_swap64,
+                        hasher.as_mut(),
                     );
                     let atom_start = residue.atoms_offset;
                     let atom_end = atom_start + residue.n_atoms as usize;
@@ -2541,8 +2571,8 @@ impl Trajectory {
                             self.output_swap64,
                             hasher.as_mut(),
                         );
-                        utils::fwrite_str(out_file, &atom.name)?;
-                        utils::fwrite_str(out_file, &atom.atom_type)?;
+                        utils::fwrite_str(out_file, &atom.name, hasher.as_mut())?;
+                        utils::fwrite_str(out_file, &atom.atom_type, hasher.as_mut())?;
                     }
                 }
             } else {
@@ -2554,8 +2584,8 @@ impl Trajectory {
                         self.output_swap64,
                         hasher.as_mut(),
                     );
-                    utils::fwrite_str(out_file, &atom.name)?;
-                    utils::fwrite_str(out_file, &atom.atom_type)?;
+                    utils::fwrite_str(out_file, &atom.name, hasher.as_mut())?;
+                    utils::fwrite_str(out_file, &atom.atom_type, hasher.as_mut())?;
                 }
             }
 
@@ -2712,6 +2742,7 @@ impl Trajectory {
             self.current_trajectory_frame_set.first_frame_time,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         utils::write_f64(
@@ -2719,6 +2750,7 @@ impl Trajectory {
             self.time_per_frame,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         if let Some(hasher) = hasher {
@@ -3308,12 +3340,12 @@ impl Trajectory {
         let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
         let out_file = self.output_file.as_mut().expect("init output_file");
-        utils::write_u8(out_file, cloned_data.data_type as u8);
-        utils::write_u8(out_file, cloned_data.dependency);
+        utils::write_u8(out_file, cloned_data.data_type as u8, hasher.as_mut());
+        utils::write_u8(out_file, cloned_data.dependency, hasher.as_mut());
 
         if cloned_data.dependency & FRAME_DEPENDENT != 0 {
             let temp = u8::from(stride_length > 1);
-            utils::write_u8(out_file, temp);
+            utils::write_u8(out_file, temp, hasher.as_mut());
         }
 
         utils::write_i64(
@@ -3328,6 +3360,7 @@ impl Trajectory {
             cloned_data.codec_id as u64,
             self.endianness64,
             self.output_swap64,
+            hasher.as_mut(),
         );
 
         if cloned_data.codec_id != Compression::Uncompressed {
@@ -3336,6 +3369,7 @@ impl Trajectory {
                 cloned_data.compression_multiplier,
                 self.endianness64,
                 self.output_swap64,
+                hasher.as_mut(),
             );
         }
 
@@ -3385,14 +3419,22 @@ impl Trajectory {
                         for j in num_first_particle..num_first_particle + n_particles {
                             let second_dim_values = &first_dim_values[j as usize];
                             for k in 0..cloned_data.n_values_per_frame {
-                                utils::fwrite_str(out_file, &second_dim_values[k as usize])?;
+                                utils::fwrite_str(
+                                    out_file,
+                                    &second_dim_values[k as usize],
+                                    hasher.as_mut(),
+                                )?;
                             }
                         }
                     }
                 } else {
                     for i in 0..frame_step {
                         for j in 0..cloned_data.n_values_per_frame {
-                            utils::fwrite_str(out_file, &strings_3d[0][i as usize][j as usize])?;
+                            utils::fwrite_str(
+                                out_file,
+                                &strings_3d[0][i as usize][j as usize],
+                                hasher.as_mut(),
+                            )?;
                         }
                     }
                 }
@@ -3598,6 +3640,7 @@ impl Trajectory {
                     block.block_contents_size,
                     self.endianness64,
                     self.output_swap64,
+                    hasher.as_mut(),
                 );
                 file.seek(SeekFrom::Start(curr_file_pos))?;
             }
@@ -6445,6 +6488,7 @@ impl Trajectory {
             u64::try_from(pos).expect("u64 from i64"),
             self.endianness64,
             self.input_swap64,
+            None,
         );
 
         pos = self.last_trajectory_frame_set_output_file_pos;
@@ -6453,6 +6497,7 @@ impl Trajectory {
             u64::try_from(pos).expect("u64 from i64"),
             self.endianness64,
             self.input_swap64,
+            None,
         );
 
         if hash_mode {
@@ -6480,7 +6525,8 @@ impl Trajectory {
         out_file.seek(SeekFrom::Start(contents_start_pos))?;
         block.block_contents = Some(vec![
             0;
-            usize::try_from(block.block_contents_size).expect("u64 to usize")
+            usize::try_from(block.block_contents_size)
+                .expect("u64 to usize")
         ]);
         out_file.read_exact(
             block

@@ -210,17 +210,23 @@ pub fn read_bool_le_bytes(input_file: &mut File, hasher: Option<&mut Md5>) -> bo
     buf[0] != 0
 }
 
-pub(crate) fn fwrite_str<W: Write>(output_file: &mut W, str_data: &str) -> Result<(), TngError> {
+pub(crate) fn fwrite_str<W: Write>(
+    output_file: &mut W,
+    str_data: &str,
+    hasher: Option<&mut Md5>,
+) -> Result<(), TngError> {
     let mut bytes = str_data.as_bytes().to_vec();
     bytes.push(0); // null-terminate
     let len = bytes.len().min(MAX_STR_LEN);
     output_file.write_all(&bytes[..len])?;
-    Ok(())
 
-    // TODO: HASH
+    if let Some(hasher) = hasher {
+        hasher.update(&bytes[..len]);
+    }
+    Ok(())
 }
 
-pub fn fread_str<R: Read>(input_file: &mut R) -> String {
+pub fn fread_str<R: Read>(input_file: &mut R, hasher: Option<&mut Md5>) -> String {
     // Accumulate bytes here, including the trailing 0:
     let mut buf: Vec<u8> = Vec::new();
 
@@ -274,6 +280,10 @@ pub fn fread_str<R: Read>(input_file: &mut R) -> String {
         buf.pop();
     }
 
+    if let Some(hasher) = hasher {
+        hasher.update(&buf);
+    };
+
     // Convert to UTF-8, with a lossy fallback if it wasn’t valid UTF-8:
     match String::from_utf8(buf) {
         Ok(valid) => valid,
@@ -287,6 +297,7 @@ pub fn write_u64(
     src: u64,
     endianness: Endianness64,
     output_swap64: Option<SwapFn64>,
+    hasher: Option<&mut Md5>,
 ) {
     let mut temp_u64 = src;
     if let Some(swap_fn_64) = output_swap64 {
@@ -296,6 +307,10 @@ pub fn write_u64(
     output_file
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
+
+    if let Some(hasher) = hasher {
+        hasher.update(&out_bytes);
+    }
 }
 
 pub fn write_i64(
@@ -329,6 +344,7 @@ pub fn write_f64(
     src: f64,
     endianness: Endianness64,
     output_swap64: Option<SwapFn64>,
+    hasher: Option<&mut Md5>,
 ) {
     // Convert f64 → [u8; 8] in *native* endianness:
     let src_bytes: [u8; 8] = src.to_ne_bytes();
@@ -343,6 +359,9 @@ pub fn write_f64(
     output_file
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
+    if let Some(hasher) = hasher {
+        hasher.update(&out_bytes);
+    }
 }
 
 pub fn write_u32(
@@ -350,6 +369,7 @@ pub fn write_u32(
     src: u32,
     endianness: Endianness32,
     output_swap32: Option<SwapFn32>,
+    hasher: Option<&mut Md5>,
 ) {
     let mut temp_u32 = src;
     if let Some(swap_fn_32) = output_swap32 {
@@ -359,6 +379,9 @@ pub fn write_u32(
     output_file
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
+    if let Some(hasher) = hasher {
+        hasher.update(&out_bytes);
+    }
 }
 
 pub fn write_i32(
@@ -366,6 +389,7 @@ pub fn write_i32(
     src: i32,
     endianness: Endianness32,
     output_swap32: Option<SwapFn32>,
+    hasher: Option<&mut Md5>,
 ) {
     // Convert i32 → [u8; 4] in *native* endianness:
     let src_bytes: [u8; 4] = src.to_ne_bytes();
@@ -380,6 +404,9 @@ pub fn write_i32(
     output_file
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
+    if let Some(hasher) = hasher {
+        hasher.update(&out_bytes);
+    }
 }
 
 pub fn write_f32(
@@ -387,6 +414,7 @@ pub fn write_f32(
     src: f32,
     endianness: Endianness32,
     output_swap32: Option<SwapFn32>,
+    hasher: Option<&mut Md5>,
 ) {
     // Convert f32 → [u8; 4] in *native* endianness:
     let src_bytes: [u8; 4] = src.to_ne_bytes();
@@ -401,21 +429,28 @@ pub fn write_f32(
     output_file
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
+    if let Some(hasher) = hasher {
+        hasher.update(&out_bytes);
+    }
 }
 
-pub fn write_u8(output_file: &mut File, value: u8) {
+pub fn write_u8(output_file: &mut File, value: u8, hasher: Option<&mut Md5>) {
     output_file
         .write_all(&[value])
-        .expect("to be able to write bool to output_file");
-    // TODO: HASH
+        .expect("to be able to write u8 to output_file");
+    if let Some(hasher) = hasher {
+        hasher.update(&[value]);
+    }
 }
 
-pub fn write_bool(output_file: &mut File, value: bool) {
+pub fn write_bool(output_file: &mut File, value: bool, hasher: Option<&mut Md5>) {
     let byte = u8::from(value);
     output_file
         .write_all(&[byte])
         .expect("to be able to write bool to output_file");
-    // TODO: HASH
+    if let Some(hasher) = hasher {
+        hasher.update(&[byte]);
+    }
 }
 
 pub(crate) fn bounded_len(s: &str) -> usize {
@@ -444,7 +479,7 @@ mod tests {
     fn test_simple_string_with_null() {
         // "hello\0world" → should read "hello" and stop at the first NUL.
         let mut cursor = make_cursor(b"hello\0world");
-        let result = fread_str(&mut cursor);
+        let result = fread_str(&mut cursor, None);
         assert_eq!(result, "hello");
         // After reading, the cursor's position should be right after the NUL.
         assert_eq!(cursor.position() as usize, "hello\0".len());
@@ -454,7 +489,7 @@ mod tests {
     fn test_empty_string_only_null() {
         // "\0" → should return an empty string.
         let mut cursor = make_cursor(b"\0");
-        let result = fread_str(&mut cursor);
+        let result = fread_str(&mut cursor, None);
         assert_eq!(result, "");
         assert_eq!(cursor.position() as usize, 1);
     }
@@ -464,7 +499,7 @@ mod tests {
         // Create a buffer of exactly MAX_STR_LEN bytes, none of which are 0.
         let long_data: Vec<u8> = vec![b'x'; MAX_STR_LEN];
         let mut cursor = make_cursor(&long_data);
-        let result = fread_str(&mut cursor);
+        let result = fread_str(&mut cursor, None);
         // Since there's no NUL, fread_str should read exactly MAX_STR_LEN bytes then stop.
         assert_eq!(result.len(), MAX_STR_LEN);
         assert!(result.chars().all(|c| c == 'x'));
@@ -477,7 +512,7 @@ mod tests {
         // Provide fewer bytes than MAX_STR_LEN and no NUL: e.g. "abc" only.
         // After reading 'a','b','c', the next read_exact will hit EOF and panic.
         let mut cursor = make_cursor(b"abc");
-        let _ = fread_str(&mut cursor);
+        let _ = fread_str(&mut cursor, None);
     }
 
     #[test]
@@ -486,7 +521,7 @@ mod tests {
         // from_utf8() should fail; from_utf8_lossy() yields "��".
         let data = [0xFF, 0xFE, 0];
         let mut cursor = make_cursor(&data);
-        let result = fread_str(&mut cursor);
+        let result = fread_str(&mut cursor, None);
         assert_eq!(result, "��");
     }
 
