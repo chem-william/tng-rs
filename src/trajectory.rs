@@ -1331,11 +1331,11 @@ impl Trajectory {
 
             // If no chains but there *are* residues (i.e., n_chains == 0 && n_residues > 0):
             if molecule.n_chains == 0 && molecule.n_residues > 0 {
-                for r_index in 0..molecule.n_residues {
-                    let residue = &mut molecule.residues[r_index as usize];
+                for _ in 0..molecule.n_residues {
+                    let mut residue = Residue::new();
+                    let residue_index = molecule.residues.len();
 
                     residue.parent_molecule_idx = mol_idx as usize;
-                    // Link to no chain: `residue->chain = 0;`
                     residue.chain_index = None;
                     residue.name = String::new();
 
@@ -1343,15 +1343,19 @@ impl Trajectory {
 
                     residue.atoms_offset = atom_idx;
                     let atom_count = residue.n_atoms;
+
                     for _ in 0..atom_count {
                         let mut atom = Atom::new();
-
                         atom.parent_molecule_idx = mol_idx as usize;
-                        atom.residue_index =
-                            Some(usize::try_from(r_index).expect("r_index to usize"));
+                        atom.residue_index = Some(residue_index);
+
                         atom.read_data(self, hasher.as_mut());
+
                         atom_idx += 1;
+                        molecule.atoms.push(atom);
                     }
+
+                    molecule.residues.push(residue);
                 }
             }
 
@@ -1362,6 +1366,7 @@ impl Trajectory {
                     atom.parent_molecule_idx = mol_idx as usize;
                     atom.residue_index = None;
                     atom.read_data(self, hasher.as_mut());
+                    molecule.atoms.push(atom);
                 }
             }
 
@@ -1381,7 +1386,7 @@ impl Trajectory {
                     self.input_swap64,
                     hasher.as_mut(),
                 );
-                bond.from_atom_id = utils::read_i64(
+                bond.to_atom_id = utils::read_i64(
                     inp_file,
                     self.endianness64,
                     self.input_swap64,
@@ -3660,7 +3665,7 @@ impl Trajectory {
                 header_file_pos,
             )?;
         }
-        self.current_trajectory_frame_set.n_written_frames *=
+        self.current_trajectory_frame_set.n_written_frames +=
             self.current_trajectory_frame_set.n_unwritten_frames;
         self.current_trajectory_frame_set.n_unwritten_frames = 0;
         Ok(())
