@@ -810,111 +810,6 @@ mod integration {
         // tng_io_testing.c:1381
         test_copy_container(&mut traj, USE_HASH);
     }
-}
-
-#[cfg(test)]
-mod var_num_atoms_regression {
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        process,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    use crate::trajectory::Trajectory;
-
-    fn unique_fixture_path() -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system clock after UNIX_EPOCH")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "tng_rs_var_num_atoms_frame_set_{}_{}.tng",
-            process::id(),
-            nanos
-        ))
-    }
-
-    fn write_var_num_atoms_fixture(path: &Path) {
-        let _ = fs::remove_file(path);
-
-        let mut traj = Trajectory::new();
-        traj.var_num_atoms = true;
-        traj.output_file_set(path);
-
-        let molecule_idx = traj.add_molecule("mono");
-        let chain_idx = traj.add_chain(molecule_idx, "A");
-        let residue_idx = traj.chain_residue_add(molecule_idx, chain_idx, "RES");
-        traj.residue_atom_add(molecule_idx, residue_idx, "X", "X");
-
-        traj.file_headers_write(false).unwrap();
-        traj.frame_set_new(0, 1).unwrap();
-        traj.current_trajectory_frame_set.molecule_cnt_list = vec![2];
-        traj.frame_set_write(false).unwrap();
-    }
-
-    #[test]
-    fn var_num_atoms_frame_set_counts_round_trip() {
-        let path = unique_fixture_path();
-        write_var_num_atoms_fixture(&path);
-
-        let mut traj = Trajectory::new();
-        traj.input_file_set(&path);
-        traj.file_headers_read(false).unwrap();
-        traj.frame_set_nr_find(0).unwrap();
-
-        assert_eq!(traj.molecule_cnt_list_get().as_slice(), &[2]);
-        assert_eq!(traj.num_particles_get(), 2);
-
-        let _ = fs::remove_file(path);
-    }
-}
-
-#[cfg(test)]
-mod particle_lookup_regression {
-    use crate::trajectory::Trajectory;
-
-    #[test]
-    fn residue_id_lookup_uses_residue_id_not_atom_id() {
-        let mut traj = Trajectory::new();
-        let molecule_idx = traj.add_molecule("mol");
-        let chain_idx = traj.add_chain(molecule_idx, "A");
-        let residue_idx = traj.chain_residue_add(molecule_idx, chain_idx, "RES");
-
-        traj.residue_atom_add(molecule_idx, residue_idx, "A1", "A");
-        traj.residue_atom_add(molecule_idx, residue_idx, "A2", "A");
-        traj.molecule_cnt_set(molecule_idx, 1);
-
-        assert_eq!(traj.residue_id_of_particle_nr_get(1), Some(0));
-    }
-}
-
-#[cfg(test)]
-mod bond_lookup_regression {
-    use crate::trajectory::Trajectory;
-
-    #[test]
-    fn molsystem_bonds_offsets_repeated_molecules() {
-        let mut traj = Trajectory::new();
-        let molecule_idx = traj.add_molecule("mol");
-        let chain_idx = traj.add_chain(molecule_idx, "A");
-        let residue_idx = traj.chain_residue_add(molecule_idx, chain_idx, "RES");
-
-        traj.residue_atom_add(molecule_idx, residue_idx, "A1", "A");
-        traj.residue_atom_add(molecule_idx, residue_idx, "A2", "A");
-        traj.add_molecule_bond(molecule_idx, 0, 1);
-        traj.molecule_cnt_set(molecule_idx, 2);
-
-        let (n_bonds, from_atoms, to_atoms) = traj.molsystem_bonds_get().unwrap();
-        assert_eq!(n_bonds, 2);
-        assert_eq!(from_atoms, vec![0, 2]);
-        assert_eq!(to_atoms, vec![1, 3]);
-    }
-}
-
-#[cfg(test)]
-mod particle_number_lookup_regression {
-    use crate::{MAX_STR_LEN, trajectory::Trajectory};
 
     #[test]
     fn particle_lookup_helpers_stop_at_first_matching_molecule() {
@@ -956,5 +851,66 @@ mod particle_number_lookup_regression {
             "A0"
         );
         assert_eq!(traj.atom_type_of_particle_nr_get(0), "T0");
+    }
+
+    #[test]
+    fn molsystem_bonds_offsets_repeated_molecules() {
+        let mut traj = Trajectory::new();
+        let molecule_idx = traj.add_molecule("mol");
+        let chain_idx = traj.add_chain(molecule_idx, "A");
+        let residue_idx = traj.chain_residue_add(molecule_idx, chain_idx, "RES");
+
+        traj.residue_atom_add(molecule_idx, residue_idx, "A1", "A");
+        traj.residue_atom_add(molecule_idx, residue_idx, "A2", "A");
+        traj.add_molecule_bond(molecule_idx, 0, 1);
+        traj.molecule_cnt_set(molecule_idx, 2);
+
+        let (n_bonds, from_atoms, to_atoms) = traj.molsystem_bonds_get().unwrap();
+        assert_eq!(n_bonds, 2);
+        assert_eq!(from_atoms, vec![0, 2]);
+        assert_eq!(to_atoms, vec![1, 3]);
+    }
+
+    #[test]
+    fn residue_id_lookup_uses_residue_id_not_atom_id() {
+        let mut traj = Trajectory::new();
+        let molecule_idx = traj.add_molecule("mol");
+        let chain_idx = traj.add_chain(molecule_idx, "A");
+        let residue_idx = traj.chain_residue_add(molecule_idx, chain_idx, "RES");
+
+        traj.residue_atom_add(molecule_idx, residue_idx, "A1", "A");
+        traj.residue_atom_add(molecule_idx, residue_idx, "A2", "A");
+        traj.molecule_cnt_set(molecule_idx, 1);
+
+        assert_eq!(traj.residue_id_of_particle_nr_get(1), Some(0));
+    }
+
+    #[test]
+    fn var_num_atoms_frame_set_counts_round_trip() {
+        let path = std::env::temp_dir().join(format!("tng_rs_var_num_atoms_frame_set.tng",));
+
+        let mut traj = Trajectory::new();
+        traj.var_num_atoms = true;
+        traj.output_file_set(&path);
+
+        let molecule_idx = traj.add_molecule("mono");
+        let chain_idx = traj.add_chain(molecule_idx, "A");
+        let residue_idx = traj.chain_residue_add(molecule_idx, chain_idx, "RES");
+        traj.residue_atom_add(molecule_idx, residue_idx, "X", "X");
+
+        traj.file_headers_write(false).unwrap();
+        traj.frame_set_new(0, 1).unwrap();
+        traj.current_trajectory_frame_set.molecule_cnt_list = vec![2];
+        traj.frame_set_write(false).unwrap();
+
+        let mut traj = Trajectory::new();
+        traj.input_file_set(&path);
+        traj.file_headers_read(false).unwrap();
+        traj.frame_set_nr_find(0).unwrap();
+
+        assert_eq!(traj.molecule_cnt_list_get().as_slice(), &[2]);
+        assert_eq!(traj.num_particles_get(), 2);
+
+        let _ = std::fs::remove_file(path);
     }
 }
