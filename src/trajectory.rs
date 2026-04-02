@@ -4327,16 +4327,15 @@ impl Trajectory {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut residue_id = None;
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
                 continue;
             }
             let residue_idx = mol.atoms[(nr % mol.n_atoms) as usize].residue_index?;
-            residue_id = Some(i64::try_from(mol.residues[residue_idx].id).expect("u64 to i64"));
+            return Some(i64::try_from(mol.residues[residue_idx].id).expect("u64 to i64"));
         }
-        residue_id
+        None
     }
 
     /// C API: `tng_global_residue_id_of_particle_nr_get`.
@@ -4352,7 +4351,6 @@ impl Trajectory {
         let mut offset = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut atom_residue_index = None;
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
@@ -4363,9 +4361,9 @@ impl Trajectory {
                 .residue_index
                 .expect("residue index");
             offset += mol.n_residues * ((nr - count) / mol.n_atoms);
-            atom_residue_index = Some(mol.residues[residue_idx].id + offset as u64);
+            return Some(mol.residues[residue_idx].id + offset as u64);
         }
-        atom_residue_index
+        None
     }
 
     /// C API: `tng_molecule_name_of_particle_nr_get`.
@@ -4379,17 +4377,16 @@ impl Trajectory {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut name = Err(TngError::NotFound(
-            "could not find molecule name".to_string(),
-        ));
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
                 continue;
             }
-            name = Self::validate_get_name_len(&mol.name, "molecule name", max_len);
+            return Self::validate_get_name_len(&mol.name, "molecule name", max_len);
         }
-        name
+        Err(TngError::NotFound(
+            "could not find molecule name".to_string(),
+        ))
     }
 
     /// C API: `tng_chain_name_of_particle_nr_get`.
@@ -4404,7 +4401,6 @@ impl Trajectory {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut name = Err(TngError::NotFound("could not find chain name".to_string()));
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
@@ -4415,10 +4411,13 @@ impl Trajectory {
             let chain_index = &mol.residues[residue_index]
                 .chain_index
                 .expect("residue in chain");
-            name =
-                Self::validate_get_name_len(&mol.chains[*chain_index].name, "chain name", max_len);
+            return Self::validate_get_name_len(
+                &mol.chains[*chain_index].name,
+                "chain name",
+                max_len,
+            );
         }
-        name
+        Err(TngError::NotFound("could not find chain name".to_string()))
     }
 
     /// C API: `tng_residue_name_of_particle_nr_get`.
@@ -4436,9 +4435,6 @@ impl Trajectory {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut name = Err(TngError::NotFound(
-            "could not find residue name".to_string(),
-        ));
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
@@ -4446,13 +4442,15 @@ impl Trajectory {
             }
             let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
             let residue_index = atom.residue_index.expect("atom in residue");
-            name = Self::validate_get_name_len(
+            return Self::validate_get_name_len(
                 &mol.residues[residue_index].name,
                 "residue name",
                 max_len,
             );
         }
-        name
+        Err(TngError::NotFound(
+            "could not find residue name".to_string(),
+        ))
     }
 
     /// C API: `tng_atom_name_of_particle_nr_get`.
@@ -4462,18 +4460,17 @@ impl Trajectory {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut name = Err(TngError::NotFound(
-            "could not find residue name".to_string(),
-        ));
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
                 continue;
             }
             let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
-            name = Self::validate_get_name_len(&atom.name, "atom name", max_len);
+            return Self::validate_get_name_len(&atom.name, "atom name", max_len);
         }
-        name
+        Err(TngError::NotFound(
+            "could not find residue name".to_string(),
+        ))
     }
 
     /// C API: `tng_atom_type_of_particle_nr_get`.
@@ -4483,16 +4480,15 @@ impl Trajectory {
         let mut count = 0;
         let molecule_count_list = self.molecule_cnt_list_get();
 
-        let mut atom_type = String::new();
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             if count + mol.n_atoms * mol_count - 1 < nr {
                 count += mol.n_atoms * mol_count;
                 continue;
             }
             let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
-            atom_type.clone_from(&atom.atom_type);
+            return atom.atom_type.clone();
         }
-        atom_type
+        String::new()
     }
 
     /// C API: `tng_molecule_existing_add`.

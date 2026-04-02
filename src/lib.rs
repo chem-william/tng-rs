@@ -911,3 +911,50 @@ mod bond_lookup_regression {
         assert_eq!(to_atoms, vec![1, 3]);
     }
 }
+
+#[cfg(test)]
+mod particle_number_lookup_regression {
+    use crate::{MAX_STR_LEN, trajectory::Trajectory};
+
+    #[test]
+    fn particle_lookup_helpers_stop_at_first_matching_molecule() {
+        let mut traj = Trajectory::new();
+
+        let mol0 = traj.add_molecule("mol0");
+        let chain0 = traj.add_chain(mol0, "A");
+        let res0 = traj.chain_residue_add(mol0, chain0, "R0");
+        traj.residue_atom_add(mol0, res0, "A0", "T0");
+        traj.molecule_cnt_set(mol0, 1);
+
+        let mol1 = traj.add_molecule("mol1");
+        let chain1 = traj.add_chain(mol1, "B");
+        let res1 = traj.chain_residue_add(mol1, chain1, "R1");
+        traj.residue_atom_add(mol1, res1, "A1", "T1");
+        traj.molecule_cnt_set(mol1, 1);
+
+        traj.molecules[mol0].residues[0].id = 10;
+        traj.molecules[mol1].residues[0].id = 20;
+
+        assert_eq!(
+            traj.molecule_name_of_particle_nr_get(0, MAX_STR_LEN)
+                .unwrap(),
+            "mol0"
+        );
+        assert_eq!(
+            traj.chain_name_of_particle_nr_get(0, MAX_STR_LEN).unwrap(),
+            "A"
+        );
+        assert_eq!(
+            traj.residue_name_of_particle_nr_get(0, MAX_STR_LEN)
+                .unwrap(),
+            "R0"
+        );
+        assert_eq!(traj.residue_id_of_particle_nr_get(0), Some(10));
+        assert_eq!(traj.global_residue_id_of_particle_nr_get(0), Some(10));
+        assert_eq!(
+            traj.atom_name_of_particle_nr_get(0, MAX_STR_LEN).unwrap(),
+            "A0"
+        );
+        assert_eq!(traj.atom_type_of_particle_nr_get(0), "T0");
+    }
+}
