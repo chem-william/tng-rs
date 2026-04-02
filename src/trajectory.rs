@@ -6476,22 +6476,24 @@ impl Trajectory {
         header_start_pos: usize,
         contents_start_pos: u64,
     ) -> Result<(), TngError> {
-        self.output_file
-            .as_ref()
-            .expect("init input_file")
-            .seek(SeekFrom::Start(contents_start_pos))?;
+        let mut out_file = self.output_file.as_ref().expect("init output_file");
+        out_file.seek(SeekFrom::Start(contents_start_pos))?;
+        block.block_contents = Some(vec![
+            0;
+            usize::try_from(block.block_contents_size).expect("u64 to usize")
+        ]);
+        out_file.read_exact(
+            block
+                .block_contents
+                .as_mut()
+                .expect("block contents initialized")
+                .as_mut_slice(),
+        )?;
         block.md5_hash_generate();
-        self.output_file
-            .as_ref()
-            .expect("init input_file")
-            .seek(SeekFrom::Start(
-                header_start_pos as u64 + 3 * size_of::<i64>() as u64,
-            ))?;
-
-        self.output_file
-            .as_ref()
-            .expect("init output_file")
-            .write_all(&block.md5_hash[..MD5_HASH_LEN])?;
+        out_file.seek(SeekFrom::Start(
+            header_start_pos as u64 + 3 * size_of::<i64>() as u64,
+        ))?;
+        out_file.write_all(&block.md5_hash[..MD5_HASH_LEN])?;
 
         Ok(())
     }
