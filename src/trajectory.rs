@@ -33,7 +33,6 @@ use crate::{FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT, utils};
 use core::panic;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use flate2::read::ZlibDecoder;
@@ -42,11 +41,10 @@ use flate2::write::ZlibEncoder;
 const USE_HASH: bool = true;
 const SKIP_HASH: bool = false;
 
-fn is_same_file(file1: &File, file2: &File) -> std::io::Result<bool> {
-    let meta1 = file1.metadata()?;
-    let meta2 = file2.metadata()?;
-
-    Ok(meta1.ino() == meta2.ino() && meta1.dev() == meta2.dev())
+// Not sure if this is the best way, but it (somewhat) works for all platforms
+// The C code just compares pointers (tng_data->input_file == tng_data->output_file)
+fn is_same_file(path1: &Path, path2: &Path) -> std::io::Result<bool> {
+    Ok(path1.canonicalize()? == path2.canonicalize()?)
 }
 
 /// This returns the number of integers required for the storage of the algorithm with
@@ -910,9 +908,11 @@ impl Trajectory {
         // added and thereby the frame set needs to be rewritten.
         if self.output_file.is_some()
             && self.input_file.is_some()
+            && self.output_file_path.is_some()
+            && self.input_file_path.is_some()
             && is_same_file(
-                self.output_file.as_ref().expect("output file set"),
-                self.input_file.as_ref().expect("input file set"),
+                self.output_file_path.as_ref().unwrap(),
+                self.input_file_path.as_ref().unwrap(),
             )
             .is_ok_and(|x| x)
         {
@@ -4169,11 +4169,13 @@ impl Trajectory {
 
         self.current_trajectory_frame_set_output_file_pos =
             i64::try_from(new_pos).expect("i64 from u64");
-        if is_same_file(
-            self.output_file.as_ref().expect("output file set"),
-            self.input_file.as_ref().expect("input file set"),
-        )
-        .is_ok_and(|x| x)
+        if self.output_file_path.is_some()
+            && self.input_file_path.is_some()
+            && is_same_file(
+                self.output_file_path.as_ref().unwrap(),
+                self.input_file_path.as_ref().unwrap(),
+            )
+            .is_ok_and(|x| x)
         {
             self.current_trajectory_frame_set_input_file_pos =
                 i64::try_from(new_pos).expect("i64 from u64");
@@ -8339,7 +8341,10 @@ impl Trajectory {
 
     /// C API: `tng_trajectory_destroy`.
     pub fn trajectory_destroy(&mut self) -> Result<(), TngError> {
-        let same_file = match (self.input_file.as_ref(), self.output_file.as_ref()) {
+        let same_file = match (
+            self.input_file_path.as_ref(),
+            self.output_file_path.as_ref(),
+        ) {
             (Some(input), Some(output)) => is_same_file(input, output)?,
             _ => false,
         };
