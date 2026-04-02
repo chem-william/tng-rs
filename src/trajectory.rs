@@ -782,15 +782,14 @@ impl Trajectory {
 
         let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
-        let frame_set = &mut self.current_trajectory_frame_set;
         let inp_file = self.input_file.as_mut().expect("init input_file");
-        frame_set.first_frame = utils::read_i64(
+        self.current_trajectory_frame_set.first_frame = utils::read_i64(
             inp_file,
             self.endianness64,
             self.input_swap64,
             hasher.as_mut(),
         );
-        frame_set.n_frames = utils::read_i64(
+        self.current_trajectory_frame_set.n_frames = utils::read_i64(
             inp_file,
             self.endianness64,
             self.input_swap64,
@@ -799,20 +798,20 @@ impl Trajectory {
 
         if self.var_num_atoms {
             // let prev_n_particles = frame_set.n_particles;
-            frame_set.n_particles = 0;
+            self.current_trajectory_frame_set.n_particles = 0;
 
-            for (mol, mol_count) in self
-                .molecules
-                .iter()
-                .zip(frame_set.molecule_cnt_list.iter_mut())
-            {
+            for (mol, mol_count) in self.molecules.iter().zip(
+                self.current_trajectory_frame_set
+                    .molecule_cnt_list
+                    .iter_mut(),
+            ) {
                 *mol_count = utils::read_i64(
                     inp_file,
                     self.endianness64,
                     self.input_swap64,
                     hasher.as_mut(),
                 );
-                frame_set.n_particles += mol.n_atoms * *mol_count;
+                self.current_trajectory_frame_set.n_particles += mol.n_atoms * *mol_count;
             }
 
             // from the c code
@@ -821,37 +820,41 @@ impl Trajectory {
             // }
         }
 
-        frame_set.next_frame_set_file_pos = utils::read_i64(
+        self.current_trajectory_frame_set.next_frame_set_file_pos = utils::read_i64(
             inp_file,
             self.endianness64,
             self.input_swap64,
             hasher.as_mut(),
         );
-        frame_set.prev_frame_set_file_pos = utils::read_i64(
+        self.current_trajectory_frame_set.prev_frame_set_file_pos = utils::read_i64(
             inp_file,
             self.endianness64,
             self.input_swap64,
             hasher.as_mut(),
         );
-        frame_set.medium_stride_next_frame_set_file_pos = utils::read_i64(
+        self.current_trajectory_frame_set
+            .medium_stride_next_frame_set_file_pos = utils::read_i64(
             inp_file,
             self.endianness64,
             self.input_swap64,
             hasher.as_mut(),
         );
-        frame_set.medium_stride_prev_frame_set_file_pos = utils::read_i64(
+        self.current_trajectory_frame_set
+            .medium_stride_prev_frame_set_file_pos = utils::read_i64(
             inp_file,
             self.endianness64,
             self.input_swap64,
             hasher.as_mut(),
         );
-        frame_set.long_stride_next_frame_set_file_pos = utils::read_i64(
+        self.current_trajectory_frame_set
+            .long_stride_next_frame_set_file_pos = utils::read_i64(
             inp_file,
             self.endianness64,
             self.input_swap64,
             hasher.as_mut(),
         );
-        frame_set.long_stride_prev_frame_set_file_pos = utils::read_i64(
+        self.current_trajectory_frame_set
+            .long_stride_prev_frame_set_file_pos = utils::read_i64(
             inp_file,
             self.endianness64,
             self.input_swap64,
@@ -859,7 +862,7 @@ impl Trajectory {
         );
 
         if block.version >= 3 {
-            frame_set.first_frame_time = utils::read_f64(
+            self.current_trajectory_frame_set.first_frame_time = utils::read_f64(
                 inp_file,
                 self.endianness64,
                 self.input_swap64,
@@ -872,15 +875,28 @@ impl Trajectory {
                 hasher.as_mut(),
             );
         } else {
-            frame_set.first_frame_time = -1.0;
+            self.current_trajectory_frame_set.first_frame_time = -1.0;
             self.time_per_frame = -1.0;
         }
 
-        // TODO: Hash mode
-        self.input_file
-            .as_mut()
-            .expect("init input_file")
-            .seek(SeekFrom::Start(start_pos + block.block_contents_size))?;
+        if let Some(mut hasher) = hasher {
+            // If there is data left in the block that the current version of the library
+            // cannot interpret still read that to generate the MD5 hash
+            self.md5_remaining_append(block, start_pos, &mut hasher)?;
+            let hash = hasher.finalize();
+            if block.md5_hash != [0u8; MD5_HASH_LEN] && block.md5_hash != hash {
+                eprintln!("Particle mapping block contents corrupt. Hashes do not match.");
+            }
+        } else {
+            // Seek to the end of the block
+            let new_pos = (i128::from(start_pos) + i128::from(block.block_contents_size))
+                .try_into()
+                .expect("set new position when reading block header");
+            self.input_file
+                .as_ref()
+                .expect("init input_file")
+                .seek(SeekFrom::Start(new_pos))?;
+        }
 
         // If the output file and the input files are the same the number of
         // frames in the file are the same number as has just been read.
@@ -894,7 +910,8 @@ impl Trajectory {
             )
             .is_ok_and(|x| x)
         {
-            frame_set.n_written_frames = frame_set.n_frames;
+            self.current_trajectory_frame_set.n_written_frames =
+                self.current_trajectory_frame_set.n_frames;
         };
 
         Ok(())
@@ -1621,6 +1638,7 @@ impl Trajectory {
         block: &mut GenBlock,
         meta_info: &BlockMetaInfo,
         block_data_len: u64,
+        hasher: Option<&mut Md5>,
     ) -> Result<(), TngError> {
         // we pull what we need early from the current_trajectory_frame_set to avoid the borrow checker
         let frame_set_n_particles = self.current_trajectory_frame_set.n_particles;
@@ -1786,7 +1804,10 @@ impl Trajectory {
             panic!();
         }
 
-        // TODO: hash mode
+        if let Some(hasher) = hasher {
+            hasher.update(&contents);
+        }
+
         let (actual_contents, full_data_len) = if data.codec_id != Compression::Uncompressed {
             if meta_info.datatype == DataType::Char {
                 unimplemented!("compressed char data blocks are not implemented");
@@ -2002,7 +2023,7 @@ impl Trajectory {
         let current_pos = self.get_input_file_position();
         let remaining_len = block.block_contents_size - (current_pos - start_pos);
 
-        self.data_read(block, &meta_info, remaining_len)
+        self.data_read(block, &meta_info, remaining_len, hasher.as_mut())
             // TODO
             .expect("error handling");
 
@@ -3795,7 +3816,7 @@ impl Trajectory {
     /// Update the frame set pointers in the current frame set block, already
     /// written to disk. It also updates the pointers of the blocks pointing to
     /// the current frame set block
-    fn frame_set_pointers_update(&mut self, _hash_mode: bool) -> Result<(), TngError> {
+    fn frame_set_pointers_update(&mut self, hash_mode: bool) -> Result<(), TngError> {
         self.output_file_init();
         let mut block = GenBlock::new();
         let temp_input_file = self
@@ -3815,7 +3836,7 @@ impl Trajectory {
                     .expect("u64 from i64"),
             ))?;
             self.block_header_read(&mut block)?;
-            let _contents_start_pos = self.get_output_file_position();
+            let contents_start_pos = self.get_output_file_position();
 
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file.seek(SeekFrom::Current(
@@ -3834,6 +3855,14 @@ impl Trajectory {
                 );
             }
             out_file.write_all(&pos.to_ne_bytes())?;
+
+            if hash_mode {
+                self.md5_hash_update(
+                    &mut block,
+                    self.current_trajectory_frame_set.next_frame_set_file_pos as usize,
+                    contents_start_pos,
+                )?;
+            }
         }
 
         // Update previous frame set
@@ -3845,7 +3874,7 @@ impl Trajectory {
             ))?;
             self.block_header_read(&mut block)?;
 
-            let _contents_start_pos = self.get_output_file_position();
+            let contents_start_pos = self.get_output_file_position();
 
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file.seek(SeekFrom::Current(
@@ -3863,6 +3892,14 @@ impl Trajectory {
                 );
             }
             out_file.write_all(&pos.to_ne_bytes())?;
+
+            if hash_mode {
+                self.md5_hash_update(
+                    &mut block,
+                    self.current_trajectory_frame_set.prev_frame_set_file_pos as usize,
+                    contents_start_pos,
+                )?;
+            }
         }
 
         // Update the frame set one medium stride step after
@@ -3880,7 +3917,7 @@ impl Trajectory {
                 .expect("u64 from i64"),
             ))?;
             self.block_header_read(&mut block)?;
-            let _contents_start_pos = self.get_output_file_position();
+            let contents_start_pos = self.get_output_file_position();
 
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file.seek(SeekFrom::Current(
@@ -3899,7 +3936,14 @@ impl Trajectory {
             }
             out_file.write_all(&pos.to_ne_bytes())?;
 
-            // TODO: hash_mode
+            if hash_mode {
+                self.md5_hash_update(
+                    &mut block,
+                    self.current_trajectory_frame_set
+                        .medium_stride_next_frame_set_file_pos as usize,
+                    contents_start_pos,
+                )?;
+            }
         }
 
         // Update the frame set one medium stride before
@@ -3918,6 +3962,8 @@ impl Trajectory {
             ))?;
             self.block_header_read(&mut block)?;
 
+            let contents_start_pos = self.get_output_file_position();
+
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file.seek(SeekFrom::Current(
                 i64::try_from(
@@ -3935,7 +3981,14 @@ impl Trajectory {
             }
             out_file.write_all(&pos.to_ne_bytes())?;
 
-            // TODO: hash_mode
+            if hash_mode {
+                self.md5_hash_update(
+                    &mut block,
+                    self.current_trajectory_frame_set
+                        .medium_stride_prev_frame_set_file_pos as usize,
+                    contents_start_pos,
+                )?;
+            }
         }
 
         // Update the frame set one long stride after
@@ -3953,6 +4006,8 @@ impl Trajectory {
                 .expect("u64 from i64"),
             ))?;
             self.block_header_read(&mut block)?;
+
+            let contents_start_pos = self.get_output_file_position();
 
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file.seek(SeekFrom::Current(
@@ -3973,7 +4028,14 @@ impl Trajectory {
                 .write_all(&pos.to_ne_bytes())
                 .expect("write to out");
 
-            // TODO: hash_mode
+            if hash_mode {
+                self.md5_hash_update(
+                    &mut block,
+                    self.current_trajectory_frame_set
+                        .long_stride_next_frame_set_file_pos as usize,
+                    contents_start_pos,
+                )?;
+            }
         }
 
         // Update the frame set one long stride before
@@ -3992,6 +4054,8 @@ impl Trajectory {
             ))?;
             self.block_header_read(&mut block)?;
 
+            let contents_start_pos = self.get_output_file_position();
+
             let out_file = self.output_file.as_mut().expect("init output_file");
             out_file.seek(SeekFrom::Current(
                 i64::try_from(
@@ -4009,7 +4073,14 @@ impl Trajectory {
             }
             out_file.write_all(&pos.to_ne_bytes())?;
 
-            // TODO: hash_mode
+            if hash_mode {
+                self.md5_hash_update(
+                    &mut block,
+                    self.current_trajectory_frame_set
+                        .long_stride_prev_frame_set_file_pos as usize,
+                    contents_start_pos,
+                )?;
+            }
         }
 
         let out_file = self.output_file.as_mut().expect("init output_file");
@@ -4970,7 +5041,7 @@ impl Trajectory {
                     _ => {}
                 }
 
-                // Use hash by default (also TODO)
+                // Use hash by default
                 self.block_read_next(&mut block, USE_HASH)?;
                 file_pos = self.get_input_file_position();
                 if file_pos < self.input_file_len {
@@ -6357,7 +6428,6 @@ impl Trajectory {
             .as_mut()
             .expect("just initialized output file");
 
-        // TODO: hash mode
         let contents_start_pos = output_file.stream_position()?;
         output_file.seek(SeekFrom::Current(
             i64::try_from(

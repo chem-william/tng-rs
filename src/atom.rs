@@ -29,7 +29,7 @@ impl Atom {
         }
     }
 
-    // c function name: tng_atom_data_read
+    // C API: `tng_atom_data_read`
     /// Read the atom data of a molecules block
     pub(crate) fn read_data(&mut self, trajectory_data: &mut Trajectory, hasher: Option<&mut Md5>) {
         let inp_file = trajectory_data
