@@ -125,7 +125,7 @@ pub(crate) fn read_exact_array<const N: usize, R: Read>(
         .read_exact(&mut buf)
         .expect("could not read bytes from file");
     if let Some(hasher) = hasher {
-        hasher.update(&buf);
+        hasher.update(buf);
     }
     buf
 }
@@ -308,7 +308,7 @@ pub fn write_u64(
         .expect("to be able to write to output_file");
 
     if let Some(hasher) = hasher {
-        hasher.update(&out_bytes);
+        hasher.update(out_bytes);
     }
 }
 
@@ -334,7 +334,7 @@ pub fn write_i64(
         .expect("to be able to write to output_file");
 
     if let Some(hasher) = hasher {
-        hasher.update(&out_bytes);
+        hasher.update(out_bytes);
     }
 }
 
@@ -359,7 +359,7 @@ pub fn write_f64(
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
     if let Some(hasher) = hasher {
-        hasher.update(&out_bytes);
+        hasher.update(out_bytes);
     }
 }
 
@@ -379,7 +379,7 @@ pub fn write_u32(
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
     if let Some(hasher) = hasher {
-        hasher.update(&out_bytes);
+        hasher.update(out_bytes);
     }
 }
 
@@ -404,7 +404,7 @@ pub fn write_i32(
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
     if let Some(hasher) = hasher {
-        hasher.update(&out_bytes);
+        hasher.update(out_bytes);
     }
 }
 
@@ -429,7 +429,7 @@ pub fn write_f32(
         .write_all(&out_bytes)
         .expect("to be able to write to output_file");
     if let Some(hasher) = hasher {
-        hasher.update(&out_bytes);
+        hasher.update(out_bytes);
     }
 }
 
@@ -438,7 +438,7 @@ pub fn write_u8(output_file: &mut File, value: u8, hasher: Option<&mut Md5>) {
         .write_all(&[value])
         .expect("to be able to write u8 to output_file");
     if let Some(hasher) = hasher {
-        hasher.update(&[value]);
+        hasher.update([value]);
     }
 }
 
@@ -448,7 +448,7 @@ pub fn write_bool(output_file: &mut File, value: bool, hasher: Option<&mut Md5>)
         .write_all(&[byte])
         .expect("to be able to write bool to output_file");
     if let Some(hasher) = hasher {
-        hasher.update(&[byte]);
+        hasher.update([byte]);
     }
 }
 

@@ -47,6 +47,6 @@ impl Atom {
             hasher.as_deref_mut(),
         );
         self.name = utils::fread_str(inp_file, hasher.as_deref_mut());
-        self.atom_type = utils::fread_str(inp_file, hasher.as_deref_mut());
+        self.atom_type = utils::fread_str(inp_file, hasher);
     }
 }

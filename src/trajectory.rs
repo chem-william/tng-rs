@@ -1505,12 +1505,8 @@ impl Trajectory {
                 self.input_swap64,
                 hasher.as_deref_mut(),
             );
-            block_meta_info.block_n_particles = utils::read_i64(
-                inp_file,
-                self.endianness64,
-                self.input_swap64,
-                hasher.as_deref_mut(),
-            );
+            block_meta_info.block_n_particles =
+                utils::read_i64(inp_file, self.endianness64, self.input_swap64, hasher);
         } else {
             block_meta_info.num_first_particle = -1;
             block_meta_info.block_n_particles = 0;

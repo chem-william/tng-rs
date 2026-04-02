@@ -51,7 +51,7 @@ impl Residue {
             inp_file,
             trajectory_data.endianness64,
             trajectory_data.input_swap64,
-            hasher.as_deref_mut(),
+            hasher,
         );
     }
 }
