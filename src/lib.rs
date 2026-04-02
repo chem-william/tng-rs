@@ -811,3 +811,61 @@ mod integration {
         test_copy_container(&mut traj, USE_HASH);
     }
 }
+
+#[cfg(test)]
+mod var_num_atoms_regression {
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use crate::trajectory::Trajectory;
+
+    fn unique_fixture_path() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock after UNIX_EPOCH")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "tng_rs_var_num_atoms_frame_set_{}_{}.tng",
+            process::id(),
+            nanos
+        ))
+    }
+
+    fn write_var_num_atoms_fixture(path: &Path) {
+        let _ = fs::remove_file(path);
+
+        let mut traj = Trajectory::new();
+        traj.var_num_atoms = true;
+        traj.output_file_set(path);
+
+        let molecule_idx = traj.add_molecule("mono");
+        let chain_idx = traj.add_chain(molecule_idx, "A");
+        let residue_idx = traj.chain_residue_add(molecule_idx, chain_idx, "RES");
+        traj.residue_atom_add(molecule_idx, residue_idx, "X", "X");
+
+        traj.file_headers_write(false).unwrap();
+        traj.frame_set_new(0, 1).unwrap();
+        traj.current_trajectory_frame_set.molecule_cnt_list = vec![2];
+        traj.frame_set_write(false).unwrap();
+    }
+
+    #[test]
+    fn var_num_atoms_frame_set_counts_round_trip() {
+        let path = unique_fixture_path();
+        write_var_num_atoms_fixture(&path);
+
+        let mut traj = Trajectory::new();
+        traj.input_file_set(&path);
+        traj.file_headers_read(false).unwrap();
+        traj.frame_set_nr_find(0).unwrap();
+
+        assert_eq!(traj.molecule_cnt_list_get().as_slice(), &[2]);
+        assert_eq!(traj.num_particles_get(), 2);
+
+        let _ = fs::remove_file(path);
+    }
+}

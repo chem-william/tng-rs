@@ -797,21 +797,27 @@ impl Trajectory {
         );
 
         if self.var_num_atoms {
-            // let prev_n_particles = frame_set.n_particles;
             self.current_trajectory_frame_set.n_particles = 0;
 
-            for (mol, mol_count) in self.molecules.iter().zip(
-                self.current_trajectory_frame_set
-                    .molecule_cnt_list
-                    .iter_mut(),
-            ) {
-                *mol_count = utils::read_i64(
+            if self
+                .current_trajectory_frame_set
+                .molecule_cnt_list
+                .is_empty()
+            {
+                self.current_trajectory_frame_set.molecule_cnt_list =
+                    vec![0; self.n_molecules as usize];
+            }
+
+            for i in 0..self.n_molecules as usize {
+                let mol_count = utils::read_i64(
                     inp_file,
                     self.endianness64,
                     self.input_swap64,
                     hasher.as_mut(),
                 );
-                self.current_trajectory_frame_set.n_particles += mol.n_atoms * *mol_count;
+                self.current_trajectory_frame_set.molecule_cnt_list[i] = mol_count;
+                self.current_trajectory_frame_set.n_particles +=
+                    self.molecules[i].n_atoms * mol_count;
             }
 
             // from the c code
@@ -1256,9 +1262,11 @@ impl Trajectory {
                 hasher.as_mut(),
             );
 
-            self.n_particles += molecule.n_atoms
-                * self.molecule_cnt_list
-                    [usize::try_from(mol_idx).expect("idx to molecule_cnt_list")];
+            if !self.var_num_atoms {
+                self.n_particles += molecule.n_atoms
+                    * self.molecule_cnt_list
+                        [usize::try_from(mol_idx).expect("idx to molecule_cnt_list")];
+            }
 
             if molecule.n_chains > 0 {
                 molecule.chains = Vec::with_capacity(molecule.n_chains as usize);
