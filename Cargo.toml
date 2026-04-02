@@ -12,12 +12,12 @@ rand = "0.10.0"
 md-5 = "0.11.0"
 
 [build-dependencies]
-cc = "1.2.57"
+cc = "1.2.58"
 
 [dev-dependencies]
-env_logger = "0.11.9"
-libc = "0.2.183"
-proptest = "1.10.0"
+env_logger = "0.11.10"
+libc = "0.2.184"
+proptest = "1.11.0"
 
 [lints.clippy]
 assigning_clones = "warn"
