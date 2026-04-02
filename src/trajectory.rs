@@ -4563,7 +4563,7 @@ impl Trajectory {
         let mut from_atoms = Vec::with_capacity(n_bonds);
         let mut to_atoms = Vec::with_capacity(n_bonds);
 
-        let atom_count = 0;
+        let mut atom_count = 0;
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
             for _ in 0..*mol_count {
                 for k in 0..mol.n_bonds {
@@ -4575,6 +4575,7 @@ impl Trajectory {
                     let to_atom = atom_count + bond.to_atom_id;
                     to_atoms.push(to_atom);
                 }
+                atom_count += mol.n_atoms;
             }
         }
         Some((n_bonds, from_atoms.clone(), to_atoms.clone()))

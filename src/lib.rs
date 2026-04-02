@@ -888,3 +888,26 @@ mod particle_lookup_regression {
         assert_eq!(traj.residue_id_of_particle_nr_get(1), Some(0));
     }
 }
+
+#[cfg(test)]
+mod bond_lookup_regression {
+    use crate::trajectory::Trajectory;
+
+    #[test]
+    fn molsystem_bonds_offsets_repeated_molecules() {
+        let mut traj = Trajectory::new();
+        let molecule_idx = traj.add_molecule("mol");
+        let chain_idx = traj.add_chain(molecule_idx, "A");
+        let residue_idx = traj.chain_residue_add(molecule_idx, chain_idx, "RES");
+
+        traj.residue_atom_add(molecule_idx, residue_idx, "A1", "A");
+        traj.residue_atom_add(molecule_idx, residue_idx, "A2", "A");
+        traj.add_molecule_bond(molecule_idx, 0, 1);
+        traj.molecule_cnt_set(molecule_idx, 2);
+
+        let (n_bonds, from_atoms, to_atoms) = traj.molsystem_bonds_get().unwrap();
+        assert_eq!(n_bonds, 2);
+        assert_eq!(from_atoms, vec![0, 2]);
+        assert_eq!(to_atoms, vec![1, 3]);
+    }
+}
