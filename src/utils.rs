@@ -267,6 +267,9 @@ pub fn fread_str<R: Read>(input_file: &mut R, hasher: Option<&mut Md5>) -> Strin
             }
         }
     }
+    if let Some(hasher) = hasher {
+        hasher.update(&buf);
+    };
 
     // If we read exactly one byte and it was NUL, that's effectively an empty string.
     // The C version would then allocate a length-1 buffer and store "\0".
@@ -279,10 +282,6 @@ pub fn fread_str<R: Read>(input_file: &mut R, hasher: Option<&mut Md5>) -> Strin
     if let Some(&0) = buf.last() {
         buf.pop();
     }
-
-    if let Some(hasher) = hasher {
-        hasher.update(&buf);
-    };
 
     // Convert to UTF-8, with a lossy fallback if it wasn’t valid UTF-8:
     match String::from_utf8(buf) {

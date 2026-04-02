@@ -3640,7 +3640,7 @@ impl Trajectory {
                     block.block_contents_size,
                     self.endianness64,
                     self.output_swap64,
-                    hasher.as_mut(),
+                    None,
                 );
                 file.seek(SeekFrom::Start(curr_file_pos))?;
             }
