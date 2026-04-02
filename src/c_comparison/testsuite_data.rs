@@ -125,6 +125,7 @@ fn keepinbox(val: &mut [i32; 3], intmin: &[i32; 3], intmax: &[i32; 3]) {
 // molecule (testsuite.c lines 74-89)
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn molecule(
     target: &mut [i32],
     base: &[i32; 3],

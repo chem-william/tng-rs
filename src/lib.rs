@@ -540,16 +540,20 @@ mod integration {
         assert_approx_eq!(temp_double, TIME_PER_FRAME, 1e-6);
 
         traj.frame_set_nr_find((0.3 * N_FRAME_SETS as f64) as i64)
-            .expect(&format!(
-                "Could not find frame set {}",
-                (0.3 * N_FRAME_SETS as f64) as i64
-            ));
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Could not find frame set {}",
+                    (0.3 * N_FRAME_SETS as f64) as i64
+                )
+            });
 
         traj.frame_set_nr_find((0.75 * N_FRAME_SETS as f64) as i64)
-            .expect(&format!(
-                "Could not find frame set {}",
-                (0.75 * N_FRAME_SETS as f64) as i64
-            ));
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Could not find frame set {}",
+                    (0.75 * N_FRAME_SETS as f64) as i64
+                )
+            });
 
         let frame_set = traj.current_frame_set_get();
         let (temp_int, _temp_int2) = traj.frame_set_frame_range_get(frame_set);
@@ -887,7 +891,7 @@ mod integration {
 
     #[test]
     fn var_num_atoms_frame_set_counts_round_trip() {
-        let path = std::env::temp_dir().join(format!("tng_rs_var_num_atoms_frame_set.tng",));
+        let path = std::env::temp_dir().join("tng_rs_var_num_atoms_frame_set.tng");
 
         let mut traj = Trajectory::new();
         traj.var_num_atoms = true;

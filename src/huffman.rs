@@ -269,8 +269,7 @@ pub(crate) fn ptngc_comp_conv_to_huffman(
     //  unless there's really that many values in use. If that is so,
     //  well, either we compress well, or we have many values anyway.
     // First sort the dictionary wrt symbol
-    // codelength.sort_by_key(|c| c.dict);
-    codelength.sort_by(|a, b| a.dict.cmp(&b.dict));
+    codelength.sort_by_key(|a| a.dict);
 
     bitptr = 0;
     let mut huffman_dict_index = 0usize; // Instead of the huffman_ptr

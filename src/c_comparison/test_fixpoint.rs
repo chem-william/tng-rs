@@ -128,7 +128,7 @@ fn i32x2_roundtrip_matches_c() {
 #[test]
 fn unsigned_fixpoint_cross_roundtrip() {
     // Encode with Rust, decode with C and vice versa
-    let test_values = [0.0, 5.0, 10.0, 3.14159, 7.777];
+    let test_values = [0.0, 5.0, 10.0, 3.159, 7.777];
     let max = 10.0;
 
     for &d in &test_values {

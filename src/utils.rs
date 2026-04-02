@@ -269,7 +269,7 @@ pub fn fread_str<R: Read>(input_file: &mut R, hasher: Option<&mut Md5>) -> Strin
     }
     if let Some(hasher) = hasher {
         hasher.update(&buf);
-    };
+    }
 
     // If we read exactly one byte and it was NUL, that's effectively an empty string.
     // The C version would then allocate a length-1 buffer and store "\0".

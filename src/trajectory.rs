@@ -385,7 +385,7 @@ impl Trajectory {
                 .expect("init input_file")
                 .read_exact(&mut temp_data)?;
             hasher.update(&mut temp_data);
-        };
+        }
 
         Ok(())
     }
@@ -918,7 +918,7 @@ impl Trajectory {
         {
             self.current_trajectory_frame_set.n_written_frames =
                 self.current_trajectory_frame_set.n_frames;
-        };
+        }
 
         Ok(())
     }
@@ -9064,9 +9064,7 @@ fn compress_uncompress_pos_gen<T: Float>(
                     );
                 }
                 if let Some(posi) = posi {
-                    posi[natoms * 3..].copy_from_slice(
-                        &quant[natoms as usize * 3..natoms as usize * 3 * nframes],
-                    );
+                    posi[natoms * 3..].copy_from_slice(&quant[natoms * 3..natoms * 3 * nframes]);
                 }
             }
             TNG_COMPRESS_ALGO_POS_TRIPLET_INTRA | TNG_COMPRESS_ALGO_POS_BWLZH_INTRA => {
@@ -9074,19 +9072,19 @@ fn compress_uncompress_pos_gen<T: Float>(
                 let nframes = nframes as usize;
                 if let Some(posdf) = posdf {
                     unquantize_intra_differences(
-                        &mut posdf[natoms as usize * 3..],
+                        &mut posdf[natoms * 3..],
                         natoms,
                         nframes - 1,
                         T::from_f64(fixt_pair_to_f64(prec_hi, prec_lo)),
-                        &quant[natoms as usize * 3..],
+                        &quant[natoms * 3..],
                     );
                 }
                 if let Some(posi) = posi {
                     unquantize_intra_differences_int(
-                        &mut posi[natoms as usize * 3..],
+                        &mut posi[natoms * 3..],
                         natoms,
                         nframes - 1,
-                        &quant[natoms as usize * 3..],
+                        &quant[natoms * 3..],
                     );
                 }
             }
@@ -9241,9 +9239,7 @@ fn compress_uncompress_vel_gen<T: Float>(
                     );
                 }
                 if let Some(veli) = veli {
-                    veli[natoms * 3..].copy_from_slice(
-                        &quant[natoms as usize * 3..natoms as usize * 3 * nframes],
-                    );
+                    veli[natoms * 3..].copy_from_slice(&quant[natoms * 3..natoms * 3 * nframes]);
                 }
             }
             _ => {}
