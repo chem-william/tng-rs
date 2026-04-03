@@ -47,7 +47,7 @@ proptest! {
         let encoded = FixT::from_f64_unsigned(d, max);
         let decoded = encoded.to_f64_unsigned(max);
         // Truncation means decoded <= d; error is at most one quantum.
-        let quantum = max / u32::MAX as f64;
+        let quantum = max / f64::from(u32::MAX);
         prop_assert!(
             d - decoded >= -1e-12 && d - decoded <= quantum + 1e-12,
             "roundtrip error: d={d}, decoded={decoded}, quantum={quantum}",
@@ -61,7 +61,7 @@ proptest! {
     fn prop_fixt_pair_matches_c(
         d_abs in prop_oneof![
             3 => 0.0f64..1000.0f64,
-            1 => 1000.0f64..=(FixT::MAX31BIT as f64),
+            1 => 1000.0f64..=(f64::from(FixT::MAX31BIT)),
         ],
         negative in proptest::bool::ANY,
     ) {
@@ -73,7 +73,7 @@ proptest! {
 
         let mut c_hi: ffi::FixT = 0;
         let mut c_lo: ffi::FixT = 0;
-        unsafe { ffi::Ptngc_d_to_i32x2(d, &mut c_hi, &mut c_lo) };
+        unsafe { ffi::Ptngc_d_to_i32x2(d, &raw mut c_hi, &raw mut c_lo) };
 
         prop_assert_eq!(rust_hi_u32, fix_t_to_u32(c_hi), "hi mismatch for d={}", d);
         prop_assert_eq!(rust_lo_u32, fix_t_to_u32(c_lo), "lo mismatch for d={}", d);
@@ -85,7 +85,7 @@ proptest! {
     fn prop_fixt_pair_roundtrip(
         d_abs in prop_oneof![
             3 => 0.0f64..1000.0f64,
-            1 => 1000.0f64..=(FixT::MAX31BIT as f64),
+            1 => 1000.0f64..=(f64::from(FixT::MAX31BIT)),
         ],
         negative in proptest::bool::ANY,
     ) {

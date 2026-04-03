@@ -11,7 +11,7 @@ fn c_rle_encode(input: &[u32], min_rle: i32) -> Vec<u32> {
             input.as_ptr().cast(),
             input.len() as c_int,
             c_output.as_mut_ptr().cast(),
-            &mut c_len,
+            &raw mut c_len,
             min_rle as c_int,
         );
     }

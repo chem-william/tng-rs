@@ -27,8 +27,8 @@ fn single_small_values() {
             c_vals.as_mut_ptr(),
             c_vals.len() as c_int,
             c_vals16.as_mut_ptr(),
-            &mut c_nvals16,
-        )
+            &raw mut c_nvals16,
+        );
     };
 
     assert_eq!(rust_nvals16, c_nvals16 as usize);
@@ -54,8 +54,8 @@ fn two_chunk_values() {
             c_vals.as_mut_ptr(),
             c_vals.len() as c_int,
             c_vals16.as_mut_ptr(),
-            &mut c_nvals16,
-        )
+            &raw mut c_nvals16,
+        );
     };
 
     assert_eq!(rust_nvals16, c_nvals16 as usize);
@@ -84,8 +84,8 @@ fn three_chunk_values() {
             c_vals.as_mut_ptr(),
             c_vals.len() as c_int,
             c_vals16.as_mut_ptr(),
-            &mut c_nvals16,
-        )
+            &raw mut c_nvals16,
+        );
     };
 
     assert_eq!(rust_nvals16, c_nvals16 as usize);
@@ -114,8 +114,8 @@ fn boundary_values() {
             c_vals.as_mut_ptr(),
             c_vals.len() as c_int,
             c_vals16.as_mut_ptr(),
-            &mut c_nvals16,
-        )
+            &raw mut c_nvals16,
+        );
     };
 
     assert_eq!(rust_vals16, c_vals16);
@@ -143,8 +143,8 @@ fn mixed_values() {
             c_vals.as_mut_ptr(),
             c_vals.len() as c_int,
             c_vals16.as_mut_ptr(),
-            &mut c_nvals16,
-        )
+            &raw mut c_nvals16,
+        );
     };
 
     assert_eq!(rust_nvals16, c_nvals16 as usize);
@@ -168,8 +168,8 @@ fn empty_input() {
             c_vals.as_mut_ptr(),
             c_vals.len() as c_int,
             c_vals16.as_mut_ptr(),
-            &mut c_nvals16,
-        )
+            &raw mut c_nvals16,
+        );
     };
 
     assert_eq!(rust_nvals16, c_nvals16 as usize);
@@ -193,8 +193,8 @@ fn test_max_values() {
             c_vals.as_mut_ptr(),
             c_vals.len() as c_int,
             c_vals16.as_mut_ptr(),
-            &mut c_nvals16,
-        )
+            &raw mut c_nvals16,
+        );
     };
 
     assert_eq!(rust_nvals16, c_nvals16 as usize);
@@ -232,8 +232,8 @@ fn compression_efficiency() {
                 c_vals.as_mut_ptr(),
                 c_vals.len() as c_int,
                 c_vals16.as_mut_ptr(),
-                &mut c_nvals16,
-            )
+                &raw mut c_nvals16,
+            );
         };
 
         assert_eq!(rust_nvals16, c_nvals16 as usize);

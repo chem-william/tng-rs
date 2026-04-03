@@ -476,10 +476,8 @@ mod integration {
         );
 
         let temp_double = traj.compression_precision_get();
-        assert_eq!(
-            COMPRESSION_PRECISION, temp_double,
-            "Compression precision does not match when reading written file"
-        );
+        // Checks that the compression precision matches when reading written file
+        assert_approx_eq!(COMPRESSION_PRECISION, temp_double);
 
         let temp_int = traj.distance_unit_exponential_get();
         assert_eq!(
@@ -622,7 +620,7 @@ mod integration {
         }
 
         assert!(
-            traj.particle_data_interval_get(BlockID::TrajPositions, 111000, 111499, hash_mode)
+            traj.particle_data_interval_get(BlockID::TrajPositions, 111_000, 111_499, hash_mode)
                 .is_err()
         );
 
@@ -653,13 +651,13 @@ mod integration {
 
         let time = traj.util_time_of_frame_get(50).unwrap();
         assert!(
-            (time - 100e-13).abs() <= 0.000001,
+            (time - 100e-13).abs() <= 0.000_001,
             "Unexpected time at frame 50. Value: {time}, expected value: 100e-13"
         );
 
         let time = traj.util_time_of_frame_get(100).unwrap();
         assert!(
-            (time - 200e-13).abs() <= 0.000001,
+            (time - 200e-13).abs() <= 0.000_001,
             "Unexpected time at frame 100. Value: {time}, expected value: 200e-13"
         );
 

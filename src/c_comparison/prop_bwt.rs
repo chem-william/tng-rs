@@ -19,7 +19,7 @@ proptest! {
                 c_input.as_mut_ptr(),
                 c_input.len() as c_int,
                 c_output.as_mut_ptr(),
-                &mut c_index,
+                &raw mut c_index,
             );
         }
 

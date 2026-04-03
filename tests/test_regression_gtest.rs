@@ -23,7 +23,7 @@ fn num_frames(traj: &mut Trajectory) {
 fn box_shape_read_values(traj: &mut Trajectory) {
     let (box_shape, _stride_length) = traj.util_box_shape_read().unwrap();
     let frame_0 = [
-        3.60140, 0.00000, 0.000000, 0.000000, 3.60140, 0.000000, 0.000000, 0.000000, 3.60140,
+        3.601_40, 0.00000, 0.000000, 0.000000, 3.601_40, 0.000000, 0.000000, 0.000000, 3.601_40,
     ];
     for i in 0..9 {
         assert_approx_eq!(box_shape[i], frame_0[i], TOL);
@@ -66,7 +66,7 @@ fn position_partial_values_frm0(traj: &mut Trajectory) {
     ];
 
     for i in 0..30 {
-        assert_approx_eq!(positions[i], frame_0_first_10_values[i], TOL as f64);
+        assert_approx_eq!(positions[i], frame_0_first_10_values[i], f64::from(TOL));
     }
 }
 fn position_partial_values_frm1(traj: &mut Trajectory) {
@@ -89,7 +89,7 @@ fn position_partial_values_frm1(traj: &mut Trajectory) {
         3.78000e-01,  1.41000e+00,  8.46000e-01,
     ];
     for i in 0..30 {
-        assert_approx_eq!(positions[i], frame_1_first_10_values[i], TOL as f64);
+        assert_approx_eq!(positions[i], frame_1_first_10_values[i], f64::from(TOL));
     }
 }
 
@@ -138,7 +138,11 @@ fn position_values(traj: &mut Trajectory) {
         1.28900e+00,  9.98000e-01,  1.64500e+00,
     ];
     for i in 0..30 {
-        assert_approx_eq!(positions[303000 - 30 + i], frame_100_last_10_values[i], TOL);
+        assert_approx_eq!(
+            positions[303_000 - 30 + i],
+            frame_100_last_10_values[i],
+            TOL
+        );
     }
 }
 fn force_read(traj: &mut Trajectory) {
@@ -315,7 +319,7 @@ fn water_trj_num_particles(traj: &mut Trajectory) {
 }
 fn water_trj_num_frames(traj: &mut Trajectory) {
     let n_frames = traj.num_frames_get().unwrap();
-    assert_eq!(n_frames, 500001);
+    assert_eq!(n_frames, 500_001);
 }
 fn water_trj_box_shape_read(traj: &mut Trajectory) {
     let (_box_shape, stride_length) = traj.util_box_shape_read().unwrap();
@@ -386,7 +390,11 @@ fn water_trj_position_values(traj: &mut Trajectory) {
         7.18000e-01,  2.21700e+00,  1.60500e+00,
     ];
     for i in 0..30 {
-        assert_approx_eq!(positions[818100 - 30 + i], frame_100_last_10_values[i], TOL);
+        assert_approx_eq!(
+            positions[818_100 - 30 + i],
+            frame_100_last_10_values[i],
+            TOL
+        );
     }
 }
 fn water_trj_force_read(traj: &mut Trajectory) {
@@ -505,7 +513,11 @@ fn water_vels_forces_position_values(traj: &mut Trajectory) {
         5.79366e-01,  1.75766e+00,  1.68776e+00,
     ];
     for i in 0..30 {
-        assert_approx_eq!(positions[818100 - 30 + i], frame_100_last_10_values[i], TOL);
+        assert_approx_eq!(
+            positions[818_100 - 30 + i],
+            frame_100_last_10_values[i],
+            TOL
+        );
     }
 }
 fn water_vels_forces_forces_read(traj: &mut Trajectory) {
@@ -547,7 +559,7 @@ fn water_vels_forces_forces_values(traj: &mut Trajectory) {
     ];
     for i in 0..30 {
         assert_approx_eq!(
-            forces[818100 - 30 + i],
+            forces[818_100 - 30 + i],
             frame_100_last_10_values[i],
             FORCE_TOL
         );
@@ -592,7 +604,7 @@ fn water_vels_forces_vel_values(traj: &mut Trajectory) {
     ];
     for i in 0..30 {
         assert_approx_eq!(
-            velocities[818100 - 30 + i],
+            velocities[818_100 - 30 + i],
             frame_100_last_10_values[i],
             TOL
         );

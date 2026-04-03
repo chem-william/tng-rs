@@ -51,11 +51,11 @@ fn single_symbol() {
             dict.len() as c_int,
             c_hist.as_mut_ptr(),
             c_huffman.as_mut_ptr(),
-            &mut c_huffman_len,
+            &raw mut c_huffman_len,
             c_huffman_dict.as_mut_ptr(),
-            &mut c_huffman_dictlen,
+            &raw mut c_huffman_dictlen,
             c_huffman_dict_unpacked.as_mut_ptr(),
-            &mut c_huffman_dict_unpackedlen,
+            &raw mut c_huffman_dict_unpackedlen,
         );
     }
 
@@ -118,11 +118,11 @@ fn two_symbols() {
             dict.len() as c_int,
             c_hist.as_mut_ptr(),
             c_huffman.as_mut_ptr(),
-            &mut c_huffman_len,
+            &raw mut c_huffman_len,
             c_huffman_dict.as_mut_ptr(),
-            &mut c_huffman_dictlen,
+            &raw mut c_huffman_dictlen,
             c_huffman_dict_unpacked.as_mut_ptr(),
-            &mut c_huffman_dict_unpackedlen,
+            &raw mut c_huffman_dict_unpackedlen,
         );
     }
 
@@ -185,11 +185,11 @@ fn four_symbols() {
             dict.len() as c_int,
             c_hist.as_mut_ptr(),
             c_huffman.as_mut_ptr(),
-            &mut c_huffman_len,
+            &raw mut c_huffman_len,
             c_huffman_dict.as_mut_ptr(),
-            &mut c_huffman_dictlen,
+            &raw mut c_huffman_dictlen,
             c_huffman_dict_unpacked.as_mut_ptr(),
-            &mut c_huffman_dict_unpackedlen,
+            &raw mut c_huffman_dict_unpackedlen,
         );
     }
 
@@ -252,11 +252,11 @@ fn large_values() {
             dict.len() as c_int,
             c_hist.as_mut_ptr(),
             c_huffman.as_mut_ptr(),
-            &mut c_huffman_len,
+            &raw mut c_huffman_len,
             c_huffman_dict.as_mut_ptr(),
-            &mut c_huffman_dictlen,
+            &raw mut c_huffman_dictlen,
             c_huffman_dict_unpacked.as_mut_ptr(),
-            &mut c_huffman_dict_unpackedlen,
+            &raw mut c_huffman_dict_unpackedlen,
         );
     }
 

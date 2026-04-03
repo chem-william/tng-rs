@@ -29,7 +29,7 @@ fn c_run_pack(input: &mut [i32], algo: c_int, natoms: i32, speed: c_int) -> (Vec
         ffi::Ptngc_pack_array(
             c_coder,
             input.as_mut_ptr(),
-            &mut c_length,
+            &raw mut c_length,
             algo,
             0 as c_int,
             natoms,
@@ -39,7 +39,7 @@ fn c_run_pack(input: &mut [i32], algo: c_int, natoms: i32, speed: c_int) -> (Vec
     assert!(!c_raw_output.is_null(), "Ptngc_pack_array returned null");
     let mut c_output = vec![0; c_length as usize];
     unsafe { c_raw_output.copy_to(c_output.as_mut_ptr(), c_length as usize) };
-    unsafe { libc::free(c_raw_output as *mut _) };
+    unsafe { libc::free(c_raw_output.cast()) };
     unsafe { ffi::Ptngc_coder_deinit(c_coder) };
     (c_output, c_length)
 }
@@ -117,8 +117,8 @@ fn xtc2_guard(vals: &[i32]) -> bool {
     const MAGIC_LAST_ENTRY: u64 = 3408917801; // MAGIC[91], the last entry
     for dim in 0..3 {
         let dim_vals: Vec<i32> = vals.iter().copied().skip(dim).step_by(3).collect();
-        let maxint = *dim_vals.iter().max().unwrap() as i64;
-        let minint = *dim_vals.iter().min().unwrap() as i64;
+        let maxint = i64::from(*dim_vals.iter().max().unwrap());
+        let minint = i64::from(*dim_vals.iter().min().unwrap());
         if ((maxint - minint + 1) as u64) >= MAGIC_LAST_ENTRY {
             return false;
         }

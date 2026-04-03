@@ -50,7 +50,7 @@ fn c_encode(vals: &[u32]) -> (Vec<u8>, usize, Vec<u8>, usize, Vec<u32>, usize) {
             vals.as_ptr(),
             vals.len() as c_int,
             dict.as_mut_ptr(),
-            &mut ndict,
+            &raw mut ndict,
             hist.as_mut_ptr(),
         );
     }
@@ -70,11 +70,11 @@ fn c_encode(vals: &[u32]) -> (Vec<u8>, usize, Vec<u8>, usize, Vec<u32>, usize) {
             ndict,
             hist.as_mut_ptr(),
             huffman.as_mut_ptr(),
-            &mut huffman_len,
+            &raw mut huffman_len,
             huffman_dict.as_mut_ptr(),
-            &mut huffman_dict_len,
+            &raw mut huffman_dict_len,
             huffman_dict_unpacked.as_mut_ptr(),
-            &mut huffman_dict_unpacked_len,
+            &raw mut huffman_dict_unpacked_len,
         );
     }
 

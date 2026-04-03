@@ -296,7 +296,7 @@ pub(super) fn realbox<T: Float>(
 ) {
     for i in 0..natoms {
         for j in 0..3 {
-            pos[i * stride + j] = T::from_f64(intbox[i * 3 + j] as f64 * genprecision * scale);
+            pos[i * stride + j] = T::from_f64(f64::from(intbox[i * 3 + j]) * genprecision * scale);
         }
         for j in 3..stride {
             pos[i * stride + j] = T::from_f64(0.0);
@@ -315,7 +315,8 @@ pub(super) fn realvelbox<T: Float>(
 ) {
     for i in 0..natoms {
         for j in 0..3 {
-            vel[i * stride + j] = T::from_f64(intbox[i * 3 + j] as f64 * genvelprecision * scale);
+            vel[i * stride + j] =
+                T::from_f64(f64::from(intbox[i * 3 + j]) * genvelprecision * scale);
         }
         for j in 3..stride {
             vel[i * stride + j] = T::from_f64(0.0);

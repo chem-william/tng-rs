@@ -10,7 +10,7 @@ pub(super) unsafe fn copy_and_free(ptr: *mut i8, nitems: c_int) -> Vec<u8> {
     assert!(!ptr.is_null(), "C compress function returned NULL");
     let len = nitems as usize;
     let data = unsafe { std::slice::from_raw_parts(ptr as *const u8, len).to_vec() };
-    unsafe { libc::free(ptr as *mut libc::c_void) };
+    unsafe { libc::free(ptr.cast::<libc::c_void>()) };
     data
 }
 
@@ -34,11 +34,11 @@ pub(super) fn c_compress_pos_int(
             pos.as_mut_ptr(),
             natoms as c_int,
             nframes as c_int,
-            prec_hi as c_ulong,
-            prec_lo as c_ulong,
+            c_ulong::from(prec_hi),
+            c_ulong::from(prec_lo),
             speed as c_int,
             algo.as_mut_ptr(),
-            &mut nitems,
+            &raw mut nitems,
         );
         copy_and_free(ptr, nitems)
     }
@@ -62,7 +62,7 @@ pub(super) fn c_compress_pos(
             precision,
             speed as c_int,
             algo.as_mut_ptr(),
-            &mut nitems,
+            &raw mut nitems,
         );
         copy_and_free(ptr, nitems)
     }
@@ -86,7 +86,7 @@ pub(super) fn c_compress_pos_float(
             precision,
             speed as c_int,
             algo.as_mut_ptr(),
-            &mut nitems,
+            &raw mut nitems,
         );
         copy_and_free(ptr, nitems)
     }
@@ -108,11 +108,11 @@ pub(super) fn c_compress_vel_int(
             vel.as_mut_ptr(),
             natoms as c_int,
             nframes as c_int,
-            prec_hi as c_ulong,
-            prec_lo as c_ulong,
+            c_ulong::from(prec_hi),
+            c_ulong::from(prec_lo),
             speed as c_int,
             algo.as_mut_ptr(),
-            &mut nitems,
+            &raw mut nitems,
         );
         copy_and_free(ptr, nitems)
     }
@@ -136,7 +136,7 @@ pub(super) fn c_compress_vel(
             precision,
             speed as c_int,
             algo.as_mut_ptr(),
-            &mut nitems,
+            &raw mut nitems,
         );
         copy_and_free(ptr, nitems)
     }
@@ -160,7 +160,7 @@ pub(super) fn c_compress_vel_float(
             precision,
             speed as c_int,
             algo.as_mut_ptr(),
-            &mut nitems,
+            &raw mut nitems,
         );
         copy_and_free(ptr, nitems)
     }
@@ -184,7 +184,7 @@ pub(super) fn c_compress_pos_find_algo(
             precision,
             speed as c_int,
             algo.as_mut_ptr(),
-            &mut nitems,
+            &raw mut nitems,
         );
         copy_and_free(ptr, nitems)
     }
@@ -201,6 +201,6 @@ pub(super) fn c_uncompress(compressed: &[u8], n_values: usize) -> Vec<f64> {
     let mut buf = compressed.iter().map(|&b| b as i8).collect::<Vec<i8>>();
     let mut output = vec![0.0f64; n_values];
     let ret = unsafe { ffi::tng_compress_uncompress(buf.as_mut_ptr(), output.as_mut_ptr()) };
-    assert_eq!(ret, 0, "C tng_compress_uncompress returned error {}", ret);
+    assert_eq!(ret, 0, "C tng_compress_uncompress returned error {ret}");
     output
 }

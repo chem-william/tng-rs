@@ -55,7 +55,7 @@ fn fix_t_to_ud_matches_c() {
     for &d in &test_doubles {
         let fix_val: u32 = FixT::from_f64_unsigned(d, max).into();
         let rust_result = FixT::from_f64_unsigned(d, max).to_f64_unsigned(max);
-        let c_result = unsafe { ffi::Ptngc_fix_t_to_ud(fix_val as ffi::FixT, max) };
+        let c_result = unsafe { ffi::Ptngc_fix_t_to_ud(ffi::FixT::from(fix_val), max) };
         assert!(
             (rust_result - c_result).abs() < 1e-9,
             "fix_t_to_ud mismatch for fix_val={fix_val}, max={max}: rust={rust_result}, c={c_result}"
@@ -84,7 +84,7 @@ fn d_to_i32x2_matches_c() {
         let mut c_hi: ffi::FixT = 0;
         let mut c_lo: ffi::FixT = 0;
         unsafe {
-            ffi::Ptngc_d_to_i32x2(d, &mut c_hi, &mut c_lo);
+            ffi::Ptngc_d_to_i32x2(d, &raw mut c_hi, &raw mut c_lo);
         }
 
         assert_eq!(
@@ -113,7 +113,8 @@ fn i32x2_roundtrip_matches_c() {
         let lo_u32: u32 = rust_lo.into();
 
         // Decode with C using the Rust-encoded values
-        let c_result = unsafe { ffi::Ptngc_i32x2_to_d(hi_u32 as ffi::FixT, lo_u32 as ffi::FixT) };
+        let c_result =
+            unsafe { ffi::Ptngc_i32x2_to_d(ffi::FixT::from(hi_u32), ffi::FixT::from(lo_u32)) };
 
         // Decode with Rust
         let rust_result = fixt_pair_to_f64(rust_hi, rust_lo);
@@ -134,7 +135,7 @@ fn unsigned_fixpoint_cross_roundtrip() {
     for &d in &test_values {
         // Rust encode -> C decode
         let rust_fix: u32 = FixT::from_f64_unsigned(d, max).into();
-        let c_decoded = unsafe { ffi::Ptngc_fix_t_to_ud(rust_fix as ffi::FixT, max) };
+        let c_decoded = unsafe { ffi::Ptngc_fix_t_to_ud(ffi::FixT::from(rust_fix), max) };
         let rust_decoded = FixT::from_f64_unsigned(d, max).to_f64_unsigned(max);
         assert!(
             (c_decoded - rust_decoded).abs() < 1e-9,
@@ -163,7 +164,7 @@ fn i32x2_cross_roundtrip() {
         let mut c_hi: ffi::FixT = 0;
         let mut c_lo: ffi::FixT = 0;
         unsafe {
-            ffi::Ptngc_d_to_i32x2(d, &mut c_hi, &mut c_lo);
+            ffi::Ptngc_d_to_i32x2(d, &raw mut c_hi, &raw mut c_lo);
         }
 
         // The Rust f64_to_fixt_pair should produce same hi/lo

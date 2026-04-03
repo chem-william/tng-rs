@@ -27,7 +27,7 @@ fn roundtrip_bwt(vals: &[u32]) {
             c_input.as_mut_ptr(),
             c_input.len() as c_int,
             c_output.as_mut_ptr(),
-            &mut c_index,
+            &raw mut c_index,
         );
     }
     assert_eq!(
@@ -60,25 +60,31 @@ fn test_bwt_roundtrip_single() {
 
 #[test]
 fn test_bwt_roundtrip_simple_ascii() {
-    let input = b"banana".iter().map(|&b| b as u32).collect::<Vec<u32>>();
+    let input = b"banana"
+        .iter()
+        .map(|&b| u32::from(b))
+        .collect::<Vec<u32>>();
     roundtrip_bwt(&input);
 }
 
 #[test]
 fn test_bwt_roundtrip_full_ascii_range() {
-    let input = (0u8..=255u8).map(|b| b as u32).collect::<Vec<_>>();
+    let input = (0u8..=255u8).map(u32::from).collect::<Vec<_>>();
     roundtrip_bwt(&input);
 }
 
 #[test]
 fn test_bwt_roundtrip_repeating_pattern() {
-    let input = b"ABABABABAB".iter().map(|&b| b as u32).collect::<Vec<_>>();
+    let input = b"ABABABABAB"
+        .iter()
+        .map(|&b| u32::from(b))
+        .collect::<Vec<_>>();
     roundtrip_bwt(&input);
 }
 
 #[test]
 fn test_bwt_roundtrip_palindrome() {
-    let input = b"racecar".iter().map(|&b| b as u32).collect::<Vec<_>>();
+    let input = b"racecar".iter().map(|&b| u32::from(b)).collect::<Vec<_>>();
     roundtrip_bwt(&input);
 }
 
