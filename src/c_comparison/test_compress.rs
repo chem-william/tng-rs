@@ -293,3 +293,43 @@ fn find_algo_pos_matches_c() {
         "find_algo_pos: compressed data mismatch"
     );
 }
+
+/// Demonstrates a decompression parity bug: when precision has a fractional
+/// part above ~0.5, `prec_lo` has bit 31 set. C decompresses correctly,
+/// but Rust's `readbufferfix` used to drop bit 31 (due to `FixT::from()` masking
+/// with `MAX31BIT`), yielding the wrong precision and garbage output.
+#[test]
+fn decompress_parity_precision_above_half() {
+    let natoms = 3usize;
+    let nframes = 1usize;
+    let precision = 0.6;
+    let speed = 1usize;
+    let pos: Vec<f64> = vec![0.0, 0.6, 1.2, 1.8, 2.4, 3.0, 3.6, 4.2, 4.8];
+
+    // Compress with Rust (output matches C byte-for-byte)
+    let mut algo = [-1i32, -1, -1, -1];
+    let compressed = compress::tng_compress_pos(&pos, natoms, nframes, precision, speed, &mut algo)
+        .expect("compression failed");
+
+    // C decompresses correctly
+    let c_result = c_uncompress(&compressed, natoms * nframes * 3);
+    for (i, (&orig, &dec)) in pos.iter().zip(c_result.iter()).enumerate() {
+        let err = (orig - dec).abs();
+        assert!(
+            err < precision,
+            "C decompress[{i}]: orig={orig}, got={dec}, err={err}"
+        );
+    }
+
+    // Rust decompresses — this FAILS due to readbufferfix losing bit 31 of prec_lo
+    let mut rust_result = vec![0.0f64; natoms * nframes * 3];
+    crate::trajectory::compress_uncompress(&compressed, &mut rust_result)
+        .expect("Rust decompress failed");
+    for (i, (&orig, &dec)) in pos.iter().zip(rust_result.iter()).enumerate() {
+        let err = (orig - dec).abs();
+        assert!(
+            err < precision,
+            "Rust decompress[{i}]: orig={orig}, got={dec}, err={err}"
+        );
+    }
+}

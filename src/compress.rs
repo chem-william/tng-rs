@@ -1955,6 +1955,31 @@ mod buffer {
         assert_eq!(buf[2], 0xFF);
         assert_eq!(buf[3], 0x7F);
     }
+
+    #[test]
+    fn readbufferfix_roundtrip_high_bit() {
+        // FixT::from_f64_unsigned(0.6, 1.0) produces a value with bit 31 set
+        // (0.6 * 4294967295 ≈ 0x99999999). This simulates prec_lo for
+        // precision values whose fractional part exceeds ~0.5.
+        let original = FixT::from_f64_unsigned(0.6, 1.0);
+        assert!(
+            u32::from(original) > FixT::MAX31BIT,
+            "precondition: bit 31 must be set (got {:#010X})",
+            u32::from(original),
+        );
+
+        let mut buf = [0u8; 4];
+        bufferfix(&mut buf, original, 4);
+        let recovered = readbufferfix(&buf, 4);
+
+        assert_eq!(
+            u32::from(original),
+            u32::from(recovered),
+            "readbufferfix lost bit 31: wrote {:#010X}, read back {:#010X}",
+            u32::from(original),
+            u32::from(recovered),
+        );
+    }
 }
 
 #[cfg(test)]

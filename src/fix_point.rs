@@ -60,7 +60,7 @@ impl FixT {
 impl From<u32> for FixT {
     /// Will wrap around to 0 if bigger than [`FixT::MAX31BIT`] (2147483647)
     fn from(value: u32) -> Self {
-        Self(value & FixT::MAX31BIT)
+        Self(value)
     }
 }
 
