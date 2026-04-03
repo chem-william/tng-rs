@@ -8,7 +8,7 @@ pub struct ParticleMapping {
     pub n_particles: i64,
 
     /// the mapping of index numbers to the real particle numbers in the
-    /// trajectory. real_particle_numbers[0] is the real particle number
+    /// trajectory. `real_particle_numbers`[0] is the real particle number
     /// (as it is numbered in the molecular system) of the first particle
     /// in the data blocks covered by this particle mapping block
     pub real_particle_numbers: Vec<i64>,

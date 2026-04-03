@@ -94,7 +94,7 @@ mod integration {
 
     const USE_HASH: bool = true;
 
-    /// C API: tng_test_setup_molecules() in tng_io_testing.c:45
+    /// C API: `tng_test_setup_molecules()` in `tng_io_testing.c:45`
     fn setup_molecules(traj: &mut Trajectory) {
         let mol_idx = traj.add_molecule("water");
         let chain_idx = traj.add_chain(mol_idx, "W");
@@ -110,7 +110,7 @@ mod integration {
         assert_eq!(count, 200);
     }
 
-    /// C API: tng_test_molecules() in tng_io_testing.c:141
+    /// C API: `tng_test_molecules()` in `tng_io_testing.c:141`
     fn test_molecules(traj: &mut Trajectory) {
         let cnt = traj.num_molecule_types_get();
         assert_eq!(cnt, 1, "Molecule reading error");
@@ -199,7 +199,7 @@ mod integration {
         assert_eq!(to_atoms.len(), 400);
     }
 
-    /// C API: tng_test_read_and_write_file() in tng_io_testing.c:371
+    /// C API: `tng_test_read_and_write_file()` in `tng_io_testing.c:371`
     fn test_read_and_write_file(traj: &mut Trajectory) {
         traj.file_headers_read(USE_HASH).unwrap();
         traj.file_headers_write(USE_HASH).unwrap();
@@ -209,7 +209,7 @@ mod integration {
         }
     }
 
-    /// C API: tng_test_get_box_data() in tng_io_testing.c:926
+    /// C API: `tng_test_get_box_data()` in `tng_io_testing.c:926`
     fn test_get_box_data(traj: &mut Trajectory) {
         let (box_data, _n_frames, _n_vpf, _dtype) = traj
             .data_get(BlockID::TrajBoxShape)
@@ -218,7 +218,7 @@ mod integration {
         assert!((box_data[0] - 50.0).abs() < 0.000001);
     }
 
-    /// C API: tng_test_write_and_read_traj() in tng_io_testing.c:420
+    /// C API: `tng_test_write_and_read_traj()` in `tng_io_testing.c:420`
     fn write_and_read_traj(traj: &mut Trajectory, hash_mode: bool) {
         traj.set_medium_stride_length(MEDIUM_STRIDE_LEN).unwrap();
         traj.set_long_stride_length(LONG_STRIDE_LEN).unwrap();
@@ -595,7 +595,7 @@ mod integration {
         assert_eq!(1, temp_int, "Unexpected value");
     }
 
-    /// C API: tng_test_get_positions_data() in tng_io_testing.c:953
+    /// C API: `tng_test_get_positions_data()` in `tng_io_testing.c:953`
     /// This test relies on knowing that the positions are stored as float
     /// and that the data is not sparse (i.e. as many frames in the data as in the frame set)
     fn get_positions_data(traj: &mut Trajectory, hash_mode: bool) {
@@ -643,7 +643,7 @@ mod integration {
         }
     }
 
-    /// C API: tng_test_utility_functions() in tng_io_testing.c:1036
+    /// C API: `tng_test_utility_functions()` in `tng_io_testing.c:1036`
     fn test_utility_functions(traj: &mut Trajectory, _hash_mode: bool) {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
         input_filename.push(TEST_FILES_DIR);
@@ -720,7 +720,7 @@ mod integration {
         traj.util_trajectory_close().unwrap();
     }
 
-    /// C API: tng_test_append() in tng_io_testing.c:1143
+    /// C API: `tng_test_append()` in `tng_io_testing.c:1143`
     fn test_append(traj: &mut Trajectory, hash_mode: bool) {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
         input_filename.push(TEST_FILES_DIR);
@@ -755,7 +755,7 @@ mod integration {
         traj.util_trajectory_close().unwrap();
     }
 
-    /// C API: tng_test_copy_container() in tng_io_testing.c:1228
+    /// C API: `tng_test_copy_container()` in `tng_io_testing.c:1228`
     fn test_copy_container(traj: &mut Trajectory, _hash_mode: bool) {
         let mut input_filename = std::env::current_dir().expect("able to get current working dir");
         input_filename.push(TEST_FILES_DIR);

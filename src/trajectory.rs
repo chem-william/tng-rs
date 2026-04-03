@@ -1021,7 +1021,7 @@ impl Trajectory {
     /// `block` is a general block container
     /// `mapping_block_nr` is the index of the mapping block to write
     /// `hash_mode` is an option to decide whether to use the md5 hash or not
-    /// if hash_mode == `USE_HASH` an md5 hash will be generated and written
+    /// if `hash_mode` == `USE_HASH` an md5 hash will be generated and written
     fn trajectory_mapping_block_write(
         &mut self,
         block: &mut GenBlock,
@@ -2090,7 +2090,7 @@ impl Trajectory {
 
     /// C API: `tng_file_headers_read`.
     ///
-    /// Read the header blocks from the input_file of [`Self`]
+    /// Read the header blocks from the `input_file` of [`Self`]
     ///
     /// # Panics
     ///
@@ -4618,7 +4618,7 @@ impl Trajectory {
     /// C API: `tng_particle_data_vector_get`.
     ///
     /// Retrieve particle data, from the last read frame set.
-    /// Returns (values, n_frames, n_particles, n_values_per_frame, data_type).
+    /// Returns (values, `n_frames`, `n_particles`, `n_values_per_frame`, `data_type`).
     pub fn particle_data_get(
         &mut self,
         block_id: BlockID,
