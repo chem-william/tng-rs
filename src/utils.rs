@@ -171,40 +171,6 @@ pub fn read_f64(
     f64::from_bits(u)
 }
 
-pub fn read_u32_and_swap(
-    input_file: &mut File,
-    endianness: Endianness32,
-    input_swap32: Option<SwapFn32>,
-    hasher: Option<&mut Md5>,
-) -> u32 {
-    let raw_bytes: [u8; 4] = read_exact_array(input_file, hasher);
-    let mut val: u32 = u32::from_ne_bytes(raw_bytes);
-    if let Some(swap_fn_32) = input_swap32 {
-        swap_fn_32(endianness, &mut val);
-    }
-    val
-}
-
-pub fn read_i32_and_swap(
-    input_file: &mut File,
-    endianness: Endianness32,
-    input_swap32: Option<SwapFn32>,
-    hasher: Option<&mut Md5>,
-) -> i32 {
-    let u: u32 = read_u32_and_swap(input_file, endianness, input_swap32, hasher);
-    i32::from_ne_bytes(u.to_ne_bytes())
-}
-
-pub fn read_f32_and_swap(
-    input_file: &mut File,
-    endianness: Endianness32,
-    input_swap32: Option<SwapFn32>,
-    hasher: Option<&mut Md5>,
-) -> f32 {
-    let u: u32 = read_u32_and_swap(input_file, endianness, input_swap32, hasher);
-    f32::from_bits(u)
-}
-
 pub fn read_bool_le_bytes(input_file: &mut File, hasher: Option<&mut Md5>) -> bool {
     let buf = read_exact_array::<1, _>(input_file, hasher);
     buf[0] != 0
@@ -353,76 +319,6 @@ pub fn write_f64(
 
     if let Some(swap_fn_64) = output_swap64 {
         swap_fn_64(endianness, &mut bits);
-    }
-    let out_bytes = bits.to_ne_bytes();
-    output_file
-        .write_all(&out_bytes)
-        .expect("to be able to write to output_file");
-    if let Some(hasher) = hasher {
-        hasher.update(out_bytes);
-    }
-}
-
-pub fn write_u32(
-    output_file: &mut File,
-    src: u32,
-    endianness: Endianness32,
-    output_swap32: Option<SwapFn32>,
-    hasher: Option<&mut Md5>,
-) {
-    let mut temp_u32 = src;
-    if let Some(swap_fn_32) = output_swap32 {
-        swap_fn_32(endianness, &mut temp_u32);
-    }
-    let out_bytes = temp_u32.to_ne_bytes();
-    output_file
-        .write_all(&out_bytes)
-        .expect("to be able to write to output_file");
-    if let Some(hasher) = hasher {
-        hasher.update(out_bytes);
-    }
-}
-
-pub fn write_i32(
-    output_file: &mut File,
-    src: i32,
-    endianness: Endianness32,
-    output_swap32: Option<SwapFn32>,
-    hasher: Option<&mut Md5>,
-) {
-    // Convert i32 → [u8; 4] in *native* endianness:
-    let src_bytes: [u8; 4] = src.to_ne_bytes();
-
-    // Reinterpret those 4 bytes as a u32 (bitwise identical):
-    let mut bits: u32 = u32::from_ne_bytes(src_bytes);
-
-    if let Some(swap_fn_32) = output_swap32 {
-        swap_fn_32(endianness, &mut bits);
-    }
-    let out_bytes = bits.to_ne_bytes();
-    output_file
-        .write_all(&out_bytes)
-        .expect("to be able to write to output_file");
-    if let Some(hasher) = hasher {
-        hasher.update(out_bytes);
-    }
-}
-
-pub fn write_f32(
-    output_file: &mut File,
-    src: f32,
-    endianness: Endianness32,
-    output_swap32: Option<SwapFn32>,
-    hasher: Option<&mut Md5>,
-) {
-    // Convert f32 → [u8; 4] in *native* endianness:
-    let src_bytes: [u8; 4] = src.to_ne_bytes();
-
-    // Reinterpret those 4 bytes as a u32 (bitwise identical):
-    let mut bits: u32 = u32::from_ne_bytes(src_bytes);
-
-    if let Some(swap_fn_32) = output_swap32 {
-        swap_fn_32(endianness, &mut bits);
     }
     let out_bytes = bits.to_ne_bytes();
     output_file
