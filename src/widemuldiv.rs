@@ -49,11 +49,12 @@ pub(crate) fn ptngc_largeint_mul(v1: u32, largeint_in: &[u32], largeint_out: &mu
     let mut carry: u64 = 0;
 
     for i in 0..n {
-        if largeint_in[i] != 0 || carry != 0 {
-            let product = v1_64 * u64::from(largeint_in[i]) + carry + u64::from(largeint_out[i]);
-            largeint_out[i] = product as u32;
-            carry = product >> 32;
+        if largeint_in[i] == 0 && carry == 0 {
+            break; // Remaining words are all zero and no carry to propagate
         }
+        let product = v1_64 * u64::from(largeint_in[i]) + carry;
+        largeint_out[i] = product as u32;
+        carry = product >> 32;
     }
 }
 
