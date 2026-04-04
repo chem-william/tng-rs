@@ -141,7 +141,7 @@ pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: u
     quant_intra
 }
 
-pub(crate) trait Float:
+pub trait Float:
     Copy
     + Mul<Output = Self>
     + Div<Output = Self>
@@ -374,7 +374,7 @@ mod quant_tests {
     }
 }
 
-pub(crate) fn tng_compress_pos<T: Float>(
+pub fn tng_compress_pos<T: Float>(
     pos: &[T],
     n_atoms: usize,
     n_frames: usize,
@@ -403,7 +403,7 @@ pub(crate) fn tng_compress_pos<T: Float>(
         None
     }
 }
-pub(crate) fn tng_compress_pos_int(
+pub fn tng_compress_pos_int(
     pos: &mut [i32],
     n_atoms: u32,
     n_frames: u32,
