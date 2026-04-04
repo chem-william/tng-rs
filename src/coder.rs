@@ -508,8 +508,9 @@ fn estimate_stopbit_size(positive_vals: &[u32], coding_parameter: i32) -> usize 
 /// Estimate the output size in bytes of triplet encoding without actually encoding.
 /// Returns None if encoding would fail (value exceeds max_base).
 fn estimate_triplet_size(intmax: u32, triplet_max: &[u32], coding_parameter: i32) -> Option<usize> {
-    let mut max_base: u32 = 1u32.checked_shl(coding_parameter as u32)?;
-    let mut maxbits = coding_parameter;
+    let cp = coding_parameter as u32;
+    let mut max_base: u32 = 1u32.checked_shl(cp)?;
+    let mut maxbits = cp;
     {
         let mut tmp = intmax;
         while tmp >= max_base {
@@ -518,31 +519,36 @@ fn estimate_triplet_size(intmax: u32, triplet_max: &[u32], coding_parameter: i32
         }
     }
 
+    // Build LUT: for bit-width bw of triplet max, what are the total bits per triplet?
+    // bw 0..=cp → jbase=0, bits = 2 + 3*cp
+    // bw cp+1   → jbase=1, bits = 2 + 3*(cp+1)
+    // bw cp+2   → jbase=2, bits = 2 + 3*(cp+2)
+    // bw cp+3..=maxbits → jbase=3, bits = 2 + 3*maxbits
+    // bw > maxbits → fail (use sentinel 0)
+    let mut lut = [0u32; 33];
+    for bw in 0..33u32 {
+        if bw <= cp {
+            lut[bw as usize] = 2 + 3 * cp;
+        } else if bw == cp + 1 {
+            lut[bw as usize] = 2 + 3 * (cp + 1);
+        } else if bw == cp + 2 {
+            lut[bw as usize] = 2 + 3 * (cp + 2);
+        } else if bw <= maxbits {
+            lut[bw as usize] = 2 + 3 * maxbits;
+        }
+        // else: lut[bw] stays 0 (sentinel for failure)
+    }
+
     // 32 bits for intmax header
     let mut total_bits: usize = 32;
-    let cp = coding_parameter as u32;
 
     for &tmax in triplet_max {
-        // Determine jbase: how many doublings needed
-        let bits_per_value;
-        if tmax < (1u32 << cp) {
-            // jbase = 0
-            bits_per_value = cp;
-        } else if tmax < (1u32 << (cp + 1)) {
-            // jbase = 1
-            bits_per_value = cp + 1;
-        } else if tmax < (1u32 << (cp + 2)) {
-            // jbase = 2
-            bits_per_value = cp + 2;
-        } else {
-            // jbase = 3 (or would be higher, clamped to 3)
-            if tmax >= max_base {
-                return None;
-            }
-            bits_per_value = maxbits as u32;
+        let bw = 32 - tmax.leading_zeros();
+        let bits = lut[bw as usize];
+        if bits == 0 && tmax > 0 {
+            return None;
         }
-        // 2 bits for base selector + 3 * bits_per_value
-        total_bits += 2 + 3 * bits_per_value as usize;
+        total_bits += bits as usize;
     }
 
     // Round up to bytes (matching ptngc_pack_flush behavior)
