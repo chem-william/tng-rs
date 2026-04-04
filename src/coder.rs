@@ -394,20 +394,31 @@ impl Coder {
         input: &mut [i32],
         length: &mut usize,
         coding_parameter: &mut i32,
-        n_atoms: usize,
+        _n_atoms: usize,
     ) -> bool {
+        let n = *length;
+        let ntriplets = n / 3;
+
+        // Precompute positive_int values and per-triplet max
+        let positive: Vec<u32> = input[..n].iter().map(|&v| positive_int(v)).collect();
+        let intmax = positive.iter().copied().max().unwrap_or(0);
+
+        // Precompute the max of each triplet
+        let triplet_max: Vec<u32> = (0..ntriplets)
+            .map(|i| {
+                let a = positive[i * 3];
+                let b = positive[i * 3 + 1];
+                let c = positive[i * 3 + 2];
+                a.max(b).max(c)
+            })
+            .collect();
+
         let mut new_parameter = -1;
         let mut best_length = 0;
-        for bits in 1..20 {
-            let result = self.pack_array(
-                input,
-                length,
-                TNG_COMPRESS_ALGO_TRIPLET,
-                bits,
-                n_atoms,
-                &mut 0,
-            );
-            if let Some((_, packed)) = result
+
+        for bits in 1..20i32 {
+            let packed = estimate_triplet_size(intmax, &triplet_max, bits);
+            if let Some(packed) = packed
                 && packed > 0
                 && (new_parameter == -1 || packed < best_length)
             {
@@ -461,6 +472,53 @@ impl Coder {
         }
     }
 
+}
+
+/// Estimate the output size in bytes of triplet encoding without actually encoding.
+/// Returns None if encoding would fail (value exceeds max_base).
+fn estimate_triplet_size(intmax: u32, triplet_max: &[u32], coding_parameter: i32) -> Option<usize> {
+    let mut max_base: u32 = 1u32.checked_shl(coding_parameter as u32)?;
+    let mut maxbits = coding_parameter;
+    {
+        let mut tmp = intmax;
+        while tmp >= max_base {
+            max_base = max_base.checked_mul(2)?;
+            maxbits += 1;
+        }
+    }
+
+    // 32 bits for intmax header
+    let mut total_bits: usize = 32;
+    let cp = coding_parameter as u32;
+
+    for &tmax in triplet_max {
+        // Determine jbase: how many doublings needed
+        let bits_per_value;
+        if tmax < (1u32 << cp) {
+            // jbase = 0
+            bits_per_value = cp;
+        } else if tmax < (1u32 << (cp + 1)) {
+            // jbase = 1
+            bits_per_value = cp + 1;
+        } else if tmax < (1u32 << (cp + 2)) {
+            // jbase = 2
+            bits_per_value = cp + 2;
+        } else {
+            // jbase = 3 (or would be higher, clamped to 3)
+            if tmax >= max_base {
+                return None;
+            }
+            bits_per_value = maxbits as u32;
+        }
+        // 2 bits for base selector + 3 * bits_per_value
+        total_bits += 2 + 3 * bits_per_value as usize;
+    }
+
+    // Round up to bytes (matching ptngc_pack_flush behavior)
+    Some((total_bits + 7) / 8)
+}
+
+impl Coder {
     pub(crate) fn unpack_array_stop_bits<'a>(
         &self,
         packed: &'a [u8],
