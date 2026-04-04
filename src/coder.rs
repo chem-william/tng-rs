@@ -441,23 +441,17 @@ impl Coder {
         input: &mut [i32],
         length: &mut usize,
         coding_parameter: &mut i32,
-        n_atoms: usize,
+        _n_atoms: usize,
     ) -> bool {
+        let n = *length;
+        // Precompute positive_int values once
+        let positive: Vec<u32> = input[..n].iter().map(|&v| positive_int(v)).collect();
+
         let mut new_parameter = -1;
         let mut best_length = 0;
         for bits in 1..20 {
-            let result = self.pack_array(
-                input,
-                length,
-                TNG_COMPRESS_ALGO_STOPBIT,
-                bits,
-                n_atoms,
-                &mut 0,
-            );
-            if let Some((_, packed)) = result
-                && packed > 0
-                && (new_parameter == -1 || packed < best_length)
-            {
+            let packed = estimate_stopbit_size(&positive, bits);
+            if packed > 0 && (new_parameter == -1 || packed < best_length) {
                 new_parameter = bits;
                 best_length = packed;
             }
@@ -472,6 +466,28 @@ impl Coder {
         }
     }
 
+}
+
+/// Estimate the output size in bytes of stop-bit encoding without actually encoding.
+fn estimate_stopbit_size(positive_vals: &[u32], coding_parameter: i32) -> usize {
+    let mut total_bits: usize = 0;
+    for &s in positive_vals {
+        let mut s = s;
+        let mut cp = coding_parameter;
+        loop {
+            total_bits += (cp + 1) as usize; // cp data bits + 1 stop bit
+            s >>= cp;
+            if s == 0 {
+                break;
+            }
+            cp >>= 1;
+            if cp < 1 {
+                cp = 1;
+            }
+        }
+    }
+    // Round up to bytes
+    (total_bits + 7) / 8
 }
 
 /// Estimate the output size in bytes of triplet encoding without actually encoding.
