@@ -59,17 +59,11 @@ pub(crate) fn quantize<T: Float>(
         .checked_mul(n_frames)
         .and_then(|v| v.checked_mul(3))
         .expect("overflow computing quant length");
-    let mut quant = vec![0; total];
 
-    for iframe in 0..n_frames {
-        for i in 0..n_atoms {
-            for j in 0..3 {
-                quant[iframe * n_atoms * 3 + i * 3 + j] =
-                    (T::to_f64(x[iframe * n_atoms * 3 + i * 3 + j] / precision) + 0.5).floor()
-                        as i32;
-            }
-        }
-    }
+    let quant: Vec<i32> = x[..total]
+        .iter()
+        .map(|&v| (T::to_f64(v / precision) + 0.5).floor() as i32)
+        .collect();
 
     if verify_input_data(x, n_atoms, n_frames, precision).is_ok() {
         Ok(quant)
@@ -84,58 +78,47 @@ fn verify_input_data<T: Float>(
     n_frames: usize,
     precision: T,
 ) -> Result<(), ()> {
-    for iframe in 0..n_frames {
-        for i in 0..n_atoms {
-            for j in 0..3 {
-                if (T::to_f64(x[iframe * n_atoms * 3 + i * 3 + j] / precision) + 0.5).abs()
-                    >= f64::from(MAX_FVAL)
-                {
-                    return Err(());
-                }
-            }
+    let total = n_atoms * n_frames * 3;
+    let max = f64::from(MAX_FVAL);
+    for &v in x[..total].iter() {
+        if (T::to_f64(v / precision) + 0.5).abs() >= max {
+            return Err(());
         }
     }
     Ok(())
 }
 
 pub(crate) fn quant_inter_differences(quant: &[i32], n_atoms: usize, n_frames: usize) -> Vec<i32> {
-    let mut quant_inter = vec![0; n_atoms * n_frames * 3];
+    let stride = n_atoms * 3;
+    let mut quant_inter = vec![0; stride * n_frames];
     // The first frame is used for absolute positions.
-    for i in 0..n_atoms {
-        for j in 0..3 {
-            quant_inter[i * 3 + j] = quant[i * 3 + j];
-        }
-    }
+    quant_inter[..stride].copy_from_slice(&quant[..stride]);
 
     // For all other frames, the difference to the previous frame is used.
     for iframe in 1..n_frames {
-        for i in 0..n_atoms {
-            for j in 0..3 {
-                quant_inter[iframe * n_atoms * 3 + i * 3 + j] = quant
-                    [iframe * n_atoms * 3 + i * 3 + j]
-                    - quant[(iframe - 1) * n_atoms * 3 + i * 3 + j];
-            }
+        let cur = iframe * stride;
+        let prev = (iframe - 1) * stride;
+        for k in 0..stride {
+            quant_inter[cur + k] = quant[cur + k] - quant[prev + k];
         }
     }
     quant_inter
 }
 
 pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: usize) -> Vec<i32> {
-    let mut quant_intra = vec![0; n_atoms * n_frames * 3];
+    let stride = n_atoms * 3;
+    let mut quant_intra = vec![0; stride * n_frames];
 
     for iframe in 0..n_frames {
+        let base = iframe * stride;
         // The first atom is used with its absolute position
-        for j in 0..3 {
-            quant_intra[iframe * n_atoms * 3 + j] = quant[iframe * n_atoms * 3 + j];
-        }
+        quant_intra[base] = quant[base];
+        quant_intra[base + 1] = quant[base + 1];
+        quant_intra[base + 2] = quant[base + 2];
 
         // For all other atoms the intraframe differences are computed
-        for i in 1..n_atoms {
-            for j in 0..3 {
-                quant_intra[iframe * n_atoms * 3 + i * 3 + j] = quant
-                    [iframe * n_atoms * 3 + i * 3 + j]
-                    - quant[iframe * n_atoms * 3 + (i - 1) * 3 + j];
-            }
+        for k in 3..stride {
+            quant_intra[base + k] = quant[base + k] - quant[base + k - 3];
         }
     }
     quant_intra
