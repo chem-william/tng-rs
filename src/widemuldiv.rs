@@ -44,20 +44,16 @@ pub(crate) fn ptngc_largeint_add(v1: u32, largeint: &mut [u32], n: usize) {
 }
 
 pub(crate) fn ptngc_largeint_mul(v1: u32, largeint_in: &[u32], largeint_out: &mut [u32], n: usize) {
-    largeint_out.fill(0);
+    largeint_out[..n].fill(0);
+    let v1_64 = u64::from(v1);
+    let mut carry: u64 = 0;
 
-    let mut i = 0;
-    while i < n - 1 {
-        if largeint_in[i] != 0 {
-            let (hi, lo) = ptngc_widemul(v1, largeint_in[i]);
-            largeint_add_gen(lo, largeint_out, n, i);
-            largeint_add_gen(hi, largeint_out, n, i + 1);
+    for i in 0..n {
+        if largeint_in[i] != 0 || carry != 0 {
+            let product = v1_64 * u64::from(largeint_in[i]) + carry + u64::from(largeint_out[i]);
+            largeint_out[i] = product as u32;
+            carry = product >> 32;
         }
-        i += 1;
-    }
-    if largeint_in[i] != 0 {
-        let (_, lo) = ptngc_widemul(v1, largeint_in[i]); // 32x32->64 mul
-        largeint_add_gen(lo, largeint_out, n, i);
     }
 }
 
