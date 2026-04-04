@@ -444,13 +444,21 @@ impl Coder {
         _n_atoms: usize,
     ) -> bool {
         let n = *length;
-        // Precompute positive_int values once
-        let positive: Vec<u32> = input[..n].iter().map(|&v| positive_int(v)).collect();
+        // Precompute bit-widths of positive_int values (1 byte each, cache-friendly)
+        let bitwidths: Vec<u8> = input[..n]
+            .iter()
+            .map(|&v| (32 - positive_int(v).leading_zeros()) as u8)
+            .collect();
 
         let mut new_parameter = -1;
         let mut best_length = 0;
         for bits in 1..20 {
-            let packed = estimate_stopbit_size(&positive, bits);
+            let lut = build_stopbit_lut(bits);
+            let mut total_bits: usize = 0;
+            for &bw in &bitwidths {
+                total_bits += lut[bw as usize] as usize;
+            }
+            let packed = (total_bits + 7) / 8;
             if packed > 0 && (new_parameter == -1 || packed < best_length) {
                 new_parameter = bits;
                 best_length = packed;
