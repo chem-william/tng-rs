@@ -3318,8 +3318,13 @@ impl Trajectory {
             }
         }
 
-        // TODO: we probably want to avoid cloning the data blocks
+        // Take heavy fields (values/strings) instead of cloning them.
+        // The clone of the remaining scalar fields is cheap.
+        let taken_values = std::mem::take(&mut data_mut.values);
+        let taken_strings = std::mem::take(&mut data_mut.strings);
         let mut cloned_data = data_mut.clone();
+        cloned_data.values = taken_values;
+        cloned_data.strings = taken_strings;
         if data_mut.dependency & PARTICLE_DEPENDENT != 0 {
             block.block_contents_size = Self::data_block_len_calculate(
                 &cloned_data,
@@ -3592,6 +3597,8 @@ impl Trajectory {
                             Slot::NonTr => &mut self.non_tr_data[block_index],
                         };
                         data_mut.codec_id = Compression::Uncompressed;
+                        // Restore values so the recursive call can use them
+                        data_mut.values = Some(contents);
                         self.data_block_write(
                             block,
                             block_index,
