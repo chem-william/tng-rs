@@ -2847,9 +2847,12 @@ impl Trajectory {
                     );
 
                     // TODO: maybe just re-interpret these bytes
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f32,
+                            data.len() / 4,
+                        )
+                    };
 
                     tng_compress_pos(
                         &floats,
@@ -2860,9 +2863,12 @@ impl Trajectory {
                         &mut alt_algo,
                     )
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f64,
+                            data.len() / 8,
+                        )
+                    };
                     tng_compress_pos(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
@@ -2898,9 +2904,12 @@ impl Trajectory {
                     );
 
                     // TODO: maybe just re-interpret these bytes
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f32,
+                            data.len() / 4,
+                        )
+                    };
 
                     let mut return_dest = tng_compress_pos(
                         &floats,
@@ -2922,9 +2931,12 @@ impl Trajectory {
                     }
                     return_dest
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f64,
+                            data.len() / 8,
+                        )
+                    };
                     let mut return_dest = tng_compress_pos(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
@@ -2948,9 +2960,12 @@ impl Trajectory {
                 };
             } else {
                 dest = if data_type == DataType::Float {
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f32,
+                            data.len() / 4,
+                        )
+                    };
                     tng_compress_pos(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
@@ -2960,9 +2975,12 @@ impl Trajectory {
                         compress_algo_pos,
                     )
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f64,
+                            data.len() / 8,
+                        )
+                    };
                     tng_compress_pos(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
@@ -2996,9 +3014,12 @@ impl Trajectory {
                 // they will be determined in tng_compress_pos/_float/.
                 dest = if data_type == DataType::Float {
                     // TODO: maybe just re-interpret these bytes
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f32,
+                            data.len() / 4,
+                        )
+                    };
                     tng_compress_vel(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
@@ -3008,9 +3029,12 @@ impl Trajectory {
                         &mut alt_algo,
                     )
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f64,
+                            data.len() / 8,
+                        )
+                    };
                     tng_compress_vel(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
@@ -3040,9 +3064,12 @@ impl Trajectory {
 
                 dest = if data_type == DataType::Float {
                     // TODO: maybe just re-interpret these bytes
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f32,
+                            data.len() / 4,
+                        )
+                    };
                     let mut return_dest = tng_compress_vel(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
@@ -3063,9 +3090,12 @@ impl Trajectory {
                     }
                     return_dest
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f64,
+                            data.len() / 8,
+                        )
+                    };
                     let mut return_dest = tng_compress_vel(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
@@ -3088,9 +3118,12 @@ impl Trajectory {
                 };
             } else {
                 dest = if data_type == DataType::Float {
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f32,
+                            data.len() / 4,
+                        )
+                    };
                     tng_compress_vel(
                         &floats,
                         usize::try_from(n_particles).expect("usize from i64"),
@@ -3100,9 +3133,12 @@ impl Trajectory {
                         compress_algo_vel,
                     )
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f64,
+                            data.len() / 8,
+                        )
+                    };
                     tng_compress_vel(
                         &doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
