@@ -410,16 +410,16 @@ pub fn tng_compress_pos_int(
     let mut coding = algo[2];
     let mut coding_parameter = algo[3];
 
-    let mut quant_inter = quant_inter_differences(
-        quant,
-        usize::try_from(n_atoms).expect("usize from u32"),
-        usize::try_from(n_frames).expect("usize from u32"),
-    );
-    let mut quant_intra = quant_intra_differences(
-        quant,
-        usize::try_from(n_atoms).expect("usize from u32"),
-        usize::try_from(n_frames).expect("usize from u32"),
-    );
+    let us_natoms = usize::try_from(n_atoms).expect("usize from u32");
+    let us_nframes = usize::try_from(n_frames).expect("usize from u32");
+
+    // Only compute inter-frame differences when there are multiple frames
+    let mut quant_inter = if n_frames > 1 {
+        Some(quant_inter_differences(quant, us_natoms, us_nframes))
+    } else {
+        None
+    };
+    let mut quant_intra = quant_intra_differences(quant, us_natoms, us_nframes);
 
     // If any of the above codings / coding parameters are == -1, the optimal parameters must be found
     if initial_coding == -1 {
@@ -428,7 +428,7 @@ pub fn tng_compress_pos_int(
         (initial_coding, initial_coding_parameter) = determine_best_pos_initial_coding(
             quant,
             &mut quant_intra,
-            usize::try_from(n_atoms).expect("usize from u32"),
+            us_natoms,
             inner_speed,
             prec_hi,
             prec_lo,
@@ -439,7 +439,7 @@ pub fn tng_compress_pos_int(
         (initial_coding, initial_coding_parameter) = determine_best_pos_initial_coding(
             quant,
             &mut quant_intra,
-            usize::try_from(n_atoms).expect("usize from u32"),
+            us_natoms,
             inner_speed,
             prec_hi,
             prec_lo,
@@ -458,8 +458,8 @@ pub fn tng_compress_pos_int(
             coding_parameter = -1;
             determine_best_pos_coding(
                 quant,
-                &mut Some(&mut quant_inter),
-                &mut Some(&mut quant_intra),
+                &mut quant_inter.as_deref_mut(),
+                &mut Some(&mut quant_intra[..]),
                 n_atoms,
                 n_frames,
                 inner_speed,
@@ -471,8 +471,8 @@ pub fn tng_compress_pos_int(
         } else if coding_parameter == -1 {
             determine_best_pos_coding(
                 quant,
-                &mut Some(&mut quant_inter),
-                &mut Some(&mut quant_intra),
+                &mut quant_inter.as_deref_mut(),
+                &mut Some(&mut quant_intra[..]),
                 n_atoms,
                 n_frames,
                 inner_speed,
@@ -486,7 +486,7 @@ pub fn tng_compress_pos_int(
 
     let nitems = compress_quantized_pos(
         quant,
-        Some(&mut quant_inter),
+        quant_inter.as_deref_mut(),
         Some(&mut quant_intra),
         n_atoms,
         n_frames,
