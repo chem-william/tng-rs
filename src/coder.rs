@@ -465,26 +465,41 @@ impl Coder {
             false
         }
     }
+}
 
+/// Compute stop-bit bits needed for a value with `bw` significant bits at a given coding_parameter.
+fn stopbit_bits_for_bitwidth(mut bw: u32, mut cp: i32) -> u32 {
+    let mut total = 0u32;
+    loop {
+        total += (cp + 1) as u32; // cp data bits + 1 stop bit
+        if bw as i32 <= cp {
+            break;
+        }
+        bw -= cp as u32;
+        cp >>= 1;
+        if cp < 1 {
+            cp = 1;
+        }
+    }
+    total
+}
+
+/// Build lookup table: bits_cost[bw] = total stop-bit bits for a value with `bw` significant bits.
+fn build_stopbit_lut(coding_parameter: i32) -> [u32; 33] {
+    let mut lut = [0u32; 33];
+    for bw in 0..33u32 {
+        lut[bw as usize] = stopbit_bits_for_bitwidth(bw, coding_parameter);
+    }
+    lut
 }
 
 /// Estimate the output size in bytes of stop-bit encoding without actually encoding.
 fn estimate_stopbit_size(positive_vals: &[u32], coding_parameter: i32) -> usize {
+    let lut = build_stopbit_lut(coding_parameter);
     let mut total_bits: usize = 0;
     for &s in positive_vals {
-        let mut s = s;
-        let mut cp = coding_parameter;
-        loop {
-            total_bits += (cp + 1) as usize; // cp data bits + 1 stop bit
-            s >>= cp;
-            if s == 0 {
-                break;
-            }
-            cp >>= 1;
-            if cp < 1 {
-                cp = 1;
-            }
-        }
+        let bw = 32 - s.leading_zeros();
+        total_bits += lut[bw as usize] as usize;
     }
     // Round up to bytes
     (total_bits + 7) / 8
