@@ -3419,7 +3419,13 @@ impl Trajectory {
                 full_data_len *= usize::try_from(n_particles).expect("usize from i64");
             }
 
-            let mut contents = vec![0; full_data_len];
+            // For TNG compression, reuse the values Vec directly (no endianness swap needed).
+            // For other codecs, copy into a new buffer for potential byte-swapping.
+            let mut contents = if cloned_data.codec_id == Compression::TNG {
+                cloned_data.values.take().unwrap_or_else(|| vec![0; full_data_len])
+            } else {
+                vec![0; full_data_len]
+            };
             if let Some(values) = cloned_data.values {
                 contents[..full_data_len].copy_from_slice(&values[..full_data_len]);
 
