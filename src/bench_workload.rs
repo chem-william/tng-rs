@@ -81,10 +81,11 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
 
         traj.frame_set_with_time_new(first_frame, frames_in_chunk as i64, time)?;
 
-        let pos_bytes: Vec<u8> = positions[start..end]
-            .iter()
-            .flat_map(|&v| v.to_ne_bytes())
-            .collect();
+        // Safety-free byte reinterpretation: f64 slice → u8 slice
+        let pos_slice = &positions[start..end];
+        let pos_bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(pos_slice.as_ptr() as *const u8, pos_slice.len() * 8)
+        };
         traj.particle_data_block_add(
             BlockID::TrajPositions,
             "POSITIONS",
@@ -99,10 +100,10 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
             Some(&pos_bytes),
         )?;
 
-        let vel_bytes: Vec<u8> = velocities[start..end]
-            .iter()
-            .flat_map(|&v| v.to_ne_bytes())
-            .collect();
+        let vel_slice = &velocities[start..end];
+        let vel_bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(vel_slice.as_ptr() as *const u8, vel_slice.len() * 8)
+        };
         traj.particle_data_block_add(
             BlockID::TrajVelocities,
             "VELOCITIES",
