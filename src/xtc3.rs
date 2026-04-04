@@ -402,10 +402,12 @@ fn base_compress(data: &[u32], len: usize) -> (Vec<u8>, usize) {
 }
 
 pub(crate) fn positive_int(item: i32) -> u32 {
-    match item {
-        i if i > 0 => 1 + (u32::try_from(i).expect("u32 from i32") - 1) * 2,
-        i if i < 0 => 2 + (u32::try_from(-i).expect("u32 from i32") - 1) * 2,
-        _ => 0, // Case when item == 0
+    // Branchless zigzag: 0->0, 1->1, -1->2, 2->3, -2->4, ...
+    // For positive i: 2*i - 1; for negative i: -2*i; for zero: 0
+    if item > 0 {
+        (item as u32) * 2 - 1
+    } else {
+        (item.wrapping_neg() as u32) * 2
     }
 }
 
