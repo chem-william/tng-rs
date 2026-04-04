@@ -46,6 +46,9 @@ mod widemuldiv;
 mod xtc2;
 mod xtc3;
 
+mod bench_workload;
+pub use bench_workload::{bench_data, bench_write};
+
 #[cfg(test)]
 mod c_comparison;
 #[cfg(test)]
