@@ -83,38 +83,36 @@ pub(crate) fn quantize<T: Float>(
 
 
 pub(crate) fn quant_inter_differences(quant: &[i32], n_atoms: usize, n_frames: usize) -> Vec<i32> {
-    let total = n_atoms * 3 * n_frames;
     let stride = n_atoms * 3;
-    let mut quant_inter = Vec::with_capacity(total);
+    let mut quant_inter = vec![0; stride * n_frames];
     // The first frame is used for absolute positions.
-    quant_inter.extend_from_slice(&quant[..stride]);
+    quant_inter[..stride].copy_from_slice(&quant[..stride]);
 
     // For all other frames, the difference to the previous frame is used.
     for iframe in 1..n_frames {
         let cur = iframe * stride;
         let prev = (iframe - 1) * stride;
         for k in 0..stride {
-            quant_inter.push(quant[cur + k] - quant[prev + k]);
+            quant_inter[cur + k] = quant[cur + k] - quant[prev + k];
         }
     }
     quant_inter
 }
 
 pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: usize) -> Vec<i32> {
-    let total = n_atoms * 3 * n_frames;
     let stride = n_atoms * 3;
-    let mut quant_intra = Vec::with_capacity(total);
+    let mut quant_intra = vec![0; stride * n_frames];
 
     for iframe in 0..n_frames {
         let base = iframe * stride;
         // The first atom is used with its absolute position
-        quant_intra.push(quant[base]);
-        quant_intra.push(quant[base + 1]);
-        quant_intra.push(quant[base + 2]);
+        quant_intra[base] = quant[base];
+        quant_intra[base + 1] = quant[base + 1];
+        quant_intra[base + 2] = quant[base + 2];
 
         // For all other atoms the intraframe differences are computed
         for k in 3..stride {
-            quant_intra.push(quant[base + k] - quant[base + k - 3]);
+            quant_intra[base + k] = quant[base + k] - quant[base + k - 3];
         }
     }
     quant_intra
