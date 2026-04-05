@@ -68,7 +68,14 @@ pub(crate) fn quantize<T: Float>(
         if scaled.abs() >= max {
             return Err(());
         }
-        quant.push(scaled.floor() as i32);
+        // Fast floor: truncate toward zero, then subtract 1 if negative and non-integer
+        let trunc = scaled as i32;
+        let result = if scaled < 0.0 && (trunc as f64) != scaled {
+            trunc - 1
+        } else {
+            trunc
+        };
+        quant.push(result);
     }
 
     Ok(quant)
