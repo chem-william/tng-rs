@@ -10,6 +10,7 @@ log = "0.4.29"
 thiserror = "2.0.18"
 rand = "0.10.0"
 md-5 = "0.11.0"
+zerocopy = { version = "0.8.48", features = ["derive"] }
 
 [build-dependencies]
 cc = "1.2.58"

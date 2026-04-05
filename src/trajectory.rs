@@ -2,6 +2,7 @@ use log::{debug, error, warn};
 use md5::{Digest, Md5};
 use std::cmp::{max, min};
 use std::time::{SystemTime, UNIX_EPOCH};
+use zerocopy::FromBytes;
 
 use crate::{MD5_HASH_LEN, TngError};
 
@@ -2846,13 +2847,10 @@ impl Trajectory {
                         "Float‐branch: data_bytes.len() must be exactly count * 4"
                     );
 
-                    // TODO: maybe just re-interpret these bytes
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = <[f32]>::ref_from_bytes(data).expect("aligned f32 slice");
 
                     tng_compress_pos(
-                        &floats,
+                        floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         f_precision,
@@ -2860,11 +2858,9 @@ impl Trajectory {
                         &mut alt_algo,
                     )
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = <[f64]>::ref_from_bytes(data).expect("aligned f64 slice");
                     tng_compress_pos(
-                        &doubles,
+                        doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         d_precision,
@@ -2897,13 +2893,10 @@ impl Trajectory {
                         "Float‐branch: data_bytes.len() must be exactly count * 4"
                     );
 
-                    // TODO: maybe just re-interpret these bytes
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = <[f32]>::ref_from_bytes(data).expect("aligned f32 slice");
 
                     let mut return_dest = tng_compress_pos(
-                        &floats,
+                        floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
                         f_precision,
@@ -2912,7 +2905,7 @@ impl Trajectory {
                     );
                     if algo_find_n_frames < n_frames {
                         return_dest = tng_compress_pos(
-                            &floats,
+                            floats,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
                             f_precision,
@@ -2922,11 +2915,9 @@ impl Trajectory {
                     }
                     return_dest
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = <[f64]>::ref_from_bytes(data).expect("aligned f64 slice");
                     let mut return_dest = tng_compress_pos(
-                        &doubles,
+                        doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
                         d_precision,
@@ -2936,7 +2927,7 @@ impl Trajectory {
 
                     if algo_find_n_frames < n_frames {
                         return_dest = tng_compress_pos(
-                            &doubles,
+                            doubles,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
                             d_precision,
@@ -2948,11 +2939,9 @@ impl Trajectory {
                 };
             } else {
                 dest = if data_type == DataType::Float {
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = <[f32]>::ref_from_bytes(data).expect("aligned f32 slice");
                     tng_compress_pos(
-                        &floats,
+                        floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         f_precision,
@@ -2960,11 +2949,9 @@ impl Trajectory {
                         compress_algo_pos,
                     )
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = <[f64]>::ref_from_bytes(data).expect("aligned f64 slice");
                     tng_compress_pos(
-                        &doubles,
+                        doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         d_precision,
@@ -2995,12 +2982,9 @@ impl Trajectory {
                 // If the initial coding and initial coding parameter are -1
                 // they will be determined in tng_compress_pos/_float/.
                 dest = if data_type == DataType::Float {
-                    // TODO: maybe just re-interpret these bytes
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = <[f32]>::ref_from_bytes(data).expect("aligned f32 slice");
                     tng_compress_vel(
-                        &floats,
+                        floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         f_precision,
@@ -3008,11 +2992,9 @@ impl Trajectory {
                         &mut alt_algo,
                     )
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = <[f64]>::ref_from_bytes(data).expect("aligned f64 slice");
                     tng_compress_vel(
-                        &doubles,
+                        doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         d_precision,
@@ -3039,12 +3021,9 @@ impl Trajectory {
                 }
 
                 dest = if data_type == DataType::Float {
-                    // TODO: maybe just re-interpret these bytes
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = <[f32]>::ref_from_bytes(data).expect("aligned f32 slice");
                     let mut return_dest = tng_compress_vel(
-                        &floats,
+                        floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
                         f_precision,
@@ -3053,7 +3032,7 @@ impl Trajectory {
                     );
                     if algo_find_n_frames < n_frames {
                         return_dest = tng_compress_vel(
-                            &floats,
+                            floats,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
                             f_precision,
@@ -3063,11 +3042,9 @@ impl Trajectory {
                     }
                     return_dest
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = <[f64]>::ref_from_bytes(data).expect("aligned f64 slice");
                     let mut return_dest = tng_compress_vel(
-                        &doubles,
+                        doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(algo_find_n_frames).expect("usize from i64"),
                         d_precision,
@@ -3076,7 +3053,7 @@ impl Trajectory {
                     );
                     if algo_find_n_frames < n_frames {
                         return_dest = tng_compress_vel(
-                            &doubles,
+                            doubles,
                             usize::try_from(n_particles).expect("usize from i64"),
                             usize::try_from(n_frames).expect("usize from i64"),
                             d_precision,
@@ -3088,11 +3065,9 @@ impl Trajectory {
                 };
             } else {
                 dest = if data_type == DataType::Float {
-                    let floats: Vec<f32> = data.chunks_exact(4)
-                        .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let floats: &[f32] = <[f32]>::ref_from_bytes(data).expect("aligned f32 slice");
                     tng_compress_vel(
-                        &floats,
+                        floats,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         f_precision,
@@ -3100,11 +3075,9 @@ impl Trajectory {
                         compress_algo_vel,
                     )
                 } else {
-                    let doubles: Vec<f64> = data.chunks_exact(8)
-                        .map(|c| f64::from_ne_bytes(c.try_into().unwrap()))
-                        .collect();
+                    let doubles: &[f64] = <[f64]>::ref_from_bytes(data).expect("aligned f64 slice");
                     tng_compress_vel(
-                        &doubles,
+                        doubles,
                         usize::try_from(n_particles).expect("usize from i64"),
                         usize::try_from(n_frames).expect("usize from i64"),
                         d_precision,

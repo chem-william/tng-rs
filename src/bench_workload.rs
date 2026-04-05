@@ -5,6 +5,7 @@ use crate::{
     trajectory::{BlockType, Trajectory},
 };
 use std::path::Path;
+use zerocopy::IntoBytes;
 
 const NATOMS: usize = 100_000;
 const NFRAMES: usize = 20;
@@ -81,10 +82,7 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
 
         traj.frame_set_with_time_new(first_frame, frames_in_chunk as i64, time)?;
 
-        let pos_bytes: Vec<u8> = positions[start..end]
-            .iter()
-            .flat_map(|&v| v.to_ne_bytes())
-            .collect();
+        let pos_bytes = positions[start..end].as_bytes();
         traj.particle_data_block_add(
             BlockID::TrajPositions,
             "POSITIONS",
@@ -99,10 +97,7 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
             Some(&pos_bytes),
         )?;
 
-        let vel_bytes: Vec<u8> = velocities[start..end]
-            .iter()
-            .flat_map(|&v| v.to_ne_bytes())
-            .collect();
+        let vel_bytes = velocities[start..end].as_bytes();
         traj.particle_data_block_add(
             BlockID::TrajVelocities,
             "VELOCITIES",
