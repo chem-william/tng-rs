@@ -122,8 +122,10 @@ impl Coder {
                         // pval[(i*3 + j)*n_frames + k]
                         let dst_base = i * 3 * n_frames + k;
                         pval[dst_base] = input[src].wrapping_add(most_negative) as u32;
-                        pval[dst_base + n_frames] = input[src + 1].wrapping_add(most_negative) as u32;
-                        pval[dst_base + 2 * n_frames] = input[src + 2].wrapping_add(most_negative) as u32;
+                        pval[dst_base + n_frames] =
+                            input[src + 1].wrapping_add(most_negative) as u32;
+                        pval[dst_base + 2 * n_frames] =
+                            input[src + 2].wrapping_add(most_negative) as u32;
                     }
                 }
 
@@ -419,7 +421,9 @@ impl Coder {
             let b = positive_int(input[i * 3 + 1]);
             let c = positive_int(input[i * 3 + 2]);
             let tmax = a.max(b).max(c);
-            if tmax > intmax { intmax = tmax; }
+            if tmax > intmax {
+                intmax = tmax;
+            }
             triplet_max.push(tmax);
         }
 
@@ -468,7 +472,7 @@ impl Coder {
             for &bw in &bitwidths {
                 total_bits += lut[bw as usize] as usize;
             }
-            let packed = (total_bits + 7) / 8;
+            let packed = total_bits.div_ceil(8);
             if packed > 0 && (new_parameter == -1 || packed < best_length) {
                 new_parameter = bits;
                 best_length = packed;
@@ -520,7 +524,7 @@ fn estimate_stopbit_size(positive_vals: &[u32], coding_parameter: i32) -> usize 
         total_bits += lut[bw as usize] as usize;
     }
     // Round up to bytes
-    (total_bits + 7) / 8
+    total_bits.div_ceil(8)
 }
 
 /// Estimate the output size in bytes of triplet encoding without actually encoding.
@@ -530,8 +534,7 @@ fn estimate_triplet_size(intmax: u32, triplet_max: &[u32], coding_parameter: i32
     let mut max_base: u32 = 1u32.checked_shl(cp)?;
     let mut maxbits = cp;
     {
-        let mut tmp = intmax;
-        while tmp >= max_base {
+        while intmax >= max_base {
             max_base = max_base.checked_mul(2)?;
             maxbits += 1;
         }
@@ -570,7 +573,7 @@ fn estimate_triplet_size(intmax: u32, triplet_max: &[u32], coding_parameter: i32
     }
 
     // Round up to bytes (matching ptngc_pack_flush behavior)
-    Some((total_bits + 7) / 8)
+    Some(total_bits.div_ceil(8))
 }
 
 impl Coder {

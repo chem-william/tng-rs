@@ -94,7 +94,7 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
             0,
             NATOMS as i64,
             Compression::TNG,
-            Some(&pos_bytes),
+            Some(pos_bytes),
         )?;
 
         let vel_bytes = velocities[start..end].as_bytes();
@@ -109,7 +109,7 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
             0,
             NATOMS as i64,
             Compression::TNG,
-            Some(&vel_bytes),
+            Some(vel_bytes),
         )?;
 
         traj.frame_set_write(false)?;

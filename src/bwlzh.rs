@@ -681,9 +681,13 @@ fn compare_index(
                 ord => return ord,
             }
             i1 += 1;
-            if i1 >= nvals { i1 -= nvals; }
+            if i1 >= nvals {
+                i1 -= nvals;
+            }
             i2 += 1;
-            if i2 >= nvals { i2 -= nvals; }
+            if i2 >= nvals {
+                i2 -= nvals;
+            }
             i += 1;
         }
     }

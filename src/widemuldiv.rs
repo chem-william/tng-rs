@@ -58,21 +58,6 @@ pub(crate) fn ptngc_largeint_mul(v1: u32, largeint_in: &[u32], largeint_out: &mu
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::ptngc_largeint_mul;
-
-    #[test]
-    fn largeint_mul_handles_sparse_nonzero_words() {
-        let input = [0u32, 0, 7, 0];
-        let mut out = [0u32; 4];
-
-        ptngc_largeint_mul(3, &input, &mut out, input.len());
-
-        assert_eq!(out, [0, 0, 21, 0]);
-    }
-}
-
 // Return the remainder from dividing largeint_in with v1. Result of the division is returned in largeint_out
 pub(crate) fn ptngc_largeint_div(
     v1: u32,
@@ -93,4 +78,19 @@ pub(crate) fn ptngc_largeint_div(
         hi = remainder;
     }
     remainder
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ptngc_largeint_mul;
+
+    #[test]
+    fn largeint_mul_handles_sparse_nonzero_words() {
+        let input = [0u32, 0, 7, 0];
+        let mut out = [0u32; 4];
+
+        ptngc_largeint_mul(3, &input, &mut out, input.len());
+
+        assert_eq!(out, [0, 0, 21, 0]);
+    }
 }

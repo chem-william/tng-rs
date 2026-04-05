@@ -3612,7 +3612,9 @@ impl Trajectory {
             self.current_trajectory_frame_set.n_unwritten_frames;
         self.current_trajectory_frame_set.n_unwritten_frames = 0;
         let data_mut = match slot {
-            Slot::TrParticle => &mut self.current_trajectory_frame_set.tr_particle_data[block_index],
+            Slot::TrParticle => {
+                &mut self.current_trajectory_frame_set.tr_particle_data[block_index]
+            }
             Slot::NonTrParticle => &mut self.non_tr_particle_data[block_index],
             Slot::Tr => &mut self.current_trajectory_frame_set.tr_data[block_index],
             Slot::NonTr => &mut self.non_tr_data[block_index],

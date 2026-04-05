@@ -80,7 +80,6 @@ pub(crate) fn quantize<T: Float>(
     Ok(quant)
 }
 
-
 /// Quantize f64 values directly from a byte slice, avoiding an intermediate Vec<f64> allocation.
 pub(crate) fn quantize_f64_bytes(
     bytes: &[u8],
