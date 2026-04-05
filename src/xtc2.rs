@@ -339,11 +339,7 @@ fn trajcoder_base_compress(input: &[i32], n: usize, index: &[u32], result: &mut 
 
     // Convert the largeint to a sequence of bytes
     for i in 0..18 {
-        let mut shift = 0;
-        for j in 0..4 {
-            result[i * 4 + j] = ((largeint[i] >> shift) & 0xFF) as u8;
-            shift += 8;
-        }
+        result[i * 4..i * 4 + 4].copy_from_slice(&largeint[i].to_le_bytes());
     }
 }
 
@@ -353,11 +349,12 @@ pub(crate) fn trajcoder_base_decompress(input: &[u8], n: i32, index: &[u32], out
     let mut largeint = [0; 19];
     let mut largeint_tmp = [0; 19];
     for i in 0..18 {
-        let mut shift = 0;
-        for j in 0..4 {
-            largeint[i] |= u32::from(input[i * 4 + j]) << shift;
-            shift += 8;
-        }
+        largeint[i] = u32::from_le_bytes([
+            input[i * 4],
+            input[i * 4 + 1],
+            input[i * 4 + 2],
+            input[i * 4 + 3],
+        ]);
     }
     largeint[18] = 0;
     debug!("Largeint");

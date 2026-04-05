@@ -401,6 +401,7 @@ fn base_compress(data: &[u32], len: usize) -> (Vec<u8>, usize) {
     (output, output_len)
 }
 
+#[inline]
 pub(crate) fn positive_int(item: i32) -> u32 {
     // Branchless zigzag: 0->0, 1->1, -1->2, 2->3, -2->4, ...
     // For positive i: 2*i - 1; for negative i: -2*i; for zero: 0
@@ -411,6 +412,7 @@ pub(crate) fn positive_int(item: i32) -> u32 {
     }
 }
 
+#[inline]
 pub(crate) fn unpositive_int(val: i32) -> i32 {
     let mut s = (val + 1) / 2;
     if val % 2 == 0 {

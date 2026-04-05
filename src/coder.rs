@@ -28,6 +28,7 @@ pub(crate) struct Coder {
 }
 
 impl Coder {
+    #[inline]
     pub(crate) fn ptngc_pack_flush(&mut self, output: &mut Vec<u8>) {
         // Zero-fill just enough.
         if self.pack_temporary_bits > 0 {
@@ -35,6 +36,7 @@ impl Coder {
         }
     }
     // c version
+    #[inline]
     pub(crate) fn out8bits(&mut self, out: &mut Vec<u8>) {
         while self.pack_temporary_bits >= 8 {
             self.pack_temporary_bits -= 8;
@@ -43,6 +45,7 @@ impl Coder {
         }
     }
 
+    #[inline]
     pub(crate) fn ptngc_writebits(&mut self, value: u32, nbits: u32, output: &mut Vec<u8>) {
         // Make room for the bits
         self.pack_temporary <<= nbits;
@@ -287,6 +290,7 @@ impl Coder {
         }
     }
 
+    #[inline]
     fn pack_triplet(
         &mut self,
         s: &[u32],
@@ -328,6 +332,7 @@ impl Coder {
     }
 
     /// Write up to 32 bits
+    #[inline]
     fn ptngc_write32bits(&mut self, value: u32, mut nbits: u32, output: &mut Vec<u8>) {
         let mut mask = if nbits >= 8 {
             0xFF << (nbits - 8)
@@ -350,6 +355,7 @@ impl Coder {
         }
     }
 
+    #[inline]
     fn pack_stopbits_item(
         &mut self,
         item: i32,
@@ -362,6 +368,7 @@ impl Coder {
         self.write_stop_bit_code(s, coding_parameter, output)
     }
 
+    #[inline]
     fn write_stop_bit_code(
         &mut self,
         mut s: u32,
