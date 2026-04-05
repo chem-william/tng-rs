@@ -411,19 +411,17 @@ impl Coder {
         let n = *length;
         let ntriplets = n / 3;
 
-        // Precompute positive_int values and per-triplet max
-        let positive: Vec<u32> = input[..n].iter().map(|&v| positive_int(v)).collect();
-        let intmax = positive.iter().copied().max().unwrap_or(0);
-
-        // Precompute the max of each triplet
-        let triplet_max: Vec<u32> = (0..ntriplets)
-            .map(|i| {
-                let a = positive[i * 3];
-                let b = positive[i * 3 + 1];
-                let c = positive[i * 3 + 2];
-                a.max(b).max(c)
-            })
-            .collect();
+        // Single pass: compute triplet_max and global intmax together
+        let mut intmax: u32 = 0;
+        let mut triplet_max: Vec<u32> = Vec::with_capacity(ntriplets);
+        for i in 0..ntriplets {
+            let a = positive_int(input[i * 3]);
+            let b = positive_int(input[i * 3 + 1]);
+            let c = positive_int(input[i * 3 + 2]);
+            let tmax = a.max(b).max(c);
+            if tmax > intmax { intmax = tmax; }
+            triplet_max.push(tmax);
+        }
 
         let mut new_parameter = -1;
         let mut best_length = 0;

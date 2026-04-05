@@ -82,6 +82,72 @@ pub(crate) fn quantize<T: Float>(
 }
 
 
+/// Quantize f64 values directly from a byte slice, avoiding an intermediate Vec<f64> allocation.
+pub(crate) fn quantize_f64_bytes(
+    bytes: &[u8],
+    n_atoms: usize,
+    n_frames: usize,
+    precision: f64,
+) -> Result<Vec<i32>, ()> {
+    let total = n_atoms
+        .checked_mul(n_frames)
+        .and_then(|v| v.checked_mul(3))
+        .expect("overflow computing quant length");
+
+    let inv_precision = 1.0 / precision;
+    let max = f64::from(MAX_FVAL);
+    let mut quant: Vec<i32> = Vec::with_capacity(total);
+    for chunk in bytes[..total * 8].chunks_exact(8) {
+        let v = f64::from_ne_bytes(chunk.try_into().unwrap());
+        let scaled = v * inv_precision + 0.5;
+        if scaled.abs() >= max {
+            return Err(());
+        }
+        let trunc = scaled as i32;
+        let result = if scaled < 0.0 && (trunc as f64) != scaled {
+            trunc - 1
+        } else {
+            trunc
+        };
+        quant.push(result);
+    }
+
+    Ok(quant)
+}
+
+/// Quantize f32 values directly from a byte slice, avoiding an intermediate Vec<f32> allocation.
+pub(crate) fn quantize_f32_bytes(
+    bytes: &[u8],
+    n_atoms: usize,
+    n_frames: usize,
+    precision: f32,
+) -> Result<Vec<i32>, ()> {
+    let total = n_atoms
+        .checked_mul(n_frames)
+        .and_then(|v| v.checked_mul(3))
+        .expect("overflow computing quant length");
+
+    let inv_precision = 1.0 / precision as f64;
+    let max = f64::from(MAX_FVAL);
+    let mut quant: Vec<i32> = Vec::with_capacity(total);
+    for chunk in bytes[..total * 4].chunks_exact(4) {
+        let v = f32::from_ne_bytes(chunk.try_into().unwrap()) as f64;
+        let scaled = v * inv_precision + 0.5;
+        if scaled.abs() >= max {
+            return Err(());
+        }
+        let trunc = scaled as i32;
+        let result = if scaled < 0.0 && (trunc as f64) != scaled {
+            trunc - 1
+        } else {
+            trunc
+        };
+        quant.push(result);
+    }
+
+    Ok(quant)
+}
+
 pub(crate) fn quant_inter_differences(quant: &[i32], n_atoms: usize, n_frames: usize) -> Vec<i32> {
     let stride = n_atoms * 3;
     let mut quant_inter = vec![0; stride * n_frames];
