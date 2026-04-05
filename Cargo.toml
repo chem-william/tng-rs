@@ -24,6 +24,14 @@ proptest = "1.11.0"
 name = "compress"
 harness = false
 
+[profile.bench]
+lto = true
+codegen-units = 1
+
+[profile.release]
+lto = true
+codegen-units = 1
+
 [lints.clippy]
 assigning_clones = "warn"
 single_match_else = "warn"
