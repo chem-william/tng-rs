@@ -60,33 +60,20 @@ pub(crate) fn quantize<T: Float>(
         .and_then(|v| v.checked_mul(3))
         .expect("overflow computing quant length");
 
-    let quant: Vec<i32> = x[..total]
-        .iter()
-        .map(|&v| (T::to_f64(v / precision) + 0.5).floor() as i32)
-        .collect();
-
-    if verify_input_data(x, n_atoms, n_frames, precision).is_ok() {
-        Ok(quant)
-    } else {
-        Err(())
-    }
-}
-
-fn verify_input_data<T: Float>(
-    x: &[T],
-    n_atoms: usize,
-    n_frames: usize,
-    precision: T,
-) -> Result<(), ()> {
-    let total = n_atoms * n_frames * 3;
+    let inv_precision = T::from_f64(1.0 / T::to_f64(precision));
     let max = f64::from(MAX_FVAL);
+    let mut quant: Vec<i32> = Vec::with_capacity(total);
     for &v in x[..total].iter() {
-        if (T::to_f64(v / precision) + 0.5).abs() >= max {
+        let scaled = T::to_f64(v * inv_precision) + 0.5;
+        if scaled.abs() >= max {
             return Err(());
         }
+        quant.push(scaled.floor() as i32);
     }
-    Ok(())
+
+    Ok(quant)
 }
+
 
 pub(crate) fn quant_inter_differences(quant: &[i32], n_atoms: usize, n_frames: usize) -> Vec<i32> {
     let stride = n_atoms * 3;
