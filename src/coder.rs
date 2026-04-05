@@ -95,7 +95,6 @@ impl Coder {
                 let mut output = vec![0; 4 + bwlzh_get_buflen(*length)];
                 let n = *length;
                 let n_frames = n / n_atoms / 3;
-                let mut cnt = 0;
                 let mut pval: Vec<u32> = vec![0; n];
 
                 // let mut most_negative = FixT::MAX31BIT as i32;
@@ -109,13 +108,19 @@ impl Coder {
                 let bytes = (most_negative as u32).to_le_bytes();
                 output[0..4].copy_from_slice(&bytes);
 
-                for i in 0..n_atoms {
-                    for j in 0..3 {
-                        for k in 0..n_frames {
-                            let item = input[k * 3 * n_atoms + i * 3 + j];
-                            pval[cnt] = item.wrapping_add(most_negative) as u32;
-                            cnt += 1;
-                        }
+                // Transpose: input layout is [frame][atom][xyz], output is [atom][xyz][frame].
+                // Process one frame at a time for sequential reads of input.
+                let stride = n_atoms * 3;
+                for k in 0..n_frames {
+                    let frame_base = k * stride;
+                    for i in 0..n_atoms {
+                        let src = frame_base + i * 3;
+                        // Output indices: atom i, xyz j, frame k
+                        // pval[(i*3 + j)*n_frames + k]
+                        let dst_base = i * 3 * n_frames + k;
+                        pval[dst_base] = input[src].wrapping_add(most_negative) as u32;
+                        pval[dst_base + n_frames] = input[src + 1].wrapping_add(most_negative) as u32;
+                        pval[dst_base + 2 * n_frames] = input[src + 2].wrapping_add(most_negative) as u32;
                     }
                 }
 
