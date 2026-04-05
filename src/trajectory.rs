@@ -3249,8 +3249,8 @@ impl Trajectory {
             }
         }
 
-        // Take heavy fields (values/strings) instead of cloning them.
-        // The clone of the remaining scalar fields is cheap.
+        // Temporarily move heavy fields out so we can avoid cloning them.
+        // They must be restored before returning so later reads still see the in-memory data.
         let taken_values = std::mem::take(&mut data_mut.values);
         let taken_strings = std::mem::take(&mut data_mut.strings);
         let mut cloned_data = data_mut.clone();
@@ -3357,7 +3357,7 @@ impl Trajectory {
         }
 
         if cloned_data.data_type == DataType::Char {
-            if let Some(strings_3d) = cloned_data.strings {
+            if let Some(strings_3d) = cloned_data.strings.as_ref() {
                 if cloned_data.dependency & PARTICLE_DEPENDENT != 0 {
                     for i in 0..frame_step {
                         let first_dim_values = &strings_3d[i as usize];
@@ -3392,14 +3392,8 @@ impl Trajectory {
                 full_data_len *= usize::try_from(n_particles).expect("usize from i64");
             }
 
-            // For TNG compression, reuse the values Vec directly (no endianness swap needed).
-            // For other codecs, copy into a new buffer for potential byte-swapping.
-            let mut contents = if cloned_data.codec_id == Compression::TNG {
-                cloned_data.values.take().unwrap_or_else(|| vec![0; full_data_len])
-            } else {
-                vec![0; full_data_len]
-            };
-            if let Some(values) = cloned_data.values {
+            let mut contents = vec![0; full_data_len];
+            if let Some(values) = cloned_data.values.as_ref() {
                 contents[..full_data_len].copy_from_slice(&values[..full_data_len]);
 
                 // If writing TNG compressed data the endianness is taken into account by
@@ -3534,8 +3528,9 @@ impl Trajectory {
                             Slot::NonTr => &mut self.non_tr_data[block_index],
                         };
                         data_mut.codec_id = Compression::Uncompressed;
-                        // Restore values so the recursive call can use them
-                        data_mut.values = Some(contents);
+                        // Restore the original payload so the recursive fallback can reuse it.
+                        data_mut.values = cloned_data.values.take().or(Some(contents));
+                        data_mut.strings = cloned_data.strings.take();
                         self.data_block_write(
                             block,
                             block_index,
@@ -3616,6 +3611,18 @@ impl Trajectory {
         self.current_trajectory_frame_set.n_written_frames +=
             self.current_trajectory_frame_set.n_unwritten_frames;
         self.current_trajectory_frame_set.n_unwritten_frames = 0;
+        let data_mut = match slot {
+            Slot::TrParticle => &mut self.current_trajectory_frame_set.tr_particle_data[block_index],
+            Slot::NonTrParticle => &mut self.non_tr_particle_data[block_index],
+            Slot::Tr => &mut self.current_trajectory_frame_set.tr_data[block_index],
+            Slot::NonTr => &mut self.non_tr_data[block_index],
+        };
+        if let Some(values) = cloned_data.values.take() {
+            data_mut.values = Some(values);
+        }
+        if let Some(strings) = cloned_data.strings.take() {
+            data_mut.strings = Some(strings);
+        }
         Ok(())
     }
 

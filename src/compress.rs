@@ -60,11 +60,10 @@ pub(crate) fn quantize<T: Float>(
         .and_then(|v| v.checked_mul(3))
         .expect("overflow computing quant length");
 
-    let inv_precision = T::from_f64(1.0 / T::to_f64(precision));
     let max = f64::from(MAX_FVAL);
     let mut quant: Vec<i32> = Vec::with_capacity(total);
     for &v in x[..total].iter() {
-        let scaled = T::to_f64(v * inv_precision) + 0.5;
+        let scaled = T::to_f64(v / precision) + 0.5;
         if scaled.abs() >= max {
             return Err(());
         }

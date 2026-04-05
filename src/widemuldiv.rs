@@ -50,11 +50,26 @@ pub(crate) fn ptngc_largeint_mul(v1: u32, largeint_in: &[u32], largeint_out: &mu
 
     for i in 0..n {
         if largeint_in[i] == 0 && carry == 0 {
-            break; // Remaining words are all zero and no carry to propagate
+            continue;
         }
         let product = v1_64 * u64::from(largeint_in[i]) + carry;
         largeint_out[i] = product as u32;
         carry = product >> 32;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ptngc_largeint_mul;
+
+    #[test]
+    fn largeint_mul_handles_sparse_nonzero_words() {
+        let input = [0u32, 0, 7, 0];
+        let mut out = [0u32; 4];
+
+        ptngc_largeint_mul(3, &input, &mut out, input.len());
+
+        assert_eq!(out, [0, 0, 21, 0]);
     }
 }
 
