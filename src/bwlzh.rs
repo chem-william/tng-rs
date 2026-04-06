@@ -656,44 +656,38 @@ fn compare_index(
 ) -> Ordering {
     let mut i = 0;
     while i < nvals {
-        // If we have repeating patterns, we might be able to start the
-        // comparison later in the string
-        // Do we have a repeating pattern? If so are
-        // the repeating patterns the same length?
         let repeat1 = nrepeat[i1] >> 8;
         let k1 = nrepeat[i1] & 0xFF;
         let repeat2 = nrepeat[i2] >> 8;
         let k2 = nrepeat[i2] & 0xFF;
 
         if repeat1 > 1 && repeat2 > 1 && k1 == k2 {
-            // Yes. Compare the repeating patterns
-            for j in 0..k1 {
-                let v1 = vals[(i1 + j as usize) % nvals];
-                let v2 = vals[(i2 + j as usize) % nvals];
-                if v1 < v2 {
-                    return Ordering::Less;
-                }
-                if v1 > v2 {
-                    return Ordering::Greater;
+            for j in 0..k1 as usize {
+                let v1 = vals[(i1 + j) % nvals];
+                let v2 = vals[(i2 + j) % nvals];
+                match v1.cmp(&v2) {
+                    Ordering::Equal => {}
+                    ord => return ord,
                 }
             }
 
-            // The repeating patters are equal. Skip as far as we can before continuing
-            let skip = std::cmp::min(repeat1, repeat2);
-            i1 = (i1 + skip as usize) % nvals;
-            i2 = (i2 + skip as usize) % nvals;
-            i += skip as usize;
+            let skip = std::cmp::min(repeat1, repeat2) as usize;
+            i1 = (i1 + skip) % nvals;
+            i2 = (i2 + skip) % nvals;
+            i += skip;
         } else {
-            // single-element fallback
-            if vals[i1] < vals[i2] {
-                return Ordering::Less;
+            match vals[i1].cmp(&vals[i2]) {
+                Ordering::Equal => {}
+                ord => return ord,
             }
-            if vals[i1] > vals[i2] {
-                return Ordering::Greater;
+            i1 += 1;
+            if i1 >= nvals {
+                i1 -= nvals;
             }
-            // advance each by one (cyclically)
-            i1 = (i1 + 1) % nvals;
-            i2 = (i2 + 1) % nvals;
+            i2 += 1;
+            if i2 >= nvals {
+                i2 -= nvals;
+            }
             i += 1;
         }
     }

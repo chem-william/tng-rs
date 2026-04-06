@@ -44,20 +44,17 @@ pub(crate) fn ptngc_largeint_add(v1: u32, largeint: &mut [u32], n: usize) {
 }
 
 pub(crate) fn ptngc_largeint_mul(v1: u32, largeint_in: &[u32], largeint_out: &mut [u32], n: usize) {
-    largeint_out.fill(0);
+    largeint_out[..n].fill(0);
+    let v1_64 = u64::from(v1);
+    let mut carry: u64 = 0;
 
-    let mut i = 0;
-    while i < n - 1 {
-        if largeint_in[i] != 0 {
-            let (hi, lo) = ptngc_widemul(v1, largeint_in[i]);
-            largeint_add_gen(lo, largeint_out, n, i);
-            largeint_add_gen(hi, largeint_out, n, i + 1);
+    for i in 0..n {
+        if largeint_in[i] == 0 && carry == 0 {
+            continue;
         }
-        i += 1;
-    }
-    if largeint_in[i] != 0 {
-        let (_, lo) = ptngc_widemul(v1, largeint_in[i]); // 32x32->64 mul
-        largeint_add_gen(lo, largeint_out, n, i);
+        let product = v1_64 * u64::from(largeint_in[i]) + carry;
+        largeint_out[i] = product as u32;
+        carry = product >> 32;
     }
 }
 
@@ -81,4 +78,19 @@ pub(crate) fn ptngc_largeint_div(
         hi = remainder;
     }
     remainder
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ptngc_largeint_mul;
+
+    #[test]
+    fn largeint_mul_handles_sparse_nonzero_words() {
+        let input = [0u32, 0, 7, 0];
+        let mut out = [0u32; 4];
+
+        ptngc_largeint_mul(3, &input, &mut out, input.len());
+
+        assert_eq!(out, [0, 0, 21, 0]);
+    }
 }

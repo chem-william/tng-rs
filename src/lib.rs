@@ -26,10 +26,10 @@ mod bond;
 mod bwlzh;
 mod chain;
 mod coder;
-mod compress;
+pub mod compress;
 mod data;
 mod dict;
-mod fix_point;
+pub mod fix_point;
 mod gen_block;
 mod huffman;
 mod huffmem;
@@ -45,6 +45,9 @@ mod utils;
 mod widemuldiv;
 mod xtc2;
 mod xtc3;
+
+mod bench_workload;
+pub use bench_workload::{bench_data, bench_write};
 
 #[cfg(test)]
 mod c_comparison;

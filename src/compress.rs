@@ -59,89 +59,130 @@ pub(crate) fn quantize<T: Float>(
         .checked_mul(n_frames)
         .and_then(|v| v.checked_mul(3))
         .expect("overflow computing quant length");
-    let mut quant = vec![0; total];
 
-    for iframe in 0..n_frames {
-        for i in 0..n_atoms {
-            for j in 0..3 {
-                quant[iframe * n_atoms * 3 + i * 3 + j] =
-                    (T::to_f64(x[iframe * n_atoms * 3 + i * 3 + j] / precision) + 0.5).floor()
-                        as i32;
-            }
+    let max = f64::from(MAX_FVAL);
+    let mut quant: Vec<i32> = Vec::with_capacity(total);
+    for &v in x[..total].iter() {
+        let scaled = T::to_f64(v / precision) + 0.5;
+        if scaled.abs() >= max {
+            return Err(());
         }
+        // Fast floor: truncate toward zero, then subtract 1 if negative and non-integer
+        let trunc = scaled as i32;
+        let result = if scaled < 0.0 && (trunc as f64) != scaled {
+            trunc - 1
+        } else {
+            trunc
+        };
+        quant.push(result);
     }
 
-    if verify_input_data(x, n_atoms, n_frames, precision).is_ok() {
-        Ok(quant)
-    } else {
-        Err(())
-    }
+    Ok(quant)
 }
 
-fn verify_input_data<T: Float>(
-    x: &[T],
+/// Quantize f64 values directly from a byte slice, avoiding an intermediate Vec<f64> allocation.
+pub(crate) fn quantize_f64_bytes(
+    bytes: &[u8],
     n_atoms: usize,
     n_frames: usize,
-    precision: T,
-) -> Result<(), ()> {
-    for iframe in 0..n_frames {
-        for i in 0..n_atoms {
-            for j in 0..3 {
-                if (T::to_f64(x[iframe * n_atoms * 3 + i * 3 + j] / precision) + 0.5).abs()
-                    >= f64::from(MAX_FVAL)
-                {
-                    return Err(());
-                }
-            }
+    precision: f64,
+) -> Result<Vec<i32>, ()> {
+    let total = n_atoms
+        .checked_mul(n_frames)
+        .and_then(|v| v.checked_mul(3))
+        .expect("overflow computing quant length");
+
+    let inv_precision = 1.0 / precision;
+    let max = f64::from(MAX_FVAL);
+    let mut quant: Vec<i32> = Vec::with_capacity(total);
+    for chunk in bytes[..total * 8].chunks_exact(8) {
+        let v = f64::from_ne_bytes(chunk.try_into().unwrap());
+        let scaled = v * inv_precision + 0.5;
+        if scaled.abs() >= max {
+            return Err(());
         }
+        let trunc = scaled as i32;
+        let result = if scaled < 0.0 && (trunc as f64) != scaled {
+            trunc - 1
+        } else {
+            trunc
+        };
+        quant.push(result);
     }
-    Ok(())
+
+    Ok(quant)
+}
+
+/// Quantize f32 values directly from a byte slice, avoiding an intermediate Vec<f32> allocation.
+pub(crate) fn quantize_f32_bytes(
+    bytes: &[u8],
+    n_atoms: usize,
+    n_frames: usize,
+    precision: f32,
+) -> Result<Vec<i32>, ()> {
+    let total = n_atoms
+        .checked_mul(n_frames)
+        .and_then(|v| v.checked_mul(3))
+        .expect("overflow computing quant length");
+
+    let inv_precision = 1.0 / precision as f64;
+    let max = f64::from(MAX_FVAL);
+    let mut quant: Vec<i32> = Vec::with_capacity(total);
+    for chunk in bytes[..total * 4].chunks_exact(4) {
+        let v = f32::from_ne_bytes(chunk.try_into().unwrap()) as f64;
+        let scaled = v * inv_precision + 0.5;
+        if scaled.abs() >= max {
+            return Err(());
+        }
+        let trunc = scaled as i32;
+        let result = if scaled < 0.0 && (trunc as f64) != scaled {
+            trunc - 1
+        } else {
+            trunc
+        };
+        quant.push(result);
+    }
+
+    Ok(quant)
 }
 
 pub(crate) fn quant_inter_differences(quant: &[i32], n_atoms: usize, n_frames: usize) -> Vec<i32> {
-    let mut quant_inter = vec![0; n_atoms * n_frames * 3];
+    let stride = n_atoms * 3;
+    let mut quant_inter = vec![0; stride * n_frames];
     // The first frame is used for absolute positions.
-    for i in 0..n_atoms {
-        for j in 0..3 {
-            quant_inter[i * 3 + j] = quant[i * 3 + j];
-        }
-    }
+    quant_inter[..stride].copy_from_slice(&quant[..stride]);
 
     // For all other frames, the difference to the previous frame is used.
     for iframe in 1..n_frames {
-        for i in 0..n_atoms {
-            for j in 0..3 {
-                quant_inter[iframe * n_atoms * 3 + i * 3 + j] = quant
-                    [iframe * n_atoms * 3 + i * 3 + j]
-                    - quant[(iframe - 1) * n_atoms * 3 + i * 3 + j];
-            }
+        let cur = iframe * stride;
+        let prev = (iframe - 1) * stride;
+        for k in 0..stride {
+            quant_inter[cur + k] = quant[cur + k] - quant[prev + k];
         }
     }
     quant_inter
 }
 
 pub(crate) fn quant_intra_differences(quant: &[i32], n_atoms: usize, n_frames: usize) -> Vec<i32> {
-    let mut quant_intra = vec![0; n_atoms * n_frames * 3];
+    let stride = n_atoms * 3;
+    let mut quant_intra = vec![0; stride * n_frames];
 
     for iframe in 0..n_frames {
+        let base = iframe * stride;
         // The first atom is used with its absolute position
-        for j in 0..3 {
-            quant_intra[iframe * n_atoms * 3 + j] = quant[iframe * n_atoms * 3 + j];
-        }
+        quant_intra[base] = quant[base];
+        quant_intra[base + 1] = quant[base + 1];
+        quant_intra[base + 2] = quant[base + 2];
 
         // For all other atoms the intraframe differences are computed
-        for i in 1..n_atoms {
-            for j in 0..3 {
-                quant_intra[iframe * n_atoms * 3 + i * 3 + j] = quant
-                    [iframe * n_atoms * 3 + i * 3 + j]
-                    - quant[iframe * n_atoms * 3 + (i - 1) * 3 + j];
-            }
+        for k in 3..stride {
+            quant_intra[base + k] = quant[base + k] - quant[base + k - 3];
         }
     }
     quant_intra
 }
 
-pub(crate) trait Float:
+pub trait Float:
     Copy
     + Mul<Output = Self>
     + Div<Output = Self>
@@ -374,7 +415,7 @@ mod quant_tests {
     }
 }
 
-pub(crate) fn tng_compress_pos<T: Float>(
+pub fn tng_compress_pos<T: Float>(
     pos: &[T],
     n_atoms: usize,
     n_frames: usize,
@@ -403,7 +444,7 @@ pub(crate) fn tng_compress_pos<T: Float>(
         None
     }
 }
-pub(crate) fn tng_compress_pos_int(
+pub fn tng_compress_pos_int(
     pos: &mut [i32],
     n_atoms: u32,
     n_frames: u32,
@@ -427,16 +468,16 @@ pub(crate) fn tng_compress_pos_int(
     let mut coding = algo[2];
     let mut coding_parameter = algo[3];
 
-    let mut quant_inter = quant_inter_differences(
-        quant,
-        usize::try_from(n_atoms).expect("usize from u32"),
-        usize::try_from(n_frames).expect("usize from u32"),
-    );
-    let mut quant_intra = quant_intra_differences(
-        quant,
-        usize::try_from(n_atoms).expect("usize from u32"),
-        usize::try_from(n_frames).expect("usize from u32"),
-    );
+    let us_natoms = usize::try_from(n_atoms).expect("usize from u32");
+    let us_nframes = usize::try_from(n_frames).expect("usize from u32");
+
+    // Only compute inter-frame differences when there are multiple frames
+    let mut quant_inter = if n_frames > 1 {
+        Some(quant_inter_differences(quant, us_natoms, us_nframes))
+    } else {
+        None
+    };
+    let mut quant_intra = quant_intra_differences(quant, us_natoms, us_nframes);
 
     // If any of the above codings / coding parameters are == -1, the optimal parameters must be found
     if initial_coding == -1 {
@@ -445,7 +486,7 @@ pub(crate) fn tng_compress_pos_int(
         (initial_coding, initial_coding_parameter) = determine_best_pos_initial_coding(
             quant,
             &mut quant_intra,
-            usize::try_from(n_atoms).expect("usize from u32"),
+            us_natoms,
             inner_speed,
             prec_hi,
             prec_lo,
@@ -456,7 +497,7 @@ pub(crate) fn tng_compress_pos_int(
         (initial_coding, initial_coding_parameter) = determine_best_pos_initial_coding(
             quant,
             &mut quant_intra,
-            usize::try_from(n_atoms).expect("usize from u32"),
+            us_natoms,
             inner_speed,
             prec_hi,
             prec_lo,
@@ -475,8 +516,8 @@ pub(crate) fn tng_compress_pos_int(
             coding_parameter = -1;
             determine_best_pos_coding(
                 quant,
-                &mut Some(&mut quant_inter),
-                &mut Some(&mut quant_intra),
+                &mut quant_inter.as_deref_mut(),
+                &mut Some(&mut quant_intra[..]),
                 n_atoms,
                 n_frames,
                 inner_speed,
@@ -488,8 +529,8 @@ pub(crate) fn tng_compress_pos_int(
         } else if coding_parameter == -1 {
             determine_best_pos_coding(
                 quant,
-                &mut Some(&mut quant_inter),
-                &mut Some(&mut quant_intra),
+                &mut quant_inter.as_deref_mut(),
+                &mut Some(&mut quant_intra[..]),
                 n_atoms,
                 n_frames,
                 inner_speed,
@@ -503,7 +544,7 @@ pub(crate) fn tng_compress_pos_int(
 
     let nitems = compress_quantized_pos(
         quant,
-        Some(&mut quant_inter),
+        quant_inter.as_deref_mut(),
         Some(&mut quant_intra),
         n_atoms,
         n_frames,

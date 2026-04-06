@@ -28,6 +28,7 @@ pub(crate) struct Coder {
 }
 
 impl Coder {
+    #[inline]
     pub(crate) fn ptngc_pack_flush(&mut self, output: &mut Vec<u8>) {
         // Zero-fill just enough.
         if self.pack_temporary_bits > 0 {
@@ -35,6 +36,7 @@ impl Coder {
         }
     }
     // c version
+    #[inline]
     pub(crate) fn out8bits(&mut self, out: &mut Vec<u8>) {
         while self.pack_temporary_bits >= 8 {
             self.pack_temporary_bits -= 8;
@@ -43,6 +45,7 @@ impl Coder {
         }
     }
 
+    #[inline]
     pub(crate) fn ptngc_writebits(&mut self, value: u32, nbits: u32, output: &mut Vec<u8>) {
         // Make room for the bits
         self.pack_temporary <<= nbits;
@@ -95,7 +98,6 @@ impl Coder {
                 let mut output = vec![0; 4 + bwlzh_get_buflen(*length)];
                 let n = *length;
                 let n_frames = n / n_atoms / 3;
-                let mut cnt = 0;
                 let mut pval: Vec<u32> = vec![0; n];
 
                 // let mut most_negative = FixT::MAX31BIT as i32;
@@ -109,13 +111,21 @@ impl Coder {
                 let bytes = (most_negative as u32).to_le_bytes();
                 output[0..4].copy_from_slice(&bytes);
 
-                for i in 0..n_atoms {
-                    for j in 0..3 {
-                        for k in 0..n_frames {
-                            let item = input[k * 3 * n_atoms + i * 3 + j];
-                            pval[cnt] = item.wrapping_add(most_negative) as u32;
-                            cnt += 1;
-                        }
+                // Transpose: input layout is [frame][atom][xyz], output is [atom][xyz][frame].
+                // Process one frame at a time for sequential reads of input.
+                let stride = n_atoms * 3;
+                for k in 0..n_frames {
+                    let frame_base = k * stride;
+                    for i in 0..n_atoms {
+                        let src = frame_base + i * 3;
+                        // Output indices: atom i, xyz j, frame k
+                        // pval[(i*3 + j)*n_frames + k]
+                        let dst_base = i * 3 * n_frames + k;
+                        pval[dst_base] = input[src].wrapping_add(most_negative) as u32;
+                        pval[dst_base + n_frames] =
+                            input[src + 1].wrapping_add(most_negative) as u32;
+                        pval[dst_base + 2 * n_frames] =
+                            input[src + 2].wrapping_add(most_negative) as u32;
                     }
                 }
 
@@ -282,6 +292,7 @@ impl Coder {
         }
     }
 
+    #[inline]
     fn pack_triplet(
         &mut self,
         s: &[u32],
@@ -323,6 +334,7 @@ impl Coder {
     }
 
     /// Write up to 32 bits
+    #[inline]
     fn ptngc_write32bits(&mut self, value: u32, mut nbits: u32, output: &mut Vec<u8>) {
         let mut mask = if nbits >= 8 {
             0xFF << (nbits - 8)
@@ -345,6 +357,7 @@ impl Coder {
         }
     }
 
+    #[inline]
     fn pack_stopbits_item(
         &mut self,
         item: i32,
@@ -357,6 +370,7 @@ impl Coder {
         self.write_stop_bit_code(s, coding_parameter, output)
     }
 
+    #[inline]
     fn write_stop_bit_code(
         &mut self,
         mut s: u32,
@@ -394,20 +408,31 @@ impl Coder {
         input: &mut [i32],
         length: &mut usize,
         coding_parameter: &mut i32,
-        n_atoms: usize,
+        _n_atoms: usize,
     ) -> bool {
+        let n = *length;
+        let ntriplets = n / 3;
+
+        // Single pass: compute triplet_max and global intmax together
+        let mut intmax: u32 = 0;
+        let mut triplet_max: Vec<u32> = Vec::with_capacity(ntriplets);
+        for i in 0..ntriplets {
+            let a = positive_int(input[i * 3]);
+            let b = positive_int(input[i * 3 + 1]);
+            let c = positive_int(input[i * 3 + 2]);
+            let tmax = a.max(b).max(c);
+            if tmax > intmax {
+                intmax = tmax;
+            }
+            triplet_max.push(tmax);
+        }
+
         let mut new_parameter = -1;
         let mut best_length = 0;
-        for bits in 1..20 {
-            let result = self.pack_array(
-                input,
-                length,
-                TNG_COMPRESS_ALGO_TRIPLET,
-                bits,
-                n_atoms,
-                &mut 0,
-            );
-            if let Some((_, packed)) = result
+
+        for bits in 1..20i32 {
+            let packed = estimate_triplet_size(intmax, &triplet_max, bits);
+            if let Some(packed) = packed
                 && packed > 0
                 && (new_parameter == -1 || packed < best_length)
             {
@@ -430,23 +455,25 @@ impl Coder {
         input: &mut [i32],
         length: &mut usize,
         coding_parameter: &mut i32,
-        n_atoms: usize,
+        _n_atoms: usize,
     ) -> bool {
+        let n = *length;
+        // Precompute bit-widths of positive_int values (1 byte each, cache-friendly)
+        let bitwidths: Vec<u8> = input[..n]
+            .iter()
+            .map(|&v| (32 - positive_int(v).leading_zeros()) as u8)
+            .collect();
+
         let mut new_parameter = -1;
         let mut best_length = 0;
         for bits in 1..20 {
-            let result = self.pack_array(
-                input,
-                length,
-                TNG_COMPRESS_ALGO_STOPBIT,
-                bits,
-                n_atoms,
-                &mut 0,
-            );
-            if let Some((_, packed)) = result
-                && packed > 0
-                && (new_parameter == -1 || packed < best_length)
-            {
+            let lut = build_stopbit_lut(bits);
+            let mut total_bits: usize = 0;
+            for &bw in &bitwidths {
+                total_bits += lut[bw as usize] as usize;
+            }
+            let packed = total_bits.div_ceil(8);
+            if packed > 0 && (new_parameter == -1 || packed < best_length) {
                 new_parameter = bits;
                 best_length = packed;
             }
@@ -460,7 +487,96 @@ impl Coder {
             false
         }
     }
+}
 
+/// Compute stop-bit bits needed for a value with `bw` significant bits at a given coding_parameter.
+fn stopbit_bits_for_bitwidth(mut bw: u32, mut cp: i32) -> u32 {
+    let mut total = 0u32;
+    loop {
+        total += (cp + 1) as u32; // cp data bits + 1 stop bit
+        if bw as i32 <= cp {
+            break;
+        }
+        bw -= cp as u32;
+        cp >>= 1;
+        if cp < 1 {
+            cp = 1;
+        }
+    }
+    total
+}
+
+/// Build lookup table: bits_cost[bw] = total stop-bit bits for a value with `bw` significant bits.
+fn build_stopbit_lut(coding_parameter: i32) -> [u32; 33] {
+    let mut lut = [0u32; 33];
+    for bw in 0..33u32 {
+        lut[bw as usize] = stopbit_bits_for_bitwidth(bw, coding_parameter);
+    }
+    lut
+}
+
+/// Estimate the output size in bytes of stop-bit encoding without actually encoding.
+fn estimate_stopbit_size(positive_vals: &[u32], coding_parameter: i32) -> usize {
+    let lut = build_stopbit_lut(coding_parameter);
+    let mut total_bits: usize = 0;
+    for &s in positive_vals {
+        let bw = 32 - s.leading_zeros();
+        total_bits += lut[bw as usize] as usize;
+    }
+    // Round up to bytes
+    total_bits.div_ceil(8)
+}
+
+/// Estimate the output size in bytes of triplet encoding without actually encoding.
+/// Returns None if encoding would fail (value exceeds max_base).
+fn estimate_triplet_size(intmax: u32, triplet_max: &[u32], coding_parameter: i32) -> Option<usize> {
+    let cp = coding_parameter as u32;
+    let mut max_base: u32 = 1u32.checked_shl(cp)?;
+    let mut maxbits = cp;
+    {
+        while intmax >= max_base {
+            max_base = max_base.checked_mul(2)?;
+            maxbits += 1;
+        }
+    }
+
+    // Build LUT: for bit-width bw of triplet max, what are the total bits per triplet?
+    // bw 0..=cp → jbase=0, bits = 2 + 3*cp
+    // bw cp+1   → jbase=1, bits = 2 + 3*(cp+1)
+    // bw cp+2   → jbase=2, bits = 2 + 3*(cp+2)
+    // bw cp+3..=maxbits → jbase=3, bits = 2 + 3*maxbits
+    // bw > maxbits → fail (use sentinel 0)
+    let mut lut = [0u32; 33];
+    for bw in 0..33u32 {
+        if bw <= cp {
+            lut[bw as usize] = 2 + 3 * cp;
+        } else if bw == cp + 1 {
+            lut[bw as usize] = 2 + 3 * (cp + 1);
+        } else if bw == cp + 2 {
+            lut[bw as usize] = 2 + 3 * (cp + 2);
+        } else if bw <= maxbits {
+            lut[bw as usize] = 2 + 3 * maxbits;
+        }
+        // else: lut[bw] stays 0 (sentinel for failure)
+    }
+
+    // 32 bits for intmax header
+    let mut total_bits: usize = 32;
+
+    for &tmax in triplet_max {
+        let bw = 32 - tmax.leading_zeros();
+        let bits = lut[bw as usize];
+        if bits == 0 && tmax > 0 {
+            return None;
+        }
+        total_bits += bits as usize;
+    }
+
+    // Round up to bytes (matching ptngc_pack_flush behavior)
+    Some(total_bits.div_ceil(8))
+}
+
+impl Coder {
     pub(crate) fn unpack_array_stop_bits<'a>(
         &self,
         packed: &'a [u8],

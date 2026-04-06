@@ -211,28 +211,12 @@ pub(crate) const fn ptngc_magic(i: usize) -> u32 {
 }
 
 pub(crate) fn ptngc_find_magic_index(maxval: u32) -> u32 {
-    let mut i;
-
-    if maxval > MAGIC[MAX_MAGIC / 4] {
-        if maxval > MAGIC[MAX_MAGIC / 2] {
-            i = MAX_MAGIC / 2 + 1;
-        } else {
-            i = MAX_MAGIC / 4 + 1;
-        }
-    } else {
-        i = 0;
-    }
-
-    // FIXME: if maxint[1] - minint[1] + 1 = 1285866348 - (-2123051452) + 1 = 3408917801 = MAGIC[91] which
-    // means that i will be incremented once to 92 and thus give an out-of-bounds read. the same thing happens
-    // in the C code except C happily reads undefined memory.
-    //
-    // As a fix, we just restrict `i + 1` to be less than MAX_MAGIC so that his and later callers don't
-    // index out-of-bounds
-    while i + 1 < MAX_MAGIC && MAGIC[i] <= maxval {
-        i += 1;
-    }
-    i.try_into().expect("u32 from usize")
+    // Binary search: find the first index where MAGIC[i] > maxval.
+    // MAGIC is sorted ascending, so partition_point gives us exactly what the
+    // linear scan computed (the first i where MAGIC[i] > maxval), clamped to MAX_MAGIC-1
+    // to avoid OOB (matching the original fix for MAGIC[91] == maxval edge case).
+    let i = MAGIC.partition_point(|&m| m <= maxval);
+    i.min(MAX_MAGIC - 1) as u32
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -355,11 +339,7 @@ fn trajcoder_base_compress(input: &[i32], n: usize, index: &[u32], result: &mut 
 
     // Convert the largeint to a sequence of bytes
     for i in 0..18 {
-        let mut shift = 0;
-        for j in 0..4 {
-            result[i * 4 + j] = ((largeint[i] >> shift) & 0xFF) as u8;
-            shift += 8;
-        }
+        result[i * 4..i * 4 + 4].copy_from_slice(&largeint[i].to_le_bytes());
     }
 }
 
@@ -369,11 +349,12 @@ pub(crate) fn trajcoder_base_decompress(input: &[u8], n: i32, index: &[u32], out
     let mut largeint = [0; 19];
     let mut largeint_tmp = [0; 19];
     for i in 0..18 {
-        let mut shift = 0;
-        for j in 0..4 {
-            largeint[i] |= u32::from(input[i * 4 + j]) << shift;
-            shift += 8;
-        }
+        largeint[i] = u32::from_le_bytes([
+            input[i * 4],
+            input[i * 4 + 1],
+            input[i * 4 + 2],
+            input[i * 4 + 3],
+        ]);
     }
     largeint[18] = 0;
     debug!("Largeint");
@@ -1143,15 +1124,13 @@ pub(crate) fn compute_magic_bits(index: [u32; 3]) -> u32 {
         );
     }
     // Find last bit
-    let mut onebit = 0;
-    for (i, item) in largeint.iter().enumerate().take(3) {
-        for j in 0..32 {
-            if (item & (1 << j)) > 0 {
-                onebit = i * 32 + j + 1;
-            }
+    let mut onebit: u32 = 0;
+    for (i, &item) in largeint.iter().enumerate().take(3) {
+        if item != 0 {
+            onebit = (i as u32) * 32 + (32 - item.leading_zeros());
         }
     }
-    onebit.try_into().expect("u32 from usize")
+    onebit
 }
 
 #[cfg(test)]
