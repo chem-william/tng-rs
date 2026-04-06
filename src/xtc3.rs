@@ -462,18 +462,16 @@ fn insert_batch(
 // bit. Not so much to be rejected by the not very large check
 // later.
 pub(crate) fn is_quite_large(input: &[i32], small_index: u32, max_large_index: u32) -> bool {
-    let mut is = false;
+    let is;
+    let predicate =
+        ptngc_magic(usize::try_from(small_index + QUITE_LARGE).expect("usize from u32"));
     if small_index + QUITE_LARGE >= max_large_index {
         is = true;
     } else {
-        for inp in input.iter().take(3) {
-            if positive_int(*inp)
-                > ptngc_magic(usize::try_from(small_index + QUITE_LARGE).expect("usize from u32"))
-            {
-                is = true;
-                break;
-            }
-        }
+        is = input
+            .iter()
+            .take(3)
+            .any(|inp| positive_int(*inp) > predicate);
     }
     is
 }
