@@ -679,13 +679,12 @@ pub(crate) fn ptngc_pack_array_xtc3(
                     if swapatoms {
                         didswap = true;
                         for i in 0..3 {
-                            let mut swapped_input = [0; 3];
+                            let swapped_input = [
+                                input[inpdata + i],
+                                input[inpdata + 3 + i].wrapping_sub(input[inpdata + i]),
+                                input[inpdata + 6 + i].wrapping_sub(input[inpdata + 3 + i]),
+                            ];
                             let mut output = [0; 3];
-                            swapped_input[0] = input[inpdata + i];
-                            swapped_input[1] =
-                                input[inpdata + 3 + i].wrapping_sub(input[inpdata + i]);
-                            swapped_input[2] =
-                                input[inpdata + 6 + i].wrapping_sub(input[inpdata + 3 + i]);
                             swap_ints(&swapped_input, &mut output);
                             encode_ints[i] = output[0];
                             encode_ints[3 + i] = output[1];
@@ -850,20 +849,24 @@ pub(crate) fn ptngc_pack_array_xtc3(
 
                 if !swapatoms && frame > 0 {
                     for i in 0..new_runlength {
-                        let mut delta = [0; 3];
-                        let mut delta2 = [0; 3];
-                        delta[0] = positive_int(
-                            input[inpdata + i * 3] - input[inpdata - natoms * 3 + i * 3],
-                        );
-                        delta[1] = positive_int(
-                            input[inpdata + i * 3 + 1] - input[inpdata - natoms * 3 + i * 3 + 1],
-                        );
-                        delta[2] = positive_int(
-                            input[inpdata + i * 3 + 2] - input[inpdata - natoms * 3 + i * 3 + 2],
-                        );
-                        delta2[0] = positive_int(encode_ints[i * 3]);
-                        delta2[1] = positive_int(encode_ints[i * 3 + 1]);
-                        delta2[2] = positive_int(encode_ints[i * 3 + 2]);
+                        let delta = [
+                            positive_int(
+                                input[inpdata + i * 3] - input[inpdata - natoms * 3 + i * 3],
+                            ),
+                            positive_int(
+                                input[inpdata + i * 3 + 1]
+                                    - input[inpdata - natoms * 3 + i * 3 + 1],
+                            ),
+                            positive_int(
+                                input[inpdata + i * 3 + 2]
+                                    - input[inpdata - natoms * 3 + i * 3 + 2],
+                            ),
+                        ];
+                        let delta2 = [
+                            positive_int(encode_ints[i * 3]),
+                            positive_int(encode_ints[i * 3 + 1]),
+                            positive_int(encode_ints[i * 3 + 2]),
+                        ];
                         if compute_intlen(&delta) * THRESHOLD_INTER_INTRA < compute_intlen(&delta2)
                         {
                             numsmaller += 1;
