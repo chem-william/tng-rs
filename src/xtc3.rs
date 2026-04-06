@@ -600,7 +600,6 @@ pub(crate) fn ptngc_pack_array_xtc3(
             xtc3_context.flush_large(xtc3_context.has_large); // Flush all
         } else {
             let mut min_runlength = 0;
-            let mut largest_required_base;
             let mut largest_runlength_base;
             let mut largest_runlength_index;
             let mut new_runlength;
@@ -744,26 +743,19 @@ pub(crate) fn ptngc_pack_array_xtc3(
             // at least 2. If even the next atom is large, we will not do anything
 
             // Determine required base
-            largest_required_base = 0;
-            for &item in encode_ints.iter().take(min_runlength * 3) {
-                if item > largest_required_base {
-                    largest_required_base = item;
-                }
-            }
-            // Also compute what the largest base is for the current runlength setting!
-            // largest_runlength_base = 0;
-            // for ienc in 0..(runlength * 3).min(nencode) {
-            //     if encode_ints[ienc] > largest_runlength_base {
-            //         largest_runlength_base = encode_ints[ienc];
-            //     }
-            // }
+            let largest_required_base = *encode_ints
+                .iter()
+                .take(min_runlength * 3)
+                .filter(|&&x| x.is_positive())
+                .max()
+                .unwrap_or(&0);
 
-            largest_runlength_base = 0;
-            for &item in encode_ints.iter().take((runlength * 3).min(nencode)) {
-                if item > largest_runlength_base {
-                    largest_runlength_base = item;
-                }
-            }
+            largest_runlength_base = *encode_ints
+                .iter()
+                .take((runlength * 3).min(nencode))
+                .filter(|&&x| x.is_positive())
+                .max()
+                .unwrap_or(&0);
 
             let largest_required_index = ptngc_find_magic_index(largest_required_base as u32);
             largest_runlength_index = ptngc_find_magic_index(largest_runlength_base as u32);
