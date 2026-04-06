@@ -62,6 +62,7 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
     let mut traj = Trajectory::new();
     traj.output_file_set(path);
     traj.frame_set_n_frames = CHUNKY as i64;
+    traj.current_trajectory_frame_set.n_frames = CHUNKY as i64;
     traj.compression_precision = 1.0 / PRECISION;
     traj.set_time_per_frame(TIME_PER_FRAME)?;
 
@@ -117,6 +118,14 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
 
     traj.trajectory_destroy()?;
     Ok(std::fs::metadata(path)?.len())
+}
+
+fn raw_f64_bytes(values: &[f64]) -> Vec<u8> {
+    // Match the C benchmark's malloc + memcpy chunk conversion instead of rebuilding bytes value by value.
+    unsafe {
+        std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), std::mem::size_of_val(values))
+            .to_vec()
+    }
 }
 
 // --- data generation helpers ---
