@@ -918,4 +918,46 @@ mod integration {
 
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn test_md5_remaining_append() {
+        use md5::{Digest, Md5};
+        use std::io::{Seek, SeekFrom, Write};
+
+        let path = std::env::temp_dir().join("tng_rs_md5_remaining.bin");
+        let data: Vec<u8> = (0u8..16).collect();
+
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            f.write_all(&data).unwrap();
+        }
+
+        let mut traj = Trajectory::new();
+        traj.input_file_set(&path);
+
+        // Seek past the first 4 bytes so md5_remaining_append reads bytes 4..16
+        traj.input_file
+            .as_ref()
+            .unwrap()
+            .seek(SeekFrom::Start(4))
+            .unwrap();
+
+        let mut block = crate::gen_block::GenBlock::new();
+        block.block_contents_size = 16; // covers the whole file
+
+        let mut hasher = Md5::new();
+        traj.md5_remaining_append(&mut block, 0, &mut hasher)
+            .unwrap();
+
+        let digest = hasher.finalize();
+
+        // Expected: MD5 of bytes 4..16
+        let mut expected_hasher = Md5::new();
+        expected_hasher.update(&data[4..]);
+        let expected = expected_hasher.finalize();
+
+        assert_eq!(digest, expected);
+
+        let _ = std::fs::remove_file(path);
+    }
 }
