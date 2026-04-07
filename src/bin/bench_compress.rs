@@ -23,7 +23,6 @@ fn main() -> ExitCode {
 fn bench_output_path() -> PathBuf {
     std::env::var_os("TMPDIR")
         .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .map_or_else(|| PathBuf::from("/tmp"), PathBuf::from)
         .join(OUTPUT_FILE_NAME)
 }

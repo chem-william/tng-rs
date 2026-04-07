@@ -17,7 +17,7 @@ fn num_particles(traj: &mut Trajectory) {
 
 fn num_frames(traj: &mut Trajectory) {
     let n_frames = traj.num_frames_get().unwrap();
-    assert_eq!(n_frames, 500001);
+    assert_eq!(n_frames, 500_001);
 }
 
 fn box_shape_read_values(traj: &mut Trajectory) {
