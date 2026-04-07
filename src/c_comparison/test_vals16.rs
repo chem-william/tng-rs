@@ -126,10 +126,10 @@ fn mixed_values() {
     init_logger();
 
     let vals = [
-        0x1234,     // Single chunk
-        0x12345678, // Two chunks
-        0x5555,     // Single chunk
-        0x80000001, // Three chunks
+        0x1234,      // Single chunk
+        0x1234_5678, // Two chunks
+        0x5555,      // Single chunk
+        0x8000_0001, // Three chunks
     ];
     let mut rust_vals16 = [0u32; 20];
 
@@ -180,7 +180,7 @@ fn empty_input() {
 fn test_max_values() {
     init_logger();
 
-    let vals = [0xFFFFFFFF];
+    let vals = [0xFFFF_FFFF];
     let mut rust_vals16 = [0u32; 20];
 
     let rust_nvals16 = ptngc_comp_conv_to_vals16(&vals, &mut rust_vals16);

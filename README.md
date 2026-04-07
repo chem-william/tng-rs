@@ -23,5 +23,8 @@ Due to this, in some places the takes/returns an index to the residue, chain, mo
 
 Searches over molecule-owned collections are exposed on `Molecule` in Rust. In practice, `chain_find` and `atom_find` correspond to C's `tng_molecule_chain_find` and `tng_molecule_atom_find`, while `residue_find` is a Rust convenience.
 
+## Citation
+Consider citing original paper developing the TNG format -- ["An efficient and extensible format, library, and API for binary trajectory data from molecular simulations"](https://doi.org/10.1002/jcc.23495) -- if you find this lib useful.
+
 ## LLM usage
 Parts of the code has been translated with the use of large language models (LLMs). All code has been reviewed by humans.

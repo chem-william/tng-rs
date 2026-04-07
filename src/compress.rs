@@ -62,7 +62,7 @@ pub(crate) fn quantize<T: Float>(
 
     let max = f64::from(MAX_FVAL);
     let mut quant: Vec<i32> = Vec::with_capacity(total);
-    for &v in x[..total].iter() {
+    for &v in &x[..total] {
         let scaled = T::to_f64(v / precision) + 0.5;
         if scaled.abs() >= max {
             return Err(());

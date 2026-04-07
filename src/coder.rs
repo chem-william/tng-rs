@@ -489,7 +489,7 @@ impl Coder {
     }
 }
 
-/// Compute stop-bit bits needed for a value with `bw` significant bits at a given coding_parameter.
+/// Compute stop-bit bits needed for a value with `bw` significant bits at a given `coding_parameter`.
 fn stopbit_bits_for_bitwidth(mut bw: u32, mut cp: i32) -> u32 {
     let mut total = 0u32;
     loop {
@@ -506,7 +506,7 @@ fn stopbit_bits_for_bitwidth(mut bw: u32, mut cp: i32) -> u32 {
     total
 }
 
-/// Build lookup table: bits_cost[bw] = total stop-bit bits for a value with `bw` significant bits.
+/// Build lookup table: `bits_cost[bw]` = total stop-bit bits for a value with `bw` significant bits.
 fn build_stopbit_lut(coding_parameter: i32) -> [u32; 33] {
     let mut lut = [0u32; 33];
     for bw in 0..33u32 {
@@ -528,7 +528,7 @@ fn estimate_stopbit_size(positive_vals: &[u32], coding_parameter: i32) -> usize 
 }
 
 /// Estimate the output size in bytes of triplet encoding without actually encoding.
-/// Returns None if encoding would fail (value exceeds max_base).
+/// Returns None if encoding would fail (value exceeds `max_base`).
 fn estimate_triplet_size(intmax: u32, triplet_max: &[u32], coding_parameter: i32) -> Option<usize> {
     let cp = coding_parameter as u32;
     let mut max_base: u32 = 1u32.checked_shl(cp)?;
