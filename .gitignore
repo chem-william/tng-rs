@@ -6,3 +6,4 @@ lcov.info
 perf.data
 perf.data.old
 *.svg
+test_files/tng_test_out.tng
