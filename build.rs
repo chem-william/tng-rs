@@ -2,6 +2,12 @@ fn main() {
     let src = "vendor/tng/src/compression";
     let inc = "vendor/tng/include";
 
+    // Skip C compilation when vendor sources are not present (e.g. on crates.io).
+    // The C library is only used by #[cfg(test)] comparison tests.
+    if !std::path::Path::new(src).exists() {
+        return;
+    }
+
     cc::Build::new()
         .std("c11")
         .include(inc)

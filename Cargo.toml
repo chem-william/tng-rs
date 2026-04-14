@@ -2,7 +2,7 @@
 name = "tng-rs"
 version = "0.1.0"
 edition = "2024"
-description = "A Rust port of A Rust port of the Trajectory Next Generation (TNG) library"
+description = "A Rust port of the Trajectory Next Generation (TNG) library"
 readme = "README.md"
 repository = "https://github.com/chem-william/tng-rs"
 license = "BSD-3-Clause"
@@ -13,14 +13,18 @@ include = [
   "/Cargo.toml",
   "/README*",
   "/LICENSE*",
+  "!/src/c_comparison/**",
+  "!/src/ffi.rs",
+  "!/src/bin/**",
 ]
 
+[features]
+bench = []
+
 [dependencies]
-assert_approx_eq = "1.1.0"
 flate2 = "1.1.9"
 log = "0.4.29"
 thiserror = "2.0.18"
-rand = "0.10.1"
 md-5 = "0.11.0"
 zerocopy = { version = "0.8.48", features = ["derive"] }
 
@@ -28,14 +32,21 @@ zerocopy = { version = "0.8.48", features = ["derive"] }
 cc = "1.2.60"
 
 [dev-dependencies]
+assert_approx_eq = "1.1.0"
 criterion = "0.8.2"
 env_logger = "0.11.10"
 libc = "0.2.185"
 proptest = "1.11.0"
+rand = "0.10.1"
+
+[[bin]]
+name = "bench_compress"
+required-features = ["bench"]
 
 [[bench]]
 name = "compress"
 harness = false
+required-features = ["bench"]
 
 [lints.clippy]
 assigning_clones = "warn"
