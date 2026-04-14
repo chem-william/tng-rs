@@ -8,6 +8,12 @@ repository = "https://github.com/chem-william/tng-rs"
 license = "BSD-3-Clause"
 keywords = ["chemistry", "parser"]
 categories = ["science", "parser-implementations"]
+include = [
+  "/src/**",
+  "/Cargo.toml",
+  "/README*",
+  "/LICENSE*",
+]
 
 [dependencies]
 assert_approx_eq = "1.1.0"
