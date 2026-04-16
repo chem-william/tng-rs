@@ -915,7 +915,7 @@ mod integration {
         traj.file_headers_read(false).unwrap();
         traj.frame_set_nr_find(0).unwrap();
 
-        assert_eq!(traj.molecule_cnt_list_get().as_slice(), &[2]);
+        assert_eq!(traj.molecule_cnt_list_get(), &[2]);
         assert_eq!(traj.num_particles_get(), 2);
 
         let _ = std::fs::remove_file(path);
