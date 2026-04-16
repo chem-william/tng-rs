@@ -4254,7 +4254,7 @@ impl Trajectory {
     /// C API: `tng_molecule_cnt_list_get`.
     ///
     /// Get the list of the count of each molecule
-    pub fn molecule_cnt_list_get(&self) -> &Vec<i64> {
+    pub fn molecule_cnt_list_get(&self) -> &[i64] {
         if self.var_num_atoms {
             &self.current_trajectory_frame_set.molecule_cnt_list
         } else {
@@ -7597,7 +7597,7 @@ impl Trajectory {
     /// # Errors
     ///
     /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of molecules
-    pub(crate) fn molecule_of_index_get(&self, index: i64) -> Result<&Molecule, TngError> {
+    pub fn molecule_of_index_get(&self, index: i64) -> Result<&Molecule, TngError> {
         if index >= self.n_molecules || index < 0 {
             return Err(TngError::NotFound(format!(
                 "A molecule with index {index} was not found."
@@ -7675,7 +7675,7 @@ impl Trajectory {
     /// Get the number of [`crate::residue::Residue`] in the molecule.
     ///
     /// C API: `tng_molecule_num_residues_get`.
-    pub(crate) fn molecule_num_residues_get(&self, molecule: &Molecule) -> i64 {
+    pub fn molecule_num_residues_get(&self, molecule: &Molecule) -> i64 {
         molecule.n_residues
     }
 
@@ -7686,7 +7686,7 @@ impl Trajectory {
     /// # Errors
     ///
     /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of residues
-    pub(crate) fn molecule_residue_of_index_get<'a>(
+    pub fn molecule_residue_of_index_get<'a>(
         &'a self,
         molecule: &'a Molecule,
         index: usize,
@@ -7779,7 +7779,7 @@ impl Trajectory {
     }
 
     /// C API: `tng_residue_name_get`.
-    pub(crate) fn residue_name_get<'a>(
+    pub fn residue_name_get<'a>(
         &'a self,
         residue: &'a Residue,
         max_len: usize,
@@ -7788,12 +7788,12 @@ impl Trajectory {
     }
 
     /// C API: `tng_residue_num_atoms_get`.
-    pub(crate) fn residue_num_atoms_get(&self, residue: &Residue) -> u64 {
+    pub fn residue_num_atoms_get(&self, residue: &Residue) -> u64 {
         residue.n_atoms
     }
 
     /// C API: `tng_residue_atom_of_index_get`.
-    pub(crate) fn residue_atom_of_index_get<'a>(
+    pub fn residue_atom_of_index_get<'a>(
         &'a self,
         residue: &Residue,
         index: usize,
@@ -7822,7 +7822,7 @@ impl Trajectory {
     }
 
     /// C API: `tng_atom_name_get`.
-    pub(crate) fn atom_name_get<'a>(
+    pub fn atom_name_get<'a>(
         &'a self,
         atom: &'a Atom,
         max_len: usize,
@@ -7831,7 +7831,7 @@ impl Trajectory {
     }
 
     /// C API: `tng_atom_type_get`.
-    pub(crate) fn atom_type_get<'a>(
+    pub fn atom_type_get<'a>(
         &'a self,
         atom: &'a Atom,
         max_len: usize,
@@ -7847,7 +7847,7 @@ impl Trajectory {
         self.gen_data_vector_get(is_particle_data, block_id)
     }
 
-    pub(crate) fn util_time_of_frame_get(&mut self, frame_nr: i64) -> Result<f64, TngError> {
+    pub fn util_time_of_frame_get(&mut self, frame_nr: i64) -> Result<f64, TngError> {
         self.frame_set_of_frame_find(frame_nr)?;
 
         let frame_set = &self.current_trajectory_frame_set;
@@ -7973,11 +7973,9 @@ impl Trajectory {
         Ok(n_frames)
     }
 
-    /// # Panics
-    ///
-    /// Panics if `first_frame > last_frame`.
-    pub fn util_pos_read_range(
+    fn read_range(
         &mut self,
+        block_id: BlockID,
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f64>, i64), TngError> {
@@ -7986,21 +7984,60 @@ impl Trajectory {
             "`first_frame`, must be lower or equal to `last_frame`"
         );
 
-        let (positions, _n_particles, _n_values_per_frame, stride_length, data_type) = self
-            .particle_data_vector_interval_get(
-                BlockID::TrajPositions,
-                first_frame,
-                last_frame,
-                USE_HASH,
-            )?;
+        let (data_vec, _n_particles, _n_values_per_frame, stride_length, data_type) =
+            self.particle_data_vector_interval_get(block_id, first_frame, last_frame, USE_HASH)?;
         if data_type != DataType::Float {
             return Err(TngError::Constraint("data was not float".to_string()));
         }
 
-        Ok((positions, stride_length))
+        Ok((data_vec, stride_length))
     }
 
-    pub(crate) fn util_trajectory_next_frame_present_data_blocks_find(
+    /// # Panics
+    ///
+    /// Panics if `first_frame > last_frame`.
+    pub fn util_pos_read_range(
+        &mut self,
+        first_frame: i64,
+        last_frame: i64,
+    ) -> Result<(Vec<f64>, i64), TngError> {
+        self.read_range(BlockID::TrajPositions, first_frame, last_frame)
+    }
+
+    /// # Panics
+    ///
+    /// Panics if `first_frame > last_frame`.
+    pub fn util_vel_read_range(
+        &mut self,
+        first_frame: i64,
+        last_frame: i64,
+    ) -> Result<(Vec<f64>, i64), TngError> {
+        self.read_range(BlockID::TrajVelocities, first_frame, last_frame)
+    }
+
+    /// # Panics
+    ///
+    /// Panics if `first_frame > last_frame`.
+    pub fn util_force_read_range(
+        &mut self,
+        first_frame: i64,
+        last_frame: i64,
+    ) -> Result<(Vec<f64>, i64), TngError> {
+        self.read_range(BlockID::TrajForces, first_frame, last_frame)
+    }
+
+    /// # Panics
+    ///
+    /// Panics if `first_frame > last_frame`.
+    pub fn util_box_shape_read_range(
+        &mut self,
+        first_frame: i64,
+        last_frame: i64,
+    ) -> Result<(Vec<f64>, i64), TngError> {
+        self.read_range(BlockID::TrajBoxShape, first_frame, last_frame)
+    }
+
+    pub fn util_trajectory_next_frame_present_data_blocks_find(
         &mut self,
         current_frame: i64,
         n_requested_data_block_ids: i64,
@@ -8281,7 +8318,7 @@ impl Trajectory {
         unreachable!("we should've found a block type OR errored out")
     }
 
-    pub(crate) fn util_trajectory_close(&mut self) -> Result<(), TngError> {
+    pub fn util_trajectory_close(&mut self) -> Result<(), TngError> {
         if self.current_trajectory_frame_set.n_unwritten_frames > 0 {
             self.current_trajectory_frame_set.n_frames =
                 self.current_trajectory_frame_set.n_unwritten_frames;
