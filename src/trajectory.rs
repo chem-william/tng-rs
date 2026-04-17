@@ -8121,10 +8121,10 @@ impl Trajectory {
             }
 
             if !read_all
-                && data.last_retrieved_frame < self.current_trajectory_frame_set.first_frame
-                || data.last_retrieved_frame
-                    >= self.current_trajectory_frame_set.first_frame
-                        + self.current_trajectory_frame_set.n_frames
+                && (data.last_retrieved_frame < self.current_trajectory_frame_set.first_frame
+                    || data.last_retrieved_frame
+                        >= self.current_trajectory_frame_set.first_frame
+                            + self.current_trajectory_frame_set.n_frames)
             {
                 let stat = self.frame_set_read_current_only_data_from_block_id(USE_HASH, block_id);
                 match stat {
