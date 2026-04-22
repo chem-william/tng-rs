@@ -48,21 +48,6 @@ impl FixT {
     pub(crate) fn to_f64_unsigned(self, max: f64) -> f64 {
         f64::from(self.0) * (max / f64::from(u32::MAX))
     }
-
-    /// Signed 32 bit fixed point value to `f64`
-    ///
-    /// C API: `Ptngc_fix_t_to_d`
-    pub(crate) fn to_f64_signed(self, max: f64) -> f64 {
-        let mut f = self;
-        let sign = if self.0 & Self::SIGN32BIT > 0 {
-            f.0 &= Self::MAX31BIT;
-            -1.0
-        } else {
-            1.0
-        };
-
-        f64::from(f.0) * (max / f64::from(Self::MAX31BIT)) * sign
-    }
 }
 
 impl From<u32> for FixT {
