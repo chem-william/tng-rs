@@ -53,7 +53,15 @@ impl FixT {
     ///
     /// C API: `Ptngc_fix_t_to_d`
     pub(crate) fn to_f64_signed(self, max: f64) -> f64 {
-        f64::from(self.0) * (max / f64::from(Self::MAX32BIT))
+        let mut f = self;
+        let sign = if self.0 & Self::SIGN32BIT > 0 {
+            f.0 &= Self::MAX31BIT;
+            -1.0
+        } else {
+            1.0
+        };
+
+        f64::from(f.0) * (max / f64::from(Self::MAX31BIT)) * sign
     }
 }
 
@@ -160,7 +168,7 @@ pub(crate) fn fixt_pair_to_f64(hi: FixT, lo: FixT) -> f64 {
     };
 
     let ent = f64::from(magnitude_hi);
-    let frac = lo.to_f64_signed(1.0);
+    let frac = lo.to_f64_unsigned(1.0);
     let val = ent + frac;
 
     if negative { -val } else { val }
