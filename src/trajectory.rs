@@ -8034,7 +8034,24 @@ impl Trajectory {
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f64>, i64), TngError> {
-        self.read_range(BlockID::TrajBoxShape, first_frame, last_frame)
+        assert!(
+            first_frame <= last_frame,
+            "`first_frame`, must be lower or equal to `last_frame`"
+        );
+
+        let (data_vec, _n_particles, _n_values_per_frame, stride_length, data_type) = self
+            .gen_data_vector_interval_get(
+                BlockID::TrajBoxShape,
+                false,
+                first_frame,
+                last_frame,
+                USE_HASH,
+            )?;
+        if data_type != DataType::Float {
+            return Err(TngError::Constraint("data was not float".to_string()));
+        }
+
+        Ok((data_vec, stride_length))
     }
 
     pub fn util_trajectory_next_frame_present_data_blocks_find(
@@ -8785,6 +8802,7 @@ impl Trajectory {
     /// data.
     pub fn util_box_shape_read(&mut self) -> Result<(Vec<f32>, i64), TngError> {
         let n_frames = self.num_frames_get().expect("there has to be Some frames");
+        // we go directly to `gen_data_vector_interval_get` instead of using `data_vector_interval_get`
         let (values, _n_particles, _n_values_per_frame, stride_length, data_type) = self
             .gen_data_vector_interval_get(
                 BlockID::TrajBoxShape,
