@@ -7,6 +7,8 @@ A Rust port of the Trajectory Next Generation (TNG) library. The original librar
 
 The port matches the behavior at commit `f8d55273` at [https://gitlab.com/gromacs/tng](https://gitlab.com/gromacs/tng).
 
+A few bug fixes has been commited. These have been and will be tagged with (extra) to more easily distinguish code changes from the original TNG lib.
+
 ## Development
 You can run the tests with debug output in the following way:
 ```bash
