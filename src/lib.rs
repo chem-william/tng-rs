@@ -72,7 +72,7 @@ const PARTICLE_DEPENDENT: u8 = 2;
 #[cfg(test)]
 mod integration {
     use crate::{
-        FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT,
+        FRAME_DEPENDENT, MAX_STR_LEN, PARTICLE_DEPENDENT, TngError,
         data::{Compression, DataType},
         gen_block::BlockID,
         molecule::Molecule,
@@ -715,12 +715,42 @@ mod integration {
             "Unexpected data blocks in next frame."
         );
 
+        test_chemfiles_bug(traj, n_frames_per_frame_set, n_frames);
+
         let (codec_id, _factor) = traj
             .util_frame_current_compression_get(BlockID::TrajPositions)
             .unwrap();
         assert_eq!(codec_id, Compression::GZip, "Could not get compression");
 
         traj.util_trajectory_close().unwrap();
+    }
+
+    fn test_chemfiles_bug(traj: &mut Trajectory, n_frames_per_frame_set: i64, n_frames: i64) {
+        let requested_blocks = [BlockID::TrajPositions];
+        let mut current_frame = -1;
+        for expected_frame in 0..(n_frames_per_frame_set + 2) {
+            let (next_frame, n_blocks) = traj
+                .util_trajectory_next_frame_present_data_blocks_find(
+                    current_frame,
+                    requested_blocks.len() as i64,
+                    &requested_blocks,
+                )
+                .unwrap();
+            assert_eq!(n_blocks, 1, "Unexpected data blocks in next frame.");
+            assert_eq!(
+                next_frame, expected_frame,
+                "Unexpected frame while scanning for positions data."
+            );
+            current_frame = next_frame;
+        }
+        match traj.util_trajectory_next_frame_present_data_blocks_find(
+            n_frames - 1,
+            requested_blocks.len() as i64,
+            &requested_blocks,
+        ) {
+            Err(TngError::Constraint(_) | TngError::NotFound(_)) => {}
+            result => panic!("unexpected result after the last frame: {result:?}"),
+        }
     }
 
     /// C API: `tng_test_append()` in `tng_io_testing.c:1143`

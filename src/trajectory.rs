@@ -8101,8 +8101,7 @@ impl Trajectory {
         min_diff = -1;
 
         for i in 0..self.current_trajectory_frame_set.n_particle_data_blocks {
-            let data = &self.current_trajectory_frame_set.tr_particle_data[i].clone();
-            let block_id = data.block_id;
+            let block_id = self.current_trajectory_frame_set.tr_particle_data[i].block_id;
 
             if n_requested_data_block_ids > 0 {
                 let mut found = false;
@@ -8120,9 +8119,11 @@ impl Trajectory {
                 }
             }
 
+            let last_retrieved_frame =
+                self.current_trajectory_frame_set.tr_particle_data[i].last_retrieved_frame;
             if !read_all
-                && (data.last_retrieved_frame < self.current_trajectory_frame_set.first_frame
-                    || data.last_retrieved_frame
+                && (last_retrieved_frame < self.current_trajectory_frame_set.first_frame
+                    || last_retrieved_frame
                         >= self.current_trajectory_frame_set.first_frame
                             + self.current_trajectory_frame_set.n_frames)
             {
@@ -8139,6 +8140,7 @@ impl Trajectory {
                     }
                 }
             }
+            let data = self.current_trajectory_frame_set.tr_particle_data[i].clone();
             let data_frame = if self.current_trajectory_frame_set.first_frame != current_frame
                 && data.last_retrieved_frame >= 0
             {
@@ -8171,11 +8173,11 @@ impl Trajectory {
 
                 min_diff = frame_diff;
             }
+            self.current_trajectory_frame_set.tr_particle_data[i].last_retrieved_frame = data_frame;
         }
 
         for i in 0..self.current_trajectory_frame_set.n_data_blocks {
-            data = self.current_trajectory_frame_set.tr_data[i].clone();
-            let block_id = data.block_id;
+            let block_id = self.current_trajectory_frame_set.tr_data[i].block_id;
 
             if n_requested_data_block_ids > 0 {
                 let mut found = false;
@@ -8193,9 +8195,11 @@ impl Trajectory {
                 }
             }
 
+            let last_retrieved_frame =
+                self.current_trajectory_frame_set.tr_data[i].last_retrieved_frame;
             if !read_all
-                && (data.last_retrieved_frame < self.current_trajectory_frame_set.first_frame
-                    || data.last_retrieved_frame
+                && (last_retrieved_frame < self.current_trajectory_frame_set.first_frame
+                    || last_retrieved_frame
                         >= self.current_trajectory_frame_set.first_frame
                             + self.current_trajectory_frame_set.n_frames)
             {
@@ -8212,6 +8216,7 @@ impl Trajectory {
                     }
                 }
             }
+            data = self.current_trajectory_frame_set.tr_data[i].clone();
             let data_frame = if self.current_trajectory_frame_set.first_frame != current_frame
                 && data.last_retrieved_frame >= 0
             {
@@ -8244,6 +8249,7 @@ impl Trajectory {
 
                 min_diff = frame_diff;
             }
+            self.current_trajectory_frame_set.tr_data[i].last_retrieved_frame = data_frame;
         }
         if min_diff < 0 {
             return Err(TngError::Constraint(format!(
