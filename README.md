@@ -1,5 +1,6 @@
 [![Codecov](https://codecov.io/github/chem-william/tng-rs/coverage.svg?branch=main)](https://codecov.io/gh/chem-william/tng-rs)
 [![dependency status](https://deps.rs/repo/github/chem-william/tng-rs/status.svg)](https://deps.rs/repo/github/chem-william/tng-rs)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19699812.svg)](https://doi.org/10.5281/zenodo.19699812)
 
 # tng-rs
 
