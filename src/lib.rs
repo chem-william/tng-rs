@@ -27,7 +27,7 @@ mod bwlzh;
 mod chain;
 mod coder;
 pub mod compress;
-mod data;
+pub mod data;
 mod dict;
 pub mod fix_point;
 pub mod gen_block;
