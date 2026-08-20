@@ -1555,8 +1555,6 @@ fn compress_quantized_vel(
     prec_lo: FixT,
     data: &mut Option<&mut [u8]>,
 ) -> usize {
-    let datablock;
-
     let mut bufloc = 0;
     // Information needed for decompression
     if let Some(mut_data) = data.as_mut() {
@@ -1637,7 +1635,7 @@ fn compress_quantized_vel(
     // The initial frame
     let output_length;
     let mut length = n_atoms * 3;
-    match initial_coding {
+    let datablock = match initial_coding {
         TNG_COMPRESS_ALGO_VEL_STOPBIT_ONETOONE
         | TNG_COMPRESS_ALGO_VEL_TRIPLET_ONETOONE
         | TNG_COMPRESS_ALGO_VEL_BWLZH_ONETOONE => {
@@ -1653,10 +1651,10 @@ fn compress_quantized_vel(
                     &mut speed,
                 )
                 .expect("packed array");
-            datablock = Some(out_datablock);
+            Some(out_datablock)
         }
         _ => unreachable!(),
-    }
+    };
     // Block length
     if let Some(mut_data) = data.as_mut() {
         bufferfix(
