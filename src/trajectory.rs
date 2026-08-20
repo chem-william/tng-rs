@@ -7133,7 +7133,7 @@ impl Trajectory {
     ///
     /// Add a particle dependent data block.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn particle_data_block_add(
+    pub fn particle_data_block_add(
         &mut self,
         id: BlockID,
         block_name: &str,
@@ -7365,7 +7365,7 @@ impl Trajectory {
     }
 
     /// C API: `tng_frame_set_with_time_new`.
-    pub(crate) fn frame_set_with_time_new(
+    pub fn frame_set_with_time_new(
         &mut self,
         first_frame: i64,
         n_frames: i64,
@@ -8277,7 +8277,8 @@ impl Trajectory {
         let next_frame = current_frame + min_diff;
         Ok((next_frame, n_data_blocks_in_next_frame))
     }
-    pub(crate) fn util_frame_current_compression_get(
+    /// Returns the codec and multiplier of a block in the current frame set.
+    pub fn util_frame_current_compression_get(
         &mut self,
         block_id: BlockID,
     ) -> Result<(Compression, f64), TngError> {
