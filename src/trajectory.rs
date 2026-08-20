@@ -978,9 +978,12 @@ impl Trajectory {
 
             let inp_file = self.input_file.as_mut().expect("init input_file");
             if let Ok(()) = inp_file.read_exact(&mut buffer) {
-                for (i, chunk) in buffer.chunks_exact(8).enumerate() {
-                    let bytes: [u8; 8] = chunk.try_into().expect("chunk is exactly 8 bytes");
-                    mapping.real_particle_numbers[i] = i64::from_ne_bytes(bytes);
+                let (chunks, []) = buffer.as_chunks::<8>() else {
+                    panic!("buffer length must be divisible by 8");
+                };
+
+                for (i, chunk) in chunks.iter().enumerate() {
+                    mapping.real_particle_numbers[i] = i64::from_ne_bytes(*chunk);
                 }
             } else {
                 eprintln!("Cannot read block. {}:{}", file!(), line!());
@@ -5121,27 +5124,30 @@ impl Trajectory {
 
         let float_values: Vec<f64> = match data_type {
             DataType::Char => unimplemented!("haven't implemented values to strings"),
-            DataType::Int => values
-                .chunks_exact(8)
-                .map(|chunk| {
-                    let arr = <[u8; 8]>::try_from(chunk).expect("Chunk should be 8 bytes");
-                    i64::from_ne_bytes(arr) as f64
-                })
-                .collect(),
-            DataType::Float => values
-                .chunks_exact(4)
-                .map(|chunk| {
-                    let arr = <[u8; 4]>::try_from(chunk).expect("Chunk should be 4 bytes");
-                    f64::from(f32::from_ne_bytes(arr))
-                })
-                .collect(),
-            DataType::Double => values
-                .chunks_exact(8)
-                .map(|chunk| {
-                    let arr = <[u8; 8]>::try_from(chunk).expect("Chunk should be 8 bytes");
-                    f64::from_ne_bytes(arr)
-                })
-                .collect(),
+            DataType::Int => {
+                let (chunks, remainder) = values.as_chunks::<8>();
+                assert!(remainder.is_empty(), "values length must be divisible by 8");
+
+                chunks
+                    .iter()
+                    .map(|arr| i64::from_ne_bytes(*arr) as f64)
+                    .collect()
+            }
+            DataType::Float => {
+                let (chunks, remainder) = values.as_chunks::<4>();
+                assert!(remainder.is_empty(), "values length must be divisible by 4");
+
+                chunks
+                    .iter()
+                    .map(|arr| f64::from(f32::from_ne_bytes(*arr)))
+                    .collect()
+            }
+            DataType::Double => {
+                let (chunks, remainder) = values.as_chunks::<8>();
+                assert!(remainder.is_empty(), "values length must be divisible by 8");
+
+                chunks.iter().map(|arr| f64::from_ne_bytes(*arr)).collect()
+            }
         };
         Ok((
             n_frames,

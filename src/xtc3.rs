@@ -435,7 +435,7 @@ fn insert_batch(
 ) -> usize {
     let mut tmp_prevcoord = [prevcoord[0], prevcoord[1], prevcoord[2]];
 
-    for chunk in encode_ints.chunks_exact(3).take(startenc) {
+    for chunk in encode_ints.as_chunks::<3>().0.iter().take(startenc) {
         tmp_prevcoord[0] = tmp_prevcoord[0].wrapping_add(chunk[0]);
         tmp_prevcoord[1] = tmp_prevcoord[1].wrapping_add(chunk[1]);
         tmp_prevcoord[2] = tmp_prevcoord[2].wrapping_add(chunk[2]);
@@ -446,8 +446,10 @@ fn insert_batch(
     let end_idx = total_triplets * 3;
 
     for (encode_chunk, input_chunk) in encode_ints[start_idx..end_idx]
-        .chunks_exact_mut(3)
-        .zip(input_ptr[start_idx..].chunks_exact(3))
+        .as_chunks_mut::<3>()
+        .0
+        .iter_mut()
+        .zip(input_ptr[start_idx..].as_chunks::<3>().0.iter())
     {
         encode_chunk[0] = input_chunk[0].wrapping_sub(tmp_prevcoord[0]);
         encode_chunk[1] = input_chunk[1].wrapping_sub(tmp_prevcoord[1]);
