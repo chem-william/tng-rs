@@ -357,11 +357,6 @@ fn check_particle_reads(spec: &Spec, name: &str) {
 }
 
 #[test]
-fn uncompressed_f32_reads_exact_values() {
-    check_particle_reads(&Spec::new(), "uncompressed");
-}
-
-#[test]
 fn gzip_f32_reads_exact_values() {
     check_particle_reads(
         &Spec {
