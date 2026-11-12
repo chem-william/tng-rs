@@ -1,9 +1,8 @@
-//! Tests for the `f32` range readers (`util_*_read_range_f32`).
+//! Tests for the range readers (`util_*_read_range` and `util_*_read_range_f32`).
 //!
 //! Expected values are computed structurally from the block layout the writer produces
-//! (frame-major, then particle-major, then components).
-//! `f64_readers_match_known_values` checks the `f64` readers against the
-//! same independent expectations, so a bug shared by both implementations cannot pass.
+//! (frame-major, then particle-major, then components), so a bug shared by both reader
+//! families cannot pass.
 
 use std::fs;
 
@@ -312,52 +311,59 @@ fn assert_close_f32(actual: &[f32], expected: &[f32], tol: f32, context: &str) {
     }
 }
 
-/// Reads every `util_*_read_range_f32` over the full trajectory and checks the exact values.
+type F32Reader = fn(&mut Trajectory, i64, i64) -> Result<(Vec<f32>, i64), TngError>;
+type F64Reader = fn(&mut Trajectory, i64, i64) -> Result<(Vec<f64>, i64), TngError>;
+
+/// Reads the full trajectory with every `util_*_read_range` and `util_*_read_range_f32` and
+/// checks the values.
 fn check_particle_reads(spec: &Spec, name: &str) {
     let (_directory, path) = write_trajectory(name, spec);
     let last_frame = spec.frames_per_set * spec.frame_sets - 1;
     let tol = tolerance(spec.compression);
-    let expected_box = expected_box_values(spec, 0, last_frame);
 
     let mut trajectory = open_trajectory(&path);
-    for (reader, offset, label) in [
+    for (label, expected, read_f32, read_f64) in [
         (
-            Trajectory::util_pos_read_range_f32
-                as fn(&mut Trajectory, i64, i64) -> Result<(Vec<f32>, i64), TngError>,
-            0.0,
             "positions",
+            expected_particle_values(spec, 0.0, 0, last_frame),
+            Trajectory::util_pos_read_range_f32 as F32Reader,
+            Trajectory::util_pos_read_range as F64Reader,
         ),
         (
-            Trajectory::util_vel_read_range_f32,
-            VELOCITY_OFFSET,
             "velocities",
+            expected_particle_values(spec, VELOCITY_OFFSET, 0, last_frame),
+            Trajectory::util_vel_read_range_f32,
+            Trajectory::util_vel_read_range,
         ),
         (
-            Trajectory::util_force_read_range_f32,
-            FORCE_OFFSET,
             "forces",
+            expected_particle_values(spec, FORCE_OFFSET, 0, last_frame),
+            Trajectory::util_force_read_range_f32,
+            Trajectory::util_force_read_range,
+        ),
+        (
+            "box",
+            expected_box_values(spec, 0, last_frame),
+            Trajectory::util_box_shape_read_range_f32,
+            Trajectory::util_box_shape_read_range,
         ),
     ] {
-        let (values, stride) = reader(&mut trajectory, 0, last_frame)
-            .unwrap_or_else(|error| panic!("{name}/{label}: {error}"));
-        assert_eq!(stride, spec.stride, "{name}/{label}: stride mismatch");
-        assert_close_f32(
-            &values,
-            &expected_particle_values(spec, offset, 0, last_frame),
-            tol,
-            &format!("{name}/{label}"),
-        );
-    }
+        let (values, stride) = read_f32(&mut trajectory, 0, last_frame)
+            .unwrap_or_else(|error| panic!("{name}/{label}/f32: {error}"));
+        assert_eq!(stride, spec.stride, "{name}/{label}/f32: stride mismatch");
+        assert_close_f32(&values, &expected, tol, &format!("{name}/{label}/f32"));
 
-    let (box_shape, stride) = trajectory
-        .util_box_shape_read_range_f32(0, last_frame)
-        .unwrap_or_else(|error| panic!("{name}/box: {error}"));
-    assert_eq!(stride, spec.stride, "{name}/box: stride mismatch");
-    assert_close_f32(&box_shape, &expected_box, tol, &format!("{name}/box"));
+        let (values, stride) = read_f64(&mut trajectory, 0, last_frame)
+            .unwrap_or_else(|error| panic!("{name}/{label}/f64: {error}"));
+        assert_eq!(stride, spec.stride, "{name}/{label}/f64: stride mismatch");
+        // The blocks store `f32` values, so narrowing the widened values back is exact.
+        let values: Vec<f32> = values.iter().map(|&value| value as f32).collect();
+        assert_close_f32(&values, &expected, tol, &format!("{name}/{label}/f64"));
+    }
 }
 
 #[test]
-fn gzip_f32_reads_exact_values() {
+fn gzip_reads_exact_values() {
     check_particle_reads(
         &Spec {
             compression: Compression::GZip,
@@ -368,7 +374,7 @@ fn gzip_f32_reads_exact_values() {
 }
 
 #[test]
-fn tng_f32_reads_within_compression_precision() {
+fn tng_reads_within_compression_precision() {
     // TNG compression requires more than a single frame in this writer, so use a sparse
     // multi-frame frame set (the TNG payload round-trips through the quantiser).
     check_particle_reads(
@@ -631,57 +637,6 @@ fn reversed_range_panics() {
     let (_directory, path) = write_trajectory("reversed-range", &spec);
     let mut trajectory = open_trajectory(&path);
     let _ = trajectory.util_pos_read_range_f32(1, 0);
-}
-
-#[test]
-fn f64_readers_match_known_values() {
-    let spec = Spec {
-        frames_per_set: 10,
-        stride: 5,
-        frame_sets: 2,
-        ..Spec::new()
-    };
-    let (_directory, path) = write_trajectory("f64", &spec);
-    let mut trajectory = open_trajectory(&path);
-
-    for (values, offset, label) in [
-        (
-            trajectory.util_pos_read_range(0, 19).unwrap(),
-            0.0,
-            "f64 positions",
-        ),
-        (
-            trajectory.util_vel_read_range(0, 19).unwrap(),
-            VELOCITY_OFFSET,
-            "f64 velocities",
-        ),
-        (
-            trajectory.util_force_read_range(0, 19).unwrap(),
-            FORCE_OFFSET,
-            "f64 forces",
-        ),
-    ] {
-        let (values, stride) = values;
-        assert_eq!(stride, 5, "{label}: stride mismatch");
-        assert_close_f32(
-            &values.iter().map(|value| *value as f32).collect::<Vec<_>>(),
-            &expected_particle_values(&spec, offset, 0, 19),
-            0.0,
-            label,
-        );
-    }
-
-    let (box_shape, stride) = trajectory.util_box_shape_read_range(0, 19).unwrap();
-    assert_eq!(stride, 5);
-    assert_close_f32(
-        &box_shape
-            .iter()
-            .map(|value| *value as f32)
-            .collect::<Vec<_>>(),
-        &expected_box_values(&spec, 0, 19),
-        0.0,
-        "f64 box shape",
-    );
 }
 
 #[test]
