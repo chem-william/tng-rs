@@ -7875,7 +7875,19 @@ impl Trajectory {
     }
 
     /// C API: `tng_particle_mapping_add`.
-    pub(crate) fn particle_mapping_add(
+    ///
+    /// Add a particle mapping to the current frame set: local particle `num_first_particle + i`
+    /// of the frame set's data blocks is real particle `mapping_table[i]` (the number used in
+    /// the molecular system), for the `n_particles` particles of the mapping.
+    ///
+    /// Mappings are kept when a new frame set is created; clear them with
+    /// [`Self::frame_set_particle_mapping_free`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TngError::Constraint`] if the particle range overlaps a mapping that is
+    /// already part of the frame set.
+    pub fn particle_mapping_add(
         &mut self,
         num_first_particle: i64,
         n_particles: i64,
@@ -7929,7 +7941,9 @@ impl Trajectory {
     }
 
     /// C API: `tng_frame_set_particle_mapping_free`.
-    pub(crate) fn frame_set_particle_mapping_free(&mut self) {
+    ///
+    /// Remove all particle mappings (in memory) from the current frame set.
+    pub fn frame_set_particle_mapping_free(&mut self) {
         let frame_set = &mut self.current_trajectory_frame_set;
 
         if frame_set.n_mapping_blocks > 0 && !frame_set.mappings.is_empty() {
@@ -9828,199 +9842,4 @@ fn compress_uncompress_vel_gen<T: Float>(
     }
 
     Ok((prec_hi, prec_lo))
-}
-
-#[cfg(test)]
-mod typed_float_range_tests {
-    use super::*;
-
-    const PARTICLES: i64 = 4;
-    const VALUES_PER_FRAME: i64 = 3;
-
-    fn sample_value(stored_frame: i64, particle: i64, component: i64) -> f32 {
-        1.0 + (stored_frame as f32) * 100.0 + (particle as f32) * 10.0 + (component as f32) * 0.5
-    }
-
-    fn payload(first_stored: i64, n_stored_frames: i64) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        for stored_frame in first_stored..first_stored + n_stored_frames {
-            for particle in 0..PARTICLES {
-                for component in 0..VALUES_PER_FRAME {
-                    bytes.extend_from_slice(
-                        &sample_value(stored_frame, particle, component).to_ne_bytes(),
-                    );
-                }
-            }
-        }
-        bytes
-    }
-
-    /// Local particle `j` maps to real particle `real_order[j]`.
-    fn real_order() -> Vec<i64> {
-        (0..PARTICLES).map(|j| PARTICLES - 1 - j).collect()
-    }
-
-    struct Fixture {
-        _directory: tempfile::TempDir,
-        path: std::path::PathBuf,
-        frames_per_set: i64,
-        stride: i64,
-        frame_sets: i64,
-    }
-
-    impl Fixture {
-        fn new(
-            name: &str,
-            frames_per_set: i64,
-            stride: i64,
-            frame_sets: i64,
-            mapping: bool,
-        ) -> Self {
-            let directory = tempfile::tempdir().expect("temporary directory");
-            let path = directory.path().join(format!("{name}.tng"));
-
-            let mut trajectory = Trajectory::new();
-            trajectory.output_file_set(&path);
-            trajectory.compression_precision = 1.0e6;
-            let molecule = trajectory.add_molecule("particles");
-            let chain = trajectory.add_chain(molecule, "A");
-            let residue = trajectory.chain_residue_add(molecule, chain, "RES");
-            for _ in 0..PARTICLES {
-                trajectory.residue_atom_add(molecule, residue, "P", "P");
-            }
-            trajectory.molecule_cnt_set(molecule, 1);
-            trajectory.file_headers_write(true).expect("write headers");
-
-            // Frames per frame set is a multiple of the stride so the frame-set-local sample
-            // grid lines up with the global `frame / stride` indexing.
-            let stored_per_set = (frames_per_set - 1) / stride + 1;
-            for frame_set in 0..frame_sets {
-                let first_frame = frame_set * frames_per_set;
-                trajectory
-                    .frame_set_with_time_new(
-                        first_frame,
-                        frames_per_set,
-                        first_frame as f64 * 2e-15,
-                    )
-                    .expect("create frame set");
-                trajectory.frame_set_particle_mapping_free();
-                if mapping {
-                    trajectory
-                        .particle_mapping_add(0, PARTICLES, &real_order())
-                        .expect("add particle mapping");
-                }
-                let first_stored = frame_set * frames_per_set / stride;
-                trajectory
-                    .particle_data_block_add(
-                        BlockID::TrajPositions,
-                        "POSITIONS",
-                        DataType::Float,
-                        &BlockType::Trajectory,
-                        frames_per_set,
-                        VALUES_PER_FRAME,
-                        stride,
-                        0,
-                        PARTICLES,
-                        Compression::Uncompressed,
-                        Some(&payload(first_stored, stored_per_set)),
-                    )
-                    .expect("add positions");
-                trajectory.frame_set_write(true).expect("write frame set");
-            }
-            trajectory.trajectory_destroy().expect("close trajectory");
-
-            Self {
-                _directory: directory,
-                path,
-                frames_per_set,
-                stride,
-                frame_sets,
-            }
-        }
-
-        fn open(&self) -> Trajectory {
-            let mut trajectory = Trajectory::new();
-            trajectory.input_file_set(&self.path);
-            trajectory.file_headers_read(true).expect("read headers");
-            trajectory
-        }
-
-        /// Expected values for a range, expressed in real-particle numbering.
-        fn expected(&self, first_frame: i64, last_frame: i64) -> Vec<f32> {
-            let frame_size = (PARTICLES * VALUES_PER_FRAME) as usize;
-            let n_samples = (last_frame - first_frame) / self.stride + 1;
-            let n_values = n_samples as usize * frame_size;
-            let mapping = real_order();
-            let mut expected = vec![0.0f32; n_values];
-            for sample in 0..n_samples {
-                let stored_frame = first_frame / self.stride + sample;
-                for j in 0..PARTICLES {
-                    for component in 0..VALUES_PER_FRAME {
-                        let dst = sample as usize * frame_size
-                            + mapping[j as usize] as usize * VALUES_PER_FRAME as usize
-                            + component as usize;
-                        expected[dst] = sample_value(stored_frame, j, component);
-                    }
-                }
-            }
-            expected
-        }
-    }
-
-    #[test]
-    fn mapping_reorders_into_real_particle_numbering() {
-        let fixture = Fixture::new("unit-mapping", 4, 1, 1, true);
-        let mut trajectory = fixture.open();
-        let (values, stride) = trajectory.util_pos_read_range_f32(0, 3).unwrap();
-        assert_eq!(stride, 1);
-        assert_eq!(values, fixture.expected(0, 3));
-        // Local particle 0 (value 1.0) is stored under real particle 3.
-        assert_eq!(
-            values[(3 * VALUES_PER_FRAME) as usize],
-            sample_value(0, 0, 0)
-        );
-    }
-
-    #[test]
-    fn mapping_with_sparse_stride_across_frame_sets() {
-        // The review's suspicious combination: mapping + sparse stride, spanning frame sets.
-        let fixture = Fixture::new("unit-mapping-sparse", 10, 5, 2, true);
-        let mut trajectory = fixture.open();
-        let (values, stride) = trajectory.util_pos_read_range_f32(0, 19).unwrap();
-        assert_eq!(stride, 5);
-        assert_eq!(values.len(), 4 * (PARTICLES * VALUES_PER_FRAME) as usize);
-        assert_eq!(values, fixture.expected(0, 19));
-    }
-
-    #[test]
-    fn sparse_stride_without_mapping_across_frame_sets() {
-        let fixture = Fixture::new("unit-sparse", 10, 5, 2, false);
-        let mut trajectory = fixture.open();
-        let (values, stride) = trajectory.util_pos_read_range_f32(0, 19).unwrap();
-        assert_eq!(stride, 5);
-        assert_eq!(values.len(), 4 * (PARTICLES * VALUES_PER_FRAME) as usize);
-        // Without a mapping the identity order is used.
-        let frame_size = (PARTICLES * VALUES_PER_FRAME) as usize;
-        for sample in 0..4i64 {
-            assert_eq!(
-                values[sample as usize * frame_size],
-                sample_value(sample, 0, 0)
-            );
-        }
-
-        // A partial range inside one frame set must not touch the other frame set.
-        let (values, _) = trajectory.util_pos_read_range_f32(12, 19).unwrap();
-        assert_eq!(values.len(), 2 * frame_size);
-        assert_eq!(values[0], sample_value(2, 0, 0));
-        assert_eq!(values[frame_size], sample_value(3, 0, 0));
-    }
-
-    #[test]
-    fn multi_frame_set_range_beyond_the_last_frame_is_rejected() {
-        let fixture = Fixture::new("unit-past-end", 10, 5, 1, false);
-        let mut trajectory = fixture.open();
-        assert!(trajectory.util_pos_read_range_f32(0, 9).is_ok());
-        // The trajectory stores 10 frames; asking beyond it must be an error, not a panic.
-        assert!(trajectory.util_pos_read_range_f32(0, 40).is_err());
-    }
 }

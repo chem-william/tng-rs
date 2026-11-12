@@ -86,6 +86,8 @@ struct Spec {
     frame_sets: i64,
     /// Data type used for the positions block.
     positions_type: DataType,
+    /// Whether every frame set maps its local particles to [`real_particle`] numbers.
+    mapping: bool,
 }
 
 impl Spec {
@@ -96,6 +98,16 @@ impl Spec {
             compression: Compression::Uncompressed,
             frame_sets: 1,
             positions_type: DataType::Float,
+            mapping: false,
+        }
+    }
+
+    /// Particle number under which the readers return local particle `particle`.
+    fn returned_particle(&self, particle: i64) -> i64 {
+        if self.mapping {
+            real_particle(particle)
+        } else {
+            particle
         }
     }
 
@@ -114,12 +126,27 @@ impl Spec {
     }
 }
 
+/// Real particle number of local particle `particle` in a mapped frame set: the order is
+/// reversed, so a reader that ignores the mapping returns the particles in the wrong slots.
+fn real_particle(particle: i64) -> i64 {
+    PARTICLES - 1 - particle
+}
+
 /// Adds one frame set worth of blocks to `trajectory`.
 fn write_frame_set(trajectory: &mut Trajectory, spec: &Spec, frame_set: i64) {
     let first_frame = frame_set * spec.frames_per_set;
     trajectory
         .frame_set_with_time_new(first_frame, spec.frames_per_set, first_frame as f64 * 2e-15)
         .expect("create frame set");
+
+    if spec.mapping {
+        // A new frame set keeps the mappings of the previous one.
+        trajectory.frame_set_particle_mapping_free();
+        let real_particles: Vec<i64> = (0..PARTICLES).map(real_particle).collect();
+        trajectory
+            .particle_mapping_add(0, PARTICLES, &real_particles)
+            .expect("add particle mapping");
+    }
 
     let n_stored = spec.stored_frames_per_set();
     let first_stored = spec.first_stored_of_frame_set(frame_set);
@@ -238,9 +265,9 @@ fn expected_particle_values(
     for sample in 0..n_samples {
         let stored = stored_index_of_sample(first_frame, spec.stride, sample);
         for particle in 0..PARTICLES {
+            let slot = sample * PARTICLES + spec.returned_particle(particle);
             for component in 0..VALUES_PER_FRAME {
-                expected
-                    [((sample * PARTICLES + particle) * VALUES_PER_FRAME + component) as usize] =
+                expected[(slot * VALUES_PER_FRAME + component) as usize] =
                     sample_value(stored, particle, component) + offset;
             }
         }
@@ -430,6 +457,67 @@ fn multiple_frame_sets_cross_the_boundary() {
             "sample {sample} was not decoded in order"
         );
     }
+
+    // A partial range inside the second frame set must not touch the first one.
+    let (values, _) = trajectory
+        .util_pos_read_range_f32(12, 19)
+        .expect("positions of the second frame set");
+    assert_eq!(values.len(), 2 * frame_size);
+    assert_eq!(values[0], sample_value(2, 0, 0));
+    assert_eq!(values[frame_size], sample_value(3, 0, 0));
+}
+
+#[test]
+fn mapping_reorders_into_real_particle_numbering() {
+    let spec = Spec {
+        frames_per_set: 4,
+        mapping: true,
+        ..Spec::new()
+    };
+    let (_directory, path) = write_trajectory("mapping", &spec);
+    let mut trajectory = open_trajectory(&path);
+
+    let (values, stride) = trajectory.util_pos_read_range_f32(0, 3).unwrap();
+    assert_eq!(stride, 1);
+    assert_eq!(values, expected_particle_values(&spec, 0.0, 0, 3));
+    // Local particle 0 (value 1.0) is stored under real particle 3.
+    assert_eq!(
+        values[(3 * VALUES_PER_FRAME) as usize],
+        sample_value(0, 0, 0)
+    );
+}
+
+#[test]
+fn mapping_with_sparse_stride_across_frame_sets() {
+    let spec = Spec {
+        frames_per_set: 10,
+        stride: 5,
+        frame_sets: 2,
+        mapping: true,
+        ..Spec::new()
+    };
+    check_particle_reads(&spec, "mapping-sparse");
+
+    let (_directory, path) = write_trajectory("mapping-sparse-positions", &spec);
+    let mut trajectory = open_trajectory(&path);
+    let (values, stride) = trajectory.util_pos_read_range_f32(0, 19).unwrap();
+    assert_eq!(stride, 5);
+    assert_eq!(values.len(), 4 * (PARTICLES * VALUES_PER_FRAME) as usize);
+    assert_eq!(values, expected_particle_values(&spec, 0.0, 0, 19));
+}
+
+#[test]
+fn multi_frame_set_range_beyond_the_last_frame_is_rejected() {
+    let spec = Spec {
+        frames_per_set: 10,
+        stride: 5,
+        ..Spec::new()
+    };
+    let (_directory, path) = write_trajectory("past-end", &spec);
+    let mut trajectory = open_trajectory(&path);
+    assert!(trajectory.util_pos_read_range_f32(0, 9).is_ok());
+    // The trajectory stores 10 frames; asking beyond it must be an error, not a panic.
+    assert!(trajectory.util_pos_read_range_f32(0, 40).is_err());
 }
 
 #[test]
