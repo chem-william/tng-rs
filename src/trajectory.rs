@@ -5334,7 +5334,7 @@ impl Trajectory {
                             as usize)
                             * elem_size;
                         let dst = (i * i_step + mapping * n_values_per_frame + k) as usize;
-                        output[dst] = interval_bytes_to_f64(&raw[src..src + elem_size], data_type);
+                        output[dst] = f64::decode_value(data_type, &raw[src..src + elem_size]);
                     }
                 }
             } else {
@@ -5345,7 +5345,7 @@ impl Trajectory {
                 for j in 0..n_values_per_frame {
                     let src = ((current_frame_pos * i_step + j) as usize) * elem_size;
                     let dst = (i * i_step + j) as usize;
-                    output[dst] = interval_bytes_to_f64(&raw[src..src + elem_size], data_type);
+                    output[dst] = f64::decode_value(data_type, &raw[src..src + elem_size]);
                 }
             }
 
@@ -9430,26 +9430,6 @@ impl Trajectory {
     pub(crate) fn frame_set_frame_range_get(&self, frame_set: &TrajectoryFrameSet) -> (i64, i64) {
         let first_frame = frame_set.first_frame;
         (first_frame, first_frame + frame_set.n_frames - 1)
-    }
-}
-
-/// Interpret a byte slice as a numeric value and return it as f64.
-/// The slice must be exactly `data_type.get_size()` bytes.
-fn interval_bytes_to_f64(bytes: &[u8], data_type: DataType) -> f64 {
-    match data_type {
-        DataType::Int => {
-            let arr = <[u8; 8]>::try_from(bytes).expect("8 bytes for i64");
-            i64::from_ne_bytes(arr) as f64
-        }
-        DataType::Float => {
-            let arr = <[u8; 4]>::try_from(bytes).expect("4 bytes for f32");
-            f64::from(f32::from_ne_bytes(arr))
-        }
-        DataType::Double => {
-            let arr = <[u8; 8]>::try_from(bytes).expect("8 bytes for f64");
-            f64::from_ne_bytes(arr)
-        }
-        DataType::Char => unreachable!("char handled separately"),
     }
 }
 
