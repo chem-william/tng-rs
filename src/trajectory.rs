@@ -44,9 +44,8 @@ const USE_HASH: bool = true;
 /// A numeric type a data block can be decoded into.
 ///
 /// Implementations are the single authoritative place deciding which [`DataType`]s are
-/// acceptable: [`f64`] accepts `Int`, `Float` and `Double` (the legacy semantics of the
-/// `util_*read_range` APIs), while [`f32`] accepts only `Float` so that `Float` payloads are
-/// never widened to `f64` on their way to an `f32` result.
+/// acceptable: [`f64`] accepts `Int`, `Float` and `Double`,  while [`f32`] accepts only
+/// `Float` so that `Float` payloads are never widened to `f64` on their way to an `f32` result.
 ///
 /// Decoding assumes the byte representation is already in native endianness, which is
 /// guaranteed by [`Trajectory::data_read`]: non-TNG-compressed data is swapped to native
@@ -5033,8 +5032,7 @@ impl Trajectory {
             self.rescan_current_frame_set_blocks(USE_HASH, block_id)?;
         }
 
-        // Copy the scalar metadata out and drop the borrow: `gen_data_vector_get_as`
-        // mutates `self` while re-reading frame sets.
+        // Copy the scalar metadata out and drop the borrow
         let (mut stride_length, first_frame_with_data) = {
             let data = self
                 .data_block_ref(block_id, is_particle_data)
@@ -5420,7 +5418,6 @@ impl Trajectory {
         is_particle_data: bool,
         block_id: BlockID,
     ) -> Result<(i64, i64, i64, DataType, Vec<T>), TngError> {
-        // Phase 1: make sure the block is loaded. This may mutate `self`.
         if self.data_block_ref(block_id, is_particle_data).is_none() {
             let mut block = GenBlock::new();
             let mut file_pos = self.get_input_file_position();
@@ -5451,7 +5448,7 @@ impl Trajectory {
             }
         }
 
-        // Phase 2: read-only borrow of the block. Metadata is copied out as scalars so that the
+        // read-only borrow of the block. Metadata is copied out as scalars so that the
         // payload can be borrowed for the whole decode without cloning it.
         let block_ref = self
             .data_block_ref(block_id, is_particle_data)
@@ -8588,10 +8585,6 @@ impl Trajectory {
         Ok((data_vec, stride_length))
     }
 
-    /// Shared implementation of the `util_*_read_range_f32` family.
-    ///
-    /// The data type check is not repeated here: [`NumericValue`] for [`f32`] accepts only
-    /// [`DataType::Float`], so a non-`Float` block already failed typed decoding.
     fn read_float_range(
         &mut self,
         block_id: BlockID,
@@ -8613,8 +8606,7 @@ impl Trajectory {
     /// Read a range of particle positions as native `f32` values.
     ///
     /// Unlike [`Self::util_pos_read_range`] the `Float` payload is decoded directly into
-    /// `Vec<f32>` and is never widened to `f64`, halving the returned buffer size. Stride,
-    /// particle mapping and hash-verification behaviour match the `f64` APIs.
+    /// `Vec<f32>` and is never widened to `f64`.
     ///
     /// # Panics
     ///

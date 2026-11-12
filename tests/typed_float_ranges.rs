@@ -1,12 +1,9 @@
 //! Tests for the native `f32` range readers (`util_*_read_range_f32`).
 //!
 //! Expected values are computed structurally from the block layout the writer produces
-//! (frame-major, then particle-major, then components), *not* by comparing against the legacy
-//! `f64` readers. `legacy_f64_readers_match_known_values` checks the legacy readers against the
+//! (frame-major, then particle-major, then components).
+//! `legacy_f64_readers_match_known_values` checks the legacy readers against the
 //! same independent expectations, so a bug shared by both implementations cannot pass.
-//!
-//! Particle mappings are crate-internal, so mapping semantics are covered by the unit tests in
-//! `src/trajectory.rs`.
 
 use std::fs;
 
