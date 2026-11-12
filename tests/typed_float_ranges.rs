@@ -897,3 +897,48 @@ fn find_block_contents_handles_both_byte_orders() {
     // A header that is absent must not be reported as found.
     assert_eq!(find_block_contents(&big, BlockID::TrajVelocities), None);
 }
+
+#[test]
+fn per_frame_loop_reads_every_block_from_its_own_frame_set() {
+    // A per-frame loop reads several blocks of each frame set. Every block has to come from the
+    // frame set that holds the frame, not from the frame set it was first loaded for.
+    let spec = Spec {
+        frames_per_set: 10,
+        frame_sets: 3,
+        ..Spec::new()
+    };
+    let (_directory, path) = write_trajectory("per-frame-loop", &spec);
+    let mut trajectory = open_trajectory(&path);
+
+    for frame in 0..spec.frames_per_set * spec.frame_sets {
+        let (positions, _) = trajectory
+            .util_pos_read_range_f32(frame, frame)
+            .unwrap_or_else(|error| panic!("positions at frame {frame}: {error}"));
+        assert_close_f32(
+            &positions,
+            &expected_particle_values(&spec, 0.0, frame, frame),
+            0.0,
+            &format!("positions at frame {frame}"),
+        );
+
+        let (velocities, _) = trajectory
+            .util_vel_read_range_f32(frame, frame)
+            .unwrap_or_else(|error| panic!("velocities at frame {frame}: {error}"));
+        assert_close_f32(
+            &velocities,
+            &expected_particle_values(&spec, VELOCITY_OFFSET, frame, frame),
+            0.0,
+            &format!("velocities at frame {frame}"),
+        );
+
+        let (box_shape, _) = trajectory
+            .util_box_shape_read_range_f32(frame, frame)
+            .unwrap_or_else(|error| panic!("box shape at frame {frame}: {error}"));
+        assert_close_f32(
+            &box_shape,
+            &expected_box_values(&spec, frame, frame),
+            0.0,
+            &format!("box shape at frame {frame}"),
+        );
+    }
+}

@@ -447,13 +447,17 @@ pub struct Trajectory {
     hash_mismatch_count: u64,
     /// Ids of the first few blocks whose stored MD5 hash did not match their contents.
     mismatched_block_ids: Vec<BlockID>,
-    /// Whether the current frame set's blocks have been scanned in from the file.
+    /// Ids of the data blocks scanned in from the file since the current frame set was read.
     ///
-    /// The particle-mapping blocks of a frame set are needed to translate local to real particle
-    /// numbering, and they are dropped whenever a frame set is read. This flag records whether
-    /// they have been loaded again since then, so a range read does not have to re-read (and
-    /// re-decompress) the frame set's blocks for every single frame.
-    frame_set_blocks_scanned: bool,
+    /// A range read scans the requested block in together with the frame set's particle-mapping
+    /// blocks, which are needed to translate local to real particle numbering and are dropped
+    /// whenever a frame set is read. Recording the scanned blocks lets a range read skip
+    /// re-reading (and re-decompressing) them for every single frame.
+    ///
+    /// A block being loaded is not enough: blocks loaded for an earlier frame set stay in the
+    /// frame set's block list until they are read again, so only the blocks listed here hold the
+    /// current frame set's values. Every entry also implies that the mappings are loaded.
+    frame_set_scanned_blocks: Vec<BlockID>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -577,7 +581,7 @@ impl Trajectory {
 
             hash_mismatch_count: 0,
             mismatched_block_ids: Vec::new(),
-            frame_set_blocks_scanned: false,
+            frame_set_scanned_blocks: Vec::new(),
         }
     }
 
@@ -1067,9 +1071,9 @@ impl Trajectory {
             i64::try_from(file_pos).expect("u64 to i64");
 
         self.frame_set_particle_mapping_free();
-        // The mappings of the frame set are gone, so its blocks have to be scanned in again
-        // before a range read can translate particle numbering.
-        self.frame_set_blocks_scanned = false;
+        // The mappings are gone and the loaded blocks belong to the previous frame set, so every
+        // block has to be scanned in again before a range read uses it.
+        self.frame_set_scanned_blocks.clear();
 
         let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
@@ -5021,14 +5025,13 @@ impl Trajectory {
         // The mapping blocks are required to translate local to real particle numbering and are
         // not loaded by the narrow "only this data block" reader.
         //
-        // The frame set's blocks are cached, so they are only scanned in again when the current
-        // frame set has not been scanned yet (its mappings are dropped whenever a frame set is
-        // read) or when the requested block is not loaded. The C library re-reads the requested
-        // block on every call; caching it avoids re-reading and re-decompressing the same
-        // payload for every frame of a per-frame loop.
-        if !self.frame_set_blocks_scanned
-            || self.data_block_ref(block_id, is_particle_data).is_none()
-        {
+        // The frame set's blocks are cached, so a block is only scanned in again when it has not
+        // been scanned in since the current frame set was read. Whether the block is loaded
+        // does not tell: a block loaded for an earlier frame set stays in the block list and
+        // holds that frame set's values. The C library re-reads the requested block on every
+        // call; caching it avoids re-reading and re-decompressing the same payload for every
+        // frame of a per-frame loop.
+        if !self.frame_set_scanned_blocks.contains(&block_id) {
             self.rescan_current_frame_set_blocks(USE_HASH, block_id)?;
         }
 
@@ -5618,7 +5621,9 @@ impl Trajectory {
     /// duplicates.
     ///
     /// The data blocks themselves are not dropped: a block that is read again replaces the entry
-    /// it already has in the frame set, so sibling blocks stay available. A missing block is an
+    /// it already has in the frame set, so sibling blocks stay available. They keep the values of
+    /// the frame set they were scanned in from; `frame_set_scanned_blocks` records which of them
+    /// belong to the current frame set. A missing block is an
     /// error, matching the C library, which fails the read when the requested block is not part
     /// of the current frame set.
     fn rescan_current_frame_set_blocks(
@@ -5658,7 +5663,9 @@ impl Trajectory {
             ))?;
 
         self.frame_set_particle_mapping_free();
-        self.frame_set_blocks_scanned = false;
+        // Until the scan below has read every mapping block again, no block may be served from
+        // the cache. A successful scan restores the list, since the mappings are complete again.
+        let mut scanned_blocks = std::mem::take(&mut self.frame_set_scanned_blocks);
 
         let mut found_data_block = false;
         let mut file_pos = self.get_input_file_position();
@@ -5706,7 +5713,8 @@ impl Trajectory {
             )));
         }
 
-        self.frame_set_blocks_scanned = true;
+        scanned_blocks.push(block_id);
+        self.frame_set_scanned_blocks = scanned_blocks;
         Ok(())
     }
 
