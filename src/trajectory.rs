@@ -5419,7 +5419,7 @@ impl Trajectory {
         })?;
 
         // Reject data types the requested output type cannot represent before touching any
-        // byte offsets, so `f32` on e.g. a `Double` block is a typed error rather than a panic.
+        // byte offsets, so `f32` on e.g. a `Double` block.
         if !T::accepts(data_type) {
             return Err(T::reject_data_type(data_type));
         }
@@ -8577,7 +8577,7 @@ impl Trajectory {
         Ok((values, stride_length))
     }
 
-    /// Read a range of particle positions as native `f32` values.
+    /// Read a range of particle positions as `f32` values.
     ///
     /// Unlike [`Self::util_pos_read_range`] the `Float` payload is decoded directly into
     /// `Vec<f32>` and is never widened to `f64`.
@@ -8597,7 +8597,7 @@ impl Trajectory {
         self.read_float_range(BlockID::TrajPositions, first_frame, last_frame, true)
     }
 
-    /// Read a range of particle velocities as native `f32` values.
+    /// Read a range of particle velocities as `f32` values.
     ///
     /// See [`Self::util_pos_read_range_f32`] for the difference with the `f64` API.
     ///
@@ -8616,7 +8616,7 @@ impl Trajectory {
         self.read_float_range(BlockID::TrajVelocities, first_frame, last_frame, true)
     }
 
-    /// Read a range of particle forces as native `f32` values.
+    /// Read a range of particle forces as `f32` values.
     ///
     /// See [`Self::util_pos_read_range_f32`] for the difference with the `f64` API.
     ///
@@ -8635,7 +8635,7 @@ impl Trajectory {
         self.read_float_range(BlockID::TrajForces, first_frame, last_frame, true)
     }
 
-    /// Read a range of box-shape data as native `f32` values.
+    /// Read a range of box-shape data as `f32` values.
     ///
     /// See [`Self::util_pos_read_range_f32`] for the difference with the `f64` API.
     ///

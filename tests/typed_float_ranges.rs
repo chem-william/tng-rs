@@ -1,8 +1,8 @@
-//! Tests for the native `f32` range readers (`util_*_read_range_f32`).
+//! Tests for the `f32` range readers (`util_*_read_range_f32`).
 //!
 //! Expected values are computed structurally from the block layout the writer produces
 //! (frame-major, then particle-major, then components).
-//! `legacy_f64_readers_match_known_values` checks the legacy readers against the
+//! `f64_readers_match_known_values` checks the `f64` readers against the
 //! same independent expectations, so a bug shared by both implementations cannot pass.
 
 use std::fs;
@@ -253,7 +253,7 @@ fn n_samples_in_range(first_frame: i64, last_frame: i64, stride: i64) -> i64 {
     (last_frame - first_frame) / stride + 1
 }
 
-/// Expected legacy (`f64`) values of the particle readers for a range.
+/// Expected `f64` values of the particle readers for a range.
 fn expected_particle_values(
     spec: &Spec,
     offset: f32,
@@ -619,14 +619,13 @@ fn wrong_data_type_reports_typed_error() {
         "unexpected error: {error:?}"
     );
 
-    // The legacy f64 range API also rejects non-Float blocks, with its own message; the new
-    // API must not regress that contract.
-    let legacy = trajectory
+    // The f64 range API also rejects non-Float blocks, with its own message.
+    let f64_error = trajectory
         .util_pos_read_range(0, 0)
-        .expect_err("legacy range API only supports Float blocks");
+        .expect_err("the f64 range API only supports Float blocks");
     assert!(
-        matches!(&legacy, TngError::Constraint(message) if message.contains("not float")),
-        "unexpected legacy error: {legacy:?}"
+        matches!(&f64_error, TngError::Constraint(message) if message.contains("not float")),
+        "unexpected f64 error: {f64_error:?}"
     );
 }
 
@@ -640,31 +639,31 @@ fn reversed_range_panics() {
 }
 
 #[test]
-fn legacy_f64_readers_match_known_values() {
+fn f64_readers_match_known_values() {
     let spec = Spec {
         frames_per_set: 10,
         stride: 5,
         frame_sets: 2,
         ..Spec::new()
     };
-    let (_directory, path) = write_trajectory("legacy-f64", &spec);
+    let (_directory, path) = write_trajectory("f64", &spec);
     let mut trajectory = open_trajectory(&path);
 
     for (values, offset, label) in [
         (
             trajectory.util_pos_read_range(0, 19).unwrap(),
             0.0,
-            "legacy positions",
+            "f64 positions",
         ),
         (
             trajectory.util_vel_read_range(0, 19).unwrap(),
             VELOCITY_OFFSET,
-            "legacy velocities",
+            "f64 velocities",
         ),
         (
             trajectory.util_force_read_range(0, 19).unwrap(),
             FORCE_OFFSET,
-            "legacy forces",
+            "f64 forces",
         ),
     ] {
         let (values, stride) = values;
@@ -686,7 +685,7 @@ fn legacy_f64_readers_match_known_values() {
             .collect::<Vec<_>>(),
         &expected_box_values(&spec, 0, 19),
         0.0,
-        "legacy box shape",
+        "f64 box shape",
     );
 }
 

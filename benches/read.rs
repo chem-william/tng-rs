@@ -12,9 +12,6 @@ use tng_rs::{NATOMS, NFRAMES};
 ///
 /// [`tng_rs::bench_write`] stores `Double` positions, which the `Float`-only readers reject,
 /// so the same data is written as `Float` here.
-///
-/// The trajectory is written into a temporary directory that is removed when it goes out of
-/// scope, so parallel benchmark runs do not share a file.
 fn write_benchmark_file(dir: &Path) -> PathBuf {
     let path = dir.join("tng_rs_read_criterion.tng");
     let (positions, _velocities) = tng_rs::bench_data();
@@ -68,9 +65,8 @@ fn open(path: &Path) -> Trajectory {
     trajectory
 }
 
-/// Compares the legacy `f64` positions reader with the native `f32` reader on the same file
-/// and workload. The `f32` path returns half as many output bytes and never widens the
-/// `Float` payload to `f64` on the way.
+/// Compares the `f64` positions reader with the `f32` reader on the same file
+/// and workload.
 fn bench_reads(c: &mut Criterion) {
     let dir = TempDir::new().expect("create temporary directory");
     let path = write_benchmark_file(dir.path());
