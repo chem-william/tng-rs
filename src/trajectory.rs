@@ -5160,23 +5160,6 @@ impl Trajectory {
         )
     }
 
-    fn gen_float_data_vector_interval_get(
-        &mut self,
-        block_id: BlockID,
-        is_particle_data: bool,
-        start_frame_nr: i64,
-        end_frame_nr: i64,
-        hash_mode: bool,
-    ) -> Result<(Vec<f32>, i64, i64, i64, DataType), TngError> {
-        self.gen_data_vector_interval_get_as(
-            block_id,
-            is_particle_data,
-            start_frame_nr,
-            end_frame_nr,
-            hash_mode,
-        )
-    }
-
     fn gen_data_interval_get(
         &mut self,
         block_id: BlockID,
@@ -8478,24 +8461,38 @@ impl Trajectory {
         Ok(n_frames)
     }
 
-    fn read_range(
+    /// Shared implementation of the `util_*_read_range` and `util_*_read_range_f32` readers.
+    ///
+    /// Like the C library, the readers only accept `Float` blocks.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `first_frame > last_frame`.
+    fn read_range<T: NumericValue>(
         &mut self,
         block_id: BlockID,
+        is_particle_data: bool,
         first_frame: i64,
         last_frame: i64,
-    ) -> Result<(Vec<f64>, i64), TngError> {
+    ) -> Result<(Vec<T>, i64), TngError> {
         assert!(
             first_frame <= last_frame,
             "`first_frame`, must be lower or equal to `last_frame`"
         );
 
-        let (data_vec, _n_particles, _n_values_per_frame, stride_length, data_type) =
-            self.particle_data_vector_interval_get(block_id, first_frame, last_frame, USE_HASH)?;
+        let (values, _n_particles, _n_values_per_frame, stride_length, data_type) = self
+            .gen_data_vector_interval_get_as(
+                block_id,
+                is_particle_data,
+                first_frame,
+                last_frame,
+                USE_HASH,
+            )?;
         if data_type != DataType::Float {
             return Err(TngError::Constraint("data was not float".to_string()));
         }
 
-        Ok((data_vec, stride_length))
+        Ok((values, stride_length))
     }
 
     /// # Panics
@@ -8506,7 +8503,7 @@ impl Trajectory {
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f64>, i64), TngError> {
-        self.read_range(BlockID::TrajPositions, first_frame, last_frame)
+        self.read_range(BlockID::TrajPositions, true, first_frame, last_frame)
     }
 
     /// # Panics
@@ -8517,7 +8514,7 @@ impl Trajectory {
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f64>, i64), TngError> {
-        self.read_range(BlockID::TrajVelocities, first_frame, last_frame)
+        self.read_range(BlockID::TrajVelocities, true, first_frame, last_frame)
     }
 
     /// # Panics
@@ -8528,7 +8525,7 @@ impl Trajectory {
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f64>, i64), TngError> {
-        self.read_range(BlockID::TrajForces, first_frame, last_frame)
+        self.read_range(BlockID::TrajForces, true, first_frame, last_frame)
     }
 
     /// # Panics
@@ -8539,42 +8536,7 @@ impl Trajectory {
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f64>, i64), TngError> {
-        assert!(
-            first_frame <= last_frame,
-            "`first_frame`, must be lower or equal to `last_frame`"
-        );
-
-        let (data_vec, _n_particles, _n_values_per_frame, stride_length, data_type) = self
-            .gen_data_vector_interval_get(
-                BlockID::TrajBoxShape,
-                false,
-                first_frame,
-                last_frame,
-                USE_HASH,
-            )?;
-        if data_type != DataType::Float {
-            return Err(TngError::Constraint("data was not float".to_string()));
-        }
-
-        Ok((data_vec, stride_length))
-    }
-
-    fn read_float_range(
-        &mut self,
-        block_id: BlockID,
-        first_frame: i64,
-        last_frame: i64,
-        is_particle_data: bool,
-    ) -> Result<(Vec<f32>, i64), TngError> {
-        let (values, _n_particles, _n_values_per_frame, stride_length, _data_type) = self
-            .gen_float_data_vector_interval_get(
-                block_id,
-                is_particle_data,
-                first_frame,
-                last_frame,
-                USE_HASH,
-            )?;
-        Ok((values, stride_length))
+        self.read_range(BlockID::TrajBoxShape, false, first_frame, last_frame)
     }
 
     /// Read a range of particle positions as `f32` values.
@@ -8590,11 +8552,7 @@ impl Trajectory {
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f32>, i64), TngError> {
-        assert!(
-            first_frame <= last_frame,
-            "`first_frame`, must be lower or equal to `last_frame`"
-        );
-        self.read_float_range(BlockID::TrajPositions, first_frame, last_frame, true)
+        self.read_range(BlockID::TrajPositions, true, first_frame, last_frame)
     }
 
     /// Read a range of particle velocities as `f32` values.
@@ -8609,11 +8567,7 @@ impl Trajectory {
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f32>, i64), TngError> {
-        assert!(
-            first_frame <= last_frame,
-            "`first_frame`, must be lower or equal to `last_frame`"
-        );
-        self.read_float_range(BlockID::TrajVelocities, first_frame, last_frame, true)
+        self.read_range(BlockID::TrajVelocities, true, first_frame, last_frame)
     }
 
     /// Read a range of particle forces as `f32` values.
@@ -8628,11 +8582,7 @@ impl Trajectory {
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f32>, i64), TngError> {
-        assert!(
-            first_frame <= last_frame,
-            "`first_frame`, must be lower or equal to `last_frame`"
-        );
-        self.read_float_range(BlockID::TrajForces, first_frame, last_frame, true)
+        self.read_range(BlockID::TrajForces, true, first_frame, last_frame)
     }
 
     /// Read a range of box-shape data as `f32` values.
@@ -8647,11 +8597,7 @@ impl Trajectory {
         first_frame: i64,
         last_frame: i64,
     ) -> Result<(Vec<f32>, i64), TngError> {
-        assert!(
-            first_frame <= last_frame,
-            "`first_frame`, must be lower or equal to `last_frame`"
-        );
-        self.read_float_range(BlockID::TrajBoxShape, first_frame, last_frame, false)
+        self.read_range(BlockID::TrajBoxShape, false, first_frame, last_frame)
     }
 
     pub fn util_trajectory_next_frame_present_data_blocks_find(
