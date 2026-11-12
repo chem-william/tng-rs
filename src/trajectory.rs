@@ -1812,68 +1812,20 @@ impl Trajectory {
         block_meta_info
     }
 
+    /// C API: `tng_particle_data_find`.
+    ///
+    /// Returns a copy of the particle data block `id`, see [`Self::data_block_ref`] for the
+    /// lookup.
     fn particle_data_find(&self, id: BlockID) -> Option<Data> {
-        let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0
-            || self.current_trajectory_frame_set_output_file_pos > 0;
-
-        // let block_index = -1;
-        if is_traj_block {
-            // Search in frame_set.tr_particle_data
-            let frame_set = &self.current_trajectory_frame_set;
-            assert_eq!(
-                frame_set.n_particle_data_blocks,
-                frame_set.tr_particle_data.len()
-            );
-            for block in &frame_set.tr_particle_data {
-                if block.block_id == id {
-                    return Some(block.clone());
-                }
-            }
-        } else {
-            // Search in self.non_tr_particle_data
-            assert_eq!(self.n_particle_data_blocks, self.non_tr_particle_data.len());
-            for block in &self.non_tr_particle_data {
-                if block.block_id == id {
-                    return Some(block.clone());
-                }
-            }
-        }
-        None
+        self.data_block_ref(id, true).cloned()
     }
 
+    /// C API: `tng_data_find`.
+    ///
+    /// Returns a copy of the non-particle data block `id`, see [`Self::data_block_ref`] for the
+    /// lookup.
     fn data_find(&self, id: BlockID) -> Option<Data> {
-        // Determine whether we should search trajectory‐block data
-        let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0
-            || self.current_trajectory_frame_set_output_file_pos > 0;
-
-        let frame_set = &self.current_trajectory_frame_set;
-
-        if is_traj_block {
-            // Search in frame_set.tr_data
-            assert_eq!(frame_set.n_data_blocks, frame_set.tr_data.len());
-            for block in &frame_set.tr_data {
-                if block.block_id == id {
-                    return Some(block.clone());
-                }
-            }
-            // If not found there, fall back to non_tr_data
-            assert_eq!(self.n_data_blocks, self.non_tr_data.len());
-            for block in &self.non_tr_data {
-                if block.block_id == id {
-                    return Some(block.clone());
-                }
-            }
-        } else {
-            // Only search non_tr_data
-            assert_eq!(self.n_data_blocks, self.non_tr_data.len());
-            for block in &self.non_tr_data {
-                if block.block_id == id {
-                    return Some(block.clone());
-                }
-            }
-        }
-
-        None
+        self.data_block_ref(id, false).cloned()
     }
 
     /// Which storage holds a data block. Used by the index-based lookups so that the read
