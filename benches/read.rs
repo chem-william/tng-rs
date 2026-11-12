@@ -6,7 +6,7 @@ use tempfile::TempDir;
 use tng_rs::data::{Compression, DataType};
 use tng_rs::gen_block::BlockID;
 use tng_rs::trajectory::{BlockType, Trajectory};
-use tng_rs::{N_FRAMES, N_PARTICLES};
+use tng_rs::{NATOMS, NFRAMES};
 
 /// Writes a `Float` positions trajectory with the shared benchmark workload.
 ///
@@ -22,17 +22,17 @@ fn write_benchmark_file(dir: &Path) -> PathBuf {
     let mut trajectory = Trajectory::new();
     trajectory.output_file_set(&path);
     trajectory.compression_precision = 1.0e6;
-    trajectory.frame_set_n_frames = N_FRAMES as i64;
-    trajectory.current_trajectory_frame_set.n_frames = N_FRAMES as i64;
+    trajectory.frame_set_n_frames = NFRAMES as i64;
+    trajectory.current_trajectory_frame_set.n_frames = NFRAMES as i64;
     let molecule = trajectory.add_molecule("particle");
     let chain = trajectory.add_chain(molecule, "A");
     let residue = trajectory.chain_residue_add(molecule, chain, "PAR");
     trajectory.residue_atom_add(molecule, residue, "P", "P");
-    trajectory.molecule_cnt_set(molecule, N_PARTICLES as i64);
+    trajectory.molecule_cnt_set(molecule, NATOMS as i64);
     trajectory.file_headers_write(false).expect("write headers");
 
     trajectory
-        .frame_set_with_time_new(0, N_FRAMES as i64, 0.0)
+        .frame_set_with_time_new(0, NFRAMES as i64, 0.0)
         .expect("create frame set");
 
     let floats: Vec<f32> = positions.iter().map(|value| *value as f32).collect();
@@ -46,11 +46,11 @@ fn write_benchmark_file(dir: &Path) -> PathBuf {
             "POSITIONS",
             DataType::Float,
             &BlockType::Trajectory,
-            N_FRAMES as i64,
+            NFRAMES as i64,
             3,
             1,
             0,
-            N_PARTICLES as i64,
+            NATOMS as i64,
             Compression::TNG,
             Some(&bytes),
         )
@@ -74,7 +74,7 @@ fn open(path: &Path) -> Trajectory {
 fn bench_reads(c: &mut Criterion) {
     let dir = TempDir::new().expect("create temporary directory");
     let path = write_benchmark_file(dir.path());
-    let last_frame = N_FRAMES as i64 - 1;
+    let last_frame = NFRAMES as i64 - 1;
 
     c.bench_function("read_positions_f64", |b| {
         b.iter_batched(
