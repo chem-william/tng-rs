@@ -43,13 +43,8 @@ const USE_HASH: bool = true;
 
 /// A numeric type a data block can be decoded into.
 ///
-/// Implementations are the single authoritative place deciding which [`DataType`]s are
-/// acceptable: [`f64`] accepts `Int`, `Float` and `Double`,  while [`f32`] accepts only
-/// `Float` so that `Float` payloads are never widened to `f64` on their way to an `f32` result.
-///
-/// Decoding assumes the byte representation is already in native endianness, which is
-/// guaranteed by [`Trajectory::data_read`]: non-TNG-compressed data is swapped to native
-/// endianness while loading, and the TNG compression routines emit native endianness too.
+/// [`f64`] accepts `Int`, `Float` and `Double` blocks, [`f32`] only `Float` blocks. The bytes
+/// must be in native endianness, which [`Trajectory::data_read`] ensures.
 trait NumericValue: Copy + Default {
     /// Error returned when a block of `data_type` cannot be represented by `Self`.
     fn reject_data_type(data_type: DataType) -> TngError;
@@ -69,8 +64,7 @@ trait NumericValue: Copy + Default {
                 values.len()
             )));
         }
-        // Dispatch on the data type once, outside the per-value loop, so the inner
-        // loop is a plain conversion the compiler can vectorise.
+        // Match once, outside the loop, so the conversion loop can be vectorised.
         match data_type {
             DataType::Int => Ok(Self::decode_i64(values)),
             DataType::Float => Ok(Self::decode_f32(values)),
@@ -171,8 +165,7 @@ impl NumericValue for f32 {
     }
 }
 
-/// Number of frames actually stored for a data block with `n_frames` logical frames and
-/// `stride_length`-sparse sampling. Sparse blocks store only the sampled frames.
+/// Number of samples a block of `n_frames` frames stores with a stride of `stride_length`.
 fn stored_frame_count(
     n_frames: i64,
     stride_length: i64,
@@ -191,11 +184,8 @@ fn stored_frame_count(
     Ok((n_frames - 1) / stride_length + 1)
 }
 
-/// Index of the stored sample that holds logical frame `frame_pos` of the current data block.
-///
-/// `frame_pos` is a frame *offset* within the frame set (`frame_nr - frame_set.first_frame`),
-/// while the result indexes the block's stored samples. With `stride_length > 1` a range of
-/// logical frames maps onto the same stored sample.
+/// Index of the stored sample holding frame `frame_pos`, counted from the frame set's first
+/// frame.
 fn stored_index_for_frame(
     frame_pos: i64,
     stride_length: i64,
@@ -214,12 +204,8 @@ fn stored_index_for_frame(
     Ok(frame_pos / stride_length)
 }
 
-/// Copy `n_frames` whole frames of `frame_size` elements from `src[src_first_stored..]`
-/// into `dst[dst_first_stored..]`.
-///
-/// `src_first_stored`/`dst_first_stored` and `n_frames` are all expressed in *stored sample*
-/// units (not logical frame numbers), so both source and destination stay inside their
-/// buffers even for sparse blocks.
+/// Copy `n_frames` stored frames of `frame_size` values from stored frame `src_first_stored`
+/// of `src` to stored frame `dst_first_stored` of `dst`.
 fn copy_frames<T: Copy>(
     dst: &mut [T],
     dst_first_stored: i64,
@@ -439,24 +425,13 @@ pub struct Trajectory {
     pub compression_precision: f64,
 
     /// Number of blocks whose stored MD5 hash did not match their contents.
-    ///
-    /// The C library only warns on mismatch and keeps going (unfinished trajectories and files
-    /// written by other tools do occur in practice); see `tng_io.c`
-    /// `tng_frame_set_block_read`/`tng_data_block_contents_read`. We keep reading as well but
-    /// count the mismatches so callers can detect corrupt input without a behaviour change.
     hash_mismatch_count: u64,
-    /// Ids of the first few blocks whose stored MD5 hash did not match their contents.
+    /// Ids of the blocks whose stored MD5 hash did not match their contents, each listed once.
     mismatched_block_ids: Vec<BlockID>,
-    /// Ids of the data blocks scanned in from the file since the current frame set was read.
+    /// Blocks a range read has scanned in since the current frame set was read.
     ///
-    /// A range read scans the requested block in together with the frame set's particle-mapping
-    /// blocks, which are needed to translate local to real particle numbering and are dropped
-    /// whenever a frame set is read. Recording the scanned blocks lets a range read skip
-    /// re-reading (and re-decompressing) them for every single frame.
-    ///
-    /// A block being loaded is not enough: blocks loaded for an earlier frame set stay in the
-    /// frame set's block list until they are read again, so only the blocks listed here hold the
-    /// current frame set's values. Every entry also implies that the mappings are loaded.
+    /// Blocks loaded for an earlier frame set stay loaded, so only these hold the current frame
+    /// set's values. Scanning a block also loads the frame set's particle mappings.
     frame_set_scanned_blocks: Vec<BlockID>,
 }
 
@@ -601,15 +576,9 @@ impl Trajectory {
             .expect("no error handling")
     }
 
-    /// Record a block whose stored MD5 hash did not match its contents.
+    /// Record a block whose stored MD5 hash did not match its contents, once per block.
     ///
-    /// This deliberately does not abort the read: the reference C library only prints a warning
-    /// (`tng_io.c`), so rejecting the file here would refuse trajectories that the C library and
-    /// GROMACS read happily, such as unfinished or hand-edited ones. Callers that want to act on
-    /// corruption can inspect [`Self::hash_mismatch_count`].
-    ///
-    /// A block is read again for every range read, so the same block would otherwise be counted
-    /// once per read. Every block is therefore only counted once.
+    /// The read continues, like in the C library, which only warns.
     fn record_hash_mismatch(&mut self, block_id: BlockID) {
         if self.mismatched_block_ids.contains(&block_id) {
             return;
@@ -618,12 +587,9 @@ impl Trajectory {
         self.hash_mismatch_count += 1;
     }
 
-    /// Number of data/frame-set/mapping blocks whose stored MD5 hash did not match their
-    /// contents during reading.
+    /// Number of blocks whose stored MD5 hash did not match their contents while reading.
     ///
-    /// Every block is counted once, no matter how often it is read. Reading never fails because
-    /// of a mismatch (matching the C library, which only warns). A non-zero value means the file
-    /// is likely corrupted or was not fully flushed.
+    /// Every block is counted once. A mismatch does not fail the read, matching the C library.
     pub fn hash_mismatch_count(&self) -> u64 {
         self.hash_mismatch_count
     }
@@ -1071,8 +1037,7 @@ impl Trajectory {
             i64::try_from(file_pos).expect("u64 to i64");
 
         self.frame_set_particle_mapping_free();
-        // The mappings are gone and the loaded blocks belong to the previous frame set, so every
-        // block has to be scanned in again before a range read uses it.
+        // The loaded blocks and mappings belong to the previous frame set.
         self.frame_set_scanned_blocks.clear();
 
         let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
@@ -1814,22 +1779,19 @@ impl Trajectory {
 
     /// C API: `tng_particle_data_find`.
     ///
-    /// Returns a copy of the particle data block `id`, see [`Self::data_block_ref`] for the
-    /// lookup.
+    /// Returns a copy of the particle data block `id`.
     fn particle_data_find(&self, id: BlockID) -> Option<Data> {
         self.data_block_ref(id, true).cloned()
     }
 
     /// C API: `tng_data_find`.
     ///
-    /// Returns a copy of the non-particle data block `id`, see [`Self::data_block_ref`] for the
-    /// lookup.
+    /// Returns a copy of the non-particle data block `id`.
     fn data_find(&self, id: BlockID) -> Option<Data> {
         self.data_block_ref(id, false).cloned()
     }
 
-    /// Which storage holds a data block. Used by the index-based lookups so that the read
-    /// path can inspect block metadata and borrow `values` without cloning the payload.
+    /// Where the data block `id` is stored.
     fn data_block_index(&self, id: BlockID, is_particle_data: bool) -> Option<DataBlockIndex> {
         let is_traj_block = self.current_trajectory_frame_set_input_file_pos > 0
             || self.current_trajectory_frame_set_output_file_pos > 0;
@@ -4973,16 +4935,8 @@ impl Trajectory {
             self.frame_set_of_frame_find(start_frame_nr)?;
         }
 
-        // The frame set's data block *and* its particle-mapping blocks are read from the file.
-        // The mapping blocks are required to translate local to real particle numbering and are
-        // not loaded by the narrow "only this data block" reader.
-        //
-        // The frame set's blocks are cached, so a block is only scanned in again when it has not
-        // been scanned in since the current frame set was read. Whether the block is loaded
-        // does not tell: a block loaded for an earlier frame set stays in the block list and
-        // holds that frame set's values. The C library re-reads the requested block on every
-        // call; caching it avoids re-reading and re-decompressing the same payload for every
-        // frame of a per-frame loop.
+        // Scan in the block and the particle mappings once per frame set. A loaded block can
+        // still be from an earlier frame set.
         if !self.frame_set_scanned_blocks.contains(&block_id) {
             self.rescan_current_frame_set_blocks(USE_HASH, block_id)?;
         }
@@ -5027,7 +4981,6 @@ impl Trajectory {
             )));
         }
 
-        // Work in the requested numeric element type.
         let frame_size = if is_particle_data {
             usize::try_from(
                 n_values_per_frame
@@ -5054,8 +5007,7 @@ impl Trajectory {
 
             let src_first_stored =
                 stored_index_for_frame(current_frame_pos, stride_length, block_id)?;
-            // Mirror the C implementation: the sample count comes from `last_frame_pos`, which is
-            // an offset relative to `start_frame_nr` (the destination slot is always 0 here).
+            // Like the C library, `last_frame_pos` counts from `start_frame_nr`.
             let frames_available = stored_frame_count(last_frame_pos + 1, stride_length, block_id)?;
 
             copy_frames(
@@ -5076,9 +5028,7 @@ impl Trajectory {
                 let (n_frames, _n_particles, _n_values_per_frame, _data_type, current_values) =
                     self.gen_data_vector_get_as(is_particle_data, block_id)?;
 
-                // The stride belongs to the data block, and frame sets can store their data
-                // with a different stride. Take the stride of the block that was just read,
-                // the way the C library does in `tng_gen_data_vector_get`.
+                // Frame sets can store the block with different strides.
                 if let Some(data) = self.data_block_ref(block_id, is_particle_data) {
                     stride_length = data.stride_length;
                 }
@@ -5096,8 +5046,7 @@ impl Trajectory {
                 }
 
                 let dst_first_stored = stored_index_for_frame(frame_pos, stride_length, block_id)?;
-                // `last_frame_pos` is relative to the start of the freshly read frame set, whose
-                // stored samples are copied from index 0 of `current_values`.
+                // `last_frame_pos` counts from the first frame of the frame set just read.
                 let frames_available =
                     stored_frame_count(last_frame_pos + 1, stride_length, block_id)?;
 
@@ -5347,10 +5296,7 @@ impl Trajectory {
 
     /// Internal: retrieve a vector (1D array) of data from the last read frame set
     ///
-    /// Decodes directly from the block's stored bytes into `Vec<T>`: with no particle mapping
-    /// the payload is borrowed, with a mapping each value is decoded straight into its
-    /// real-particle destination slot. No full `u8` staging buffer and no `Data` clone of the
-    /// payload are performed.
+    /// With particle mappings, every particle's values are placed at its real particle number.
     fn gen_data_vector_get_as<T: NumericValue>(
         &mut self,
         is_particle_data: bool,
@@ -5386,8 +5332,7 @@ impl Trajectory {
             }
         }
 
-        // read-only borrow of the block. Metadata is copied out as scalars so that the
-        // payload can be borrowed for the whole decode without cloning it.
+        // Copy the metadata out so the payload can stay borrowed while decoding.
         let block_ref = self
             .data_block_ref(block_id, is_particle_data)
             .ok_or_else(|| TngError::NotFound(format!("data block {block_id:?} not found")))?;
@@ -5401,8 +5346,7 @@ impl Trajectory {
             TngError::NotFound(format!("data block {block_id:?} has no values loaded"))
         })?;
 
-        // Reject data types the requested output type cannot represent before touching any
-        // byte offsets, so `f32` on e.g. a `Double` block.
+        // Reject data types `T` cannot represent before computing any byte offsets.
         if !T::accepts(data_type) {
             return Err(T::reject_data_type(data_type));
         }
@@ -5477,18 +5421,12 @@ impl Trajectory {
             ));
         }
 
-        // Mapping case: decode each stored particle value directly into its destination slot
-        // rather than materialising a reordered `u8` buffer.
-        //
-        // The mapping only depends on the particle index, not on the frame, so it is resolved
-        // once for the whole block instead of once per (frame, particle) pair.
+        // The mapping is the same for every frame, so resolve it once.
         let frame_set = &self.current_trajectory_frame_set;
         let real_particles: Vec<usize> = (0..n_particles_usize)
             .map(|j| {
                 let j_i64 = i64::try_from(j).expect("particle index to i64");
-                // The C library keeps the local numbering when no mapping block covers a
-                // particle (`tng_particle_mapping_get_real_particle` sets `*real = local`
-                // and reports the failure, which the caller ignores).
+                // Like the C library, keep the local number of a particle without a mapping.
                 let real = self
                     .particle_mapping_get_real_particle(frame_set, j_i64)
                     .unwrap_or(j_i64);
@@ -5496,10 +5434,8 @@ impl Trajectory {
             })
             .collect();
 
-        // The real particle numbers are the indices in the molecule, which can be outside the
-        // frame set's particle count when the number of atoms varies between frame sets. The
-        // destination is as wide as the largest real particle number, so that the mapping fits
-        // without writing outside the buffer.
+        // Real particle numbers can exceed the frame set's particle count when the number of
+        // atoms varies, so make room for the largest one.
         let width = real_particles
             .iter()
             .copied()
@@ -5547,20 +5483,9 @@ impl Trajectory {
         self.gen_data_vector_get_as(is_particle_data, block_id)
     }
 
-    /// Re-scan the current frame set's blocks from the end of its header, reading the requested
-    /// data block and any particle-mapping blocks.
+    /// Read the data block `block_id` and the particle mappings of the current frame set again.
     ///
-    /// Particle mappings are needed to translate local to real particle numbering and can only
-    /// be known by reading them, so they must be picked up even when the requested data block
-    /// is already loaded. Mappings are cleared first so repeated calls do not accumulate
-    /// duplicates.
-    ///
-    /// The data blocks themselves are not dropped: a block that is read again replaces the entry
-    /// it already has in the frame set, so sibling blocks stay available. They keep the values of
-    /// the frame set they were scanned in from; `frame_set_scanned_blocks` records which of them
-    /// belong to the current frame set. A missing block is an
-    /// error, matching the C library, which fails the read when the requested block is not part
-    /// of the current frame set.
+    /// Other loaded blocks are kept. Fails if the frame set has no block `block_id`.
     fn rescan_current_frame_set_blocks(
         &mut self,
         hash_mode: bool,
@@ -5598,8 +5523,7 @@ impl Trajectory {
             ))?;
 
         self.frame_set_particle_mapping_free();
-        // Until the scan below has read every mapping block again, no block may be served from
-        // the cache. A successful scan restores the list, since the mappings are complete again.
+        // Nothing is cached until all mappings have been read again.
         let mut scanned_blocks = std::mem::take(&mut self.frame_set_scanned_blocks);
 
         let mut found_data_block = false;
@@ -6222,9 +6146,7 @@ impl Trajectory {
         hash_mode: bool,
         match_block_id: BlockID,
     ) -> Result<(), TngError> {
-        // Matches the C library (`tng_frame_set_read_current_only_data_from_block_id`): the
-        // current frame set header is only read when there is no current frame set yet; data
-        // blocks are always re-read.
+        // The frame set header is only read if there is no current frame set yet.
         self.input_file_init();
 
         let mut file_pos = self.current_trajectory_frame_set_input_file_pos;
@@ -8541,8 +8463,7 @@ impl Trajectory {
 
     /// Read a range of particle positions as `f32` values.
     ///
-    /// Unlike [`Self::util_pos_read_range`] the `Float` payload is decoded directly into
-    /// `Vec<f32>` and is never widened to `f64`.
+    /// Unlike [`Self::util_pos_read_range`], the values are not converted to `f64`.
     ///
     /// # Panics
     ///

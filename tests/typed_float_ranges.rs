@@ -15,15 +15,12 @@ const PARTICLES: i64 = 4;
 const VALUES_PER_FRAME: i64 = 3;
 const BOX_VALUES: i64 = 9;
 
-/// Deterministic value for a stored sample / particle / component triple.
-///
-/// Magnitudes stay well inside the precision of TNG lossy compression, and distinct samples
-/// produce distinct values so a missing or duplicated sample is detected.
+/// Value stored for a sample, particle and component; every combination gives a different value.
 fn sample_value(stored_frame: i64, particle: i64, component: i64) -> f32 {
     1.0 + (stored_frame as f32) * 100.0 + (particle as f32) * 10.0 + (component as f32) * 0.5
 }
 
-/// Deterministic box-shape value for a stored sample / component pair.
+/// Box-shape value stored for a sample and component.
 fn box_value(stored_frame: i64, component: i64) -> f32 {
     50.0 + (stored_frame as f32) * 100.0 + (component as f32) * 0.25
 }
@@ -35,7 +32,7 @@ fn native_f32_bytes(values: &[f32]) -> Vec<u8> {
         .collect()
 }
 
-/// Byte offset added to each stored value so every block has a distinguishable payload.
+/// Added to the velocity and force values so every block holds different values.
 const VELOCITY_OFFSET: f32 = 1000.0;
 const FORCE_OFFSET: f32 = 2000.0;
 
@@ -115,11 +112,9 @@ impl Spec {
         (self.frames_per_set - 1) / self.stride + 1
     }
 
-    /// First global stored-sample index of frame set `frame_set`.
+    /// Trajectory-wide index of the first sample stored in frame set `frame_set`.
     ///
-    /// Only meaningful when `frames_per_set` is a multiple of `stride` (every test with more
-    /// than one frame set satisfies this), which keeps the frame-set-local sample grid aligned
-    /// with the global `frame / stride` indexing the readers use.
+    /// Assumes `frames_per_set` is a multiple of `stride`.
     fn first_stored_of_frame_set(&self, frame_set: i64) -> i64 {
         frame_set * self.frames_per_set / self.stride
     }
@@ -237,12 +232,8 @@ fn open_trajectory(path: &std::path::Path) -> Trajectory {
     trajectory
 }
 
-/// Global index of the stored sample that supplies output sample `sample` of a range that
-/// starts at `first_frame`.
-///
-/// Sparse blocks index their storage by the *global* frame (`frame / stride`), and the first
-/// output slot of a range is always the stored sample containing `first_frame`; later slots
-/// follow the stride grid.
+/// Trajectory-wide index of the stored sample that a range starting at `first_frame` returns
+/// as its sample `sample`.
 fn stored_index_of_sample(first_frame: i64, stride: i64, sample: i64) -> i64 {
     first_frame / stride + sample
 }
@@ -252,7 +243,7 @@ fn n_samples_in_range(first_frame: i64, last_frame: i64, stride: i64) -> i64 {
     (last_frame - first_frame) / stride + 1
 }
 
-/// Expected `f64` values of the particle readers for a range.
+/// Expected values of the particle readers for a range.
 fn expected_particle_values(
     spec: &Spec,
     offset: f32,
@@ -375,8 +366,7 @@ fn gzip_reads_exact_values() {
 
 #[test]
 fn tng_reads_within_compression_precision() {
-    // TNG compression requires more than a single frame in this writer, so use a sparse
-    // multi-frame frame set (the TNG payload round-trips through the quantiser).
+    // TNG compression needs more than one frame.
     check_particle_reads(
         &Spec {
             frames_per_set: 10,
@@ -577,7 +567,7 @@ fn partial_ranges_within_sparse_block() {
 
 #[test]
 fn sparse_stride_uses_stored_frames_not_logical_frames() {
-    // The scenario called out in review: 6 logical frames with stride 5 store exactly 2 samples.
+    // 6 frames with a stride of 5 store 2 samples.
     let spec = Spec {
         frames_per_set: 6,
         stride: 5,
@@ -641,25 +631,18 @@ fn reversed_range_panics() {
 
 #[test]
 fn corrupt_payload_is_reported_without_aborting() {
-    // Two frame sets: re-reading frame set 0 after frame set 1 forces the block to be loaded
-    // from the file a second time, which is the only way the "count every block once" rule in
-    // `record_hash_mismatch` is actually exercised. With a single frame set the block stays
-    // cached and the second read never re-reads it, so the assertion below would hold trivially.
+    // Two frame sets, so going back to frame set 0 reads the corrupt block again.
     let spec = Spec {
         frame_sets: 2,
         ..Spec::new()
     };
     let (_directory, path) = write_trajectory("corrupt-payload", &spec);
 
-    // Locate the *positions* payload structurally: the four-byte length of the block contents
-    // precedes the header's trailing name, then the payload follows. Instead of guessing, walk
-    // the block headers and remember the contents offset of the `TrajPositions` block.
     let mut bytes = fs::read(&path).expect("read trajectory");
     let contents =
         find_block_contents(&bytes, BlockID::TrajPositions).expect("positions block must exist");
 
-    // The block contents begin with the block meta-information, so locate the payload inside
-    // the known contents region rather than guessing a fixed prefix length.
+    // The contents start with the block's metadata, so search for the payload.
     let payload = expected_particle_values(&spec, 0.0, 0, 0);
     let payload_bytes = native_f32_bytes(&payload);
     let matches: Vec<usize> = bytes[contents.clone()]
@@ -692,9 +675,7 @@ fn corrupt_payload_is_reported_without_aborting() {
     assert_eq!(trajectory.hash_mismatch_count(), 1);
     assert_eq!(trajectory.mismatched_block_ids(), [BlockID::TrajPositions]);
 
-    // Switch to frame set 1 and back. Re-reading frame set 0 reloads the corrupted block from
-    // the file, so without the dedupe in `record_hash_mismatch` the count would climb to 2 and
-    // the id list would hold a second entry.
+    // Going to frame set 1 and back reads the corrupt block again; it must be counted once.
     let _ = trajectory
         .util_pos_read_range_f32(1, 1)
         .expect("a hash mismatch must not abort the read");
@@ -715,11 +696,7 @@ fn intact_trajectory_reports_no_hash_mismatch() {
     assert!(trajectory.mismatched_block_ids().is_empty());
 }
 
-/// `Int` blocks decode through the generic (`f64`) interval reader.
-///
-/// That reader converts each stored value with `interval_bytes_to_f64`, not with
-/// `NumericValue::decode`, so this pins the `Int` conversion of the value-level path. The typed
-/// `f32` readers must keep rejecting the same block with their own message.
+/// `particle_data_interval_get` reads `Int` blocks, which the `f32` range readers reject.
 #[test]
 fn int_blocks_decode_through_the_generic_reader() {
     let spec = Spec {
@@ -737,15 +714,14 @@ fn int_blocks_decode_through_the_generic_reader() {
     assert_eq!(n_values_per_frame, VALUES_PER_FRAME);
     assert_eq!(data_type, DataType::Int);
 
-    // `sample_value` is fractional; the payload stores `value as i64`, so the expected values
-    // truncate before being widened back to f64.
+    // The payload stores the values truncated to `i64`.
     let expected: Vec<f64> = expected_particle_values(&spec, 0.0, 0, 0)
         .into_iter()
         .map(|value| f64::from(value as i64 as f32))
         .collect();
     assert_eq!(values, expected);
 
-    // The Float-only typed reader must reject an Int block rather than misreading it.
+    // The `f32` readers only read `Float` blocks.
     let error = trajectory
         .util_pos_read_range_f32(0, 0)
         .expect_err("reading Int data as f32 must fail");
@@ -755,12 +731,7 @@ fn int_blocks_decode_through_the_generic_reader() {
     );
 }
 
-/// `particle_data_get` decodes through `NumericValue::decode`, so it is the public entry point
-/// that exercises the `Int` arm of the dispatch (`decode_i64`).
-///
-/// `particle_data_interval_get` uses `interval_bytes_to_f64` instead, so covering it does *not*
-/// reach that arm. This pins the vector path, including the `f64` widening of stored `i64`
-/// values, and the error a `f32` read of the same block must produce.
+/// `particle_data_get` reads `Int` blocks.
 #[test]
 fn int_blocks_decode_through_the_vector_reader() {
     let spec = Spec {
@@ -782,7 +753,7 @@ fn int_blocks_decode_through_the_vector_reader() {
     assert_eq!(n_values_per_frame, VALUES_PER_FRAME);
     assert_eq!(data_type, DataType::Int);
 
-    // The payload stores `value as i64`, so the expected values truncate first.
+    // The payload stores the values truncated to `i64`.
     let expected: Vec<f64> = expected_particle_values(&spec, 0.0, 0, 0)
         .into_iter()
         .map(|value| f64::from(value as i64 as f32))
@@ -790,11 +761,7 @@ fn int_blocks_decode_through_the_vector_reader() {
     assert_eq!(values, expected);
 }
 
-/// The block metadata getters must resolve blocks that were written into a frame set.
-///
-/// They have three lookup layers (non-trajectory vectors, then `data_block_ref`, then a
-/// re-scan), and nothing covered them: `data_block_name_get`,
-/// `data_block_dependency_get` and `data_block_num_values_per_frame_get` had no callers.
+/// The block metadata getters find the particle and non-particle blocks of a frame set.
 #[test]
 fn block_metadata_getters_resolve_written_blocks() {
     let spec = Spec::new();
@@ -845,12 +812,9 @@ fn block_metadata_getters_resolve_written_blocks() {
     );
 }
 
-/// Walk the TNG block headers and return the byte range of the contents of `id`.
+/// Byte range of the contents of the first block `id` in the TNG file `bytes`.
 ///
-/// The general block header is `header_contents_size` (`u64`, so it covers the whole header),
-/// `block_contents_size` (`u64`), id (`u64`), version (`u64`), a 16-byte MD5 hash and the
-/// length-prefixed block name; the payload starts at `offset + header_contents_size`. The file
-/// endianness is inferred exactly like [`Trajectory`] does, so this works on big-endian hosts.
+/// Every block header starts with the header size, the contents size and the block id, as `u64`.
 fn find_block_contents(bytes: &[u8], id: BlockID) -> Option<std::ops::Range<usize>> {
     let little_endian = detect_file_little_endian(bytes)?;
     let read_u64 = |at: usize| -> u64 {
@@ -886,22 +850,14 @@ fn find_block_contents(bytes: &[u8], id: BlockID) -> Option<std::ops::Range<usiz
     None
 }
 
-/// Infer the TNG file endianness from the first block header, mirroring the parser.
-///
-/// A header whose most significant byte is zero and whose least significant byte is non-zero
-/// is little endian; every other pattern is big endian (`Trajectory::block_header_read`). The
-/// big-endian case includes small header sizes, whose most significant byte is legitimately
-/// zero, so it must not be treated as "unknown".
+/// Whether the TNG file `bytes` is little endian, decided from the first header size like
+/// `Trajectory::block_header_read` does.
 fn detect_file_little_endian(bytes: &[u8]) -> Option<bool> {
     let header_contents_size = bytes.get(..8)?;
     Some(header_contents_size[0] != 0 && header_contents_size[7] == 0)
 }
 
-/// `find_block_contents` must locate a block in a little- *and* a big-endian file.
-///
-/// A real big-endian host is required to *write* such a file, so this builds the two-byte-order
-/// encodings by hand: the layout is the same on every host, only the integer byte order differs,
-/// and the parser reaches the same conclusion from the same first header.
+/// `find_block_contents` finds blocks in little- and big-endian files, built here by hand.
 #[test]
 fn find_block_contents_handles_both_byte_orders() {
     const HEADER: u64 = 0x48;
@@ -937,8 +893,7 @@ fn find_block_contents_handles_both_byte_orders() {
 
 #[test]
 fn per_frame_loop_reads_every_block_from_its_own_frame_set() {
-    // A per-frame loop reads several blocks of each frame set. Every block has to come from the
-    // frame set that holds the frame, not from the frame set it was first loaded for.
+    // Every block must be read from the frame set that holds the frame.
     let spec = Spec {
         frames_per_set: 10,
         frame_sets: 3,
