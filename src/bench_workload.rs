@@ -7,8 +7,8 @@ use crate::{
 use std::path::Path;
 use zerocopy::IntoBytes;
 
-const NATOMS: usize = 100_000;
-const NFRAMES: usize = 20;
+pub const NATOMS: usize = 100_000;
+pub const NFRAMES: usize = 20;
 const CHUNKY: usize = 10;
 const SCALE: f64 = 0.5;
 const PRECISION: f64 = 1e-8;
@@ -118,14 +118,6 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
 
     traj.trajectory_destroy()?;
     Ok(std::fs::metadata(path)?.len())
-}
-
-fn raw_f64_bytes(values: &[f64]) -> Vec<u8> {
-    // Match the C benchmark's malloc + memcpy chunk conversion instead of rebuilding bytes value by value.
-    unsafe {
-        std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), std::mem::size_of_val(values))
-            .to_vec()
-    }
 }
 
 // --- data generation helpers ---

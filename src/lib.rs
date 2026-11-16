@@ -49,7 +49,7 @@ mod xtc3;
 #[cfg(feature = "bench")]
 mod bench_workload;
 #[cfg(feature = "bench")]
-pub use bench_workload::{bench_data, bench_write};
+pub use bench_workload::{NATOMS, NFRAMES, bench_data, bench_write};
 
 #[cfg(test)]
 mod c_comparison;
