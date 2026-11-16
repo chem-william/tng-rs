@@ -186,13 +186,9 @@ pub struct Trajectory {
     /// Number of trajectory frame sets (not stored on disk; may be stale).
     pub n_trajectory_frame_sets: i64,
 
-    /// Number of non‐frame‐dependent, particle‐dependent data blocks.
-    pub n_particle_data_blocks: usize,
     /// Vector of particle‐dependent data blocks.
     pub non_tr_particle_data: Vec<Data>,
 
-    /// Number of frame‐ and particle‐independent data blocks.
-    pub n_data_blocks: usize,
     /// Vector of frame‐ and particle‐independent data blocks.
     pub non_tr_data: Vec<Data>,
 
@@ -313,10 +309,8 @@ impl Trajectory {
             current_trajectory_frame_set_output_file_pos: -1,
             n_trajectory_frame_sets: 0,
 
-            n_particle_data_blocks: 0,
             non_tr_particle_data: Vec::new(),
 
-            n_data_blocks: 0,
             non_tr_data: Vec::new(),
 
             compress_algo_pos: Vec::new(),
@@ -1527,10 +1521,6 @@ impl Trajectory {
         if is_traj_block {
             // Search in frame_set.tr_particle_data
             let frame_set = &self.current_trajectory_frame_set;
-            assert_eq!(
-                frame_set.n_particle_data_blocks,
-                frame_set.tr_particle_data.len()
-            );
             for block in &frame_set.tr_particle_data {
                 if block.block_id == id {
                     return Some(block.clone());
@@ -1538,7 +1528,6 @@ impl Trajectory {
             }
         } else {
             // Search in self.non_tr_particle_data
-            assert_eq!(self.n_particle_data_blocks, self.non_tr_particle_data.len());
             for block in &self.non_tr_particle_data {
                 if block.block_id == id {
                     return Some(block.clone());
@@ -1557,14 +1546,12 @@ impl Trajectory {
 
         if is_traj_block {
             // Search in frame_set.tr_data
-            assert_eq!(frame_set.n_data_blocks, frame_set.tr_data.len());
             for block in &frame_set.tr_data {
                 if block.block_id == id {
                     return Some(block.clone());
                 }
             }
             // If not found there, fall back to non_tr_data
-            assert_eq!(self.n_data_blocks, self.non_tr_data.len());
             for block in &self.non_tr_data {
                 if block.block_id == id {
                     return Some(block.clone());
@@ -1572,7 +1559,6 @@ impl Trajectory {
             }
         } else {
             // Only search non_tr_data
-            assert_eq!(self.n_data_blocks, self.non_tr_data.len());
             for block in &self.non_tr_data {
                 if block.block_id == id {
                     return Some(block.clone());
@@ -1587,11 +1573,9 @@ impl Trajectory {
         let frame_set = &mut self.current_trajectory_frame_set;
         match block_type_flag {
             BlockType::Trajectory => {
-                frame_set.n_particle_data_blocks += 1;
                 frame_set.tr_particle_data.push(Data::default());
             }
             BlockType::NonTrajectory => {
-                self.n_particle_data_blocks += 1;
                 self.non_tr_particle_data.push(Data::default());
             }
         }
@@ -1601,11 +1585,9 @@ impl Trajectory {
         let frame_set = &mut self.current_trajectory_frame_set;
         match block_type_flag {
             BlockType::Trajectory => {
-                frame_set.n_data_blocks += 1;
                 frame_set.tr_data.push(Data::default());
             }
             BlockType::NonTrajectory => {
-                self.n_data_blocks += 1;
                 self.non_tr_data.push(Data::default());
             }
         }
@@ -3654,13 +3636,13 @@ impl Trajectory {
             total_len += block.calculate_header_len();
             total_len += self.molecules_block_len_calculate();
 
-            for data in self.non_tr_data.iter().take(self.n_data_blocks) {
+            for data in self.non_tr_data.iter() {
                 block.name = Some(data.block_name.clone());
                 total_len += block.calculate_header_len();
                 total_len += Self::data_block_len_calculate(data, false, 1, 1, 1, 0, 1);
             }
 
-            for i in 0..self.n_particle_data_blocks {
+            for i in 0..self.non_tr_particle_data.len() {
                 let data = &self.non_tr_particle_data[i];
                 block.name = Some(data.block_name.clone());
                 total_len += block.calculate_header_len();
@@ -3704,12 +3686,12 @@ impl Trajectory {
         // Should perhaps be moved
         let mut block = GenBlock::new();
 
-        for i in 0..self.n_data_blocks {
+        for i in 0..self.non_tr_data.len() {
             block.id = self.non_tr_data[i].block_id;
             self.data_block_write(&mut block, i, false, None, hash_mode)?;
         }
 
-        for i in 0..self.n_particle_data_blocks {
+        for i in 0..self.non_tr_particle_data.len() {
             block.id = self.non_tr_particle_data[i].block_id;
             self.data_block_write(&mut block, i, true, None, hash_mode)?;
         }
@@ -4849,8 +4831,12 @@ impl Trajectory {
 
         // Do not re-read the frame set.
         if first_frame != self.current_trajectory_frame_set.first_frame
-            || is_particle_data && self.current_trajectory_frame_set.n_particle_data_blocks == 0
-            || !is_particle_data && self.current_trajectory_frame_set.n_data_blocks == 0
+            || is_particle_data
+                && self
+                    .current_trajectory_frame_set
+                    .tr_particle_data
+                    .is_empty()
+            || !is_particle_data && self.current_trajectory_frame_set.tr_data.is_empty()
         // if (is_particle_data
         //     && (first_frame != self.current_trajectory_frame_set.first_frame
         //         || self.current_trajectory_frame_set.n_particle_data_blocks == 0))
@@ -4877,18 +4863,20 @@ impl Trajectory {
         // Start checking the last read frame set
         let mut block_type_flag = false;
         let mut idx = if is_particle_data {
-            let found = (0..self.current_trajectory_frame_set.n_particle_data_blocks)
-                .rev()
-                .find(|&i| {
-                    self.current_trajectory_frame_set.tr_particle_data[i].block_id == block_id
-                });
+            let found = self
+                .current_trajectory_frame_set
+                .tr_particle_data
+                .iter()
+                .rposition(|d| d.block_id == block_id);
             if found.is_some() {
                 block_type_flag = true;
             }
             found
         } else {
-            (0..self.current_trajectory_frame_set.n_data_blocks)
-                .find(|&i| self.current_trajectory_frame_set.tr_data[i].block_id == block_id)
+            self.current_trajectory_frame_set
+                .tr_data
+                .iter()
+                .position(|d| d.block_id == block_id)
         }
         .ok_or_else(|| {
             TngError::NotFound(format!("Could not find data block with id {block_id:?}"))
@@ -4936,22 +4924,20 @@ impl Trajectory {
                 self.frame_set_read_next(hash_mode)
                     .map_err(|_| TngError::Critical("frame_set_read_next failed".into()))?;
                 idx = if is_particle_data {
-                    (0..self.current_trajectory_frame_set.n_particle_data_blocks)
-                        .rev()
-                        .find(|&i| {
-                            self.current_trajectory_frame_set.tr_particle_data[i].block_id
-                                == block_id
-                        })
+                    self.current_trajectory_frame_set
+                        .tr_particle_data
+                        .iter()
+                        .rposition(|d| d.block_id == block_id)
                         .ok_or_else(|| {
                             TngError::NotFound(format!(
                                 "block {block_id:?} not found in next frame set"
                             ))
                         })?
                 } else {
-                    (0..self.current_trajectory_frame_set.n_data_blocks)
-                        .find(|&i| {
-                            self.current_trajectory_frame_set.tr_data[i].block_id == block_id
-                        })
+                    self.current_trajectory_frame_set
+                        .tr_data
+                        .iter()
+                        .position(|d| d.block_id == block_id)
                         .ok_or_else(|| {
                             TngError::NotFound(format!(
                                 "block {block_id:?} not found in next frame set"
@@ -5057,12 +5043,7 @@ impl Trajectory {
             }
 
             let frame_set = &self.current_trajectory_frame_set;
-            for (i, data) in frame_set
-                .tr_particle_data
-                .iter()
-                .enumerate()
-                .take(frame_set.n_particle_data_blocks)
-            {
+            for (i, data) in frame_set.tr_particle_data.iter().enumerate() {
                 if data.block_id == block_id {
                     block_index = i64::try_from(i).expect("index to i64");
                 }
@@ -5279,7 +5260,7 @@ impl Trajectory {
         self.frame_set_block_write(&mut block, hash_mode)?;
 
         // Write non-particle data blocks
-        for i in 0..self.current_trajectory_frame_set.n_data_blocks {
+        for i in 0..self.current_trajectory_frame_set.tr_data.len() {
             block.id = self.current_trajectory_frame_set.tr_data[i].block_id;
             self.data_block_write(&mut block, i, false, None, hash_mode)?;
         }
@@ -5294,7 +5275,7 @@ impl Trajectory {
                     // TODO: error handling
                     self.trajectory_mapping_block_write(&mut block, i, hash_mode)
                         .expect("handle errors");
-                    for j in 0..self.current_trajectory_frame_set.n_particle_data_blocks {
+                    for j in 0..self.current_trajectory_frame_set.tr_particle_data.len() {
                         block.id = self.current_trajectory_frame_set.tr_particle_data[j].block_id;
                         self.data_block_write(
                             &mut block,
@@ -5307,7 +5288,7 @@ impl Trajectory {
                 }
             }
         } else {
-            for i in 0..self.current_trajectory_frame_set.n_particle_data_blocks {
+            for i in 0..self.current_trajectory_frame_set.tr_particle_data.len() {
                 block.id = self.current_trajectory_frame_set.tr_particle_data[i].block_id;
                 self.data_block_write(&mut block, i, true, None, hash_mode)?;
             }
@@ -5875,17 +5856,13 @@ impl Trajectory {
     ///
     /// Get the name of a data block of a specific ID.
     pub fn data_block_name_get(&mut self, match_block_id: BlockID) -> Result<String, TngError> {
-        for data in self
-            .non_tr_particle_data
-            .iter()
-            .take(self.n_particle_data_blocks)
-        {
+        for data in self.non_tr_particle_data.iter() {
             if data.block_id == match_block_id {
                 return Ok(data.block_name.clone());
             }
         }
 
-        for data in self.non_tr_data.iter().take(self.n_data_blocks) {
+        for data in self.non_tr_data.iter() {
             if data.block_id == match_block_id {
                 return Ok(data.block_name.clone());
             }
@@ -5915,17 +5892,13 @@ impl Trajectory {
 
         let frame_set = &self.current_trajectory_frame_set;
         if particle_block_data {
-            for data in frame_set
-                .tr_particle_data
-                .iter()
-                .take(frame_set.n_particle_data_blocks)
-            {
+            for data in frame_set.tr_particle_data.iter() {
                 if data.block_id == match_block_id {
                     return Ok(data.block_name.clone());
                 }
             }
         } else {
-            for data in frame_set.tr_data.iter().take(frame_set.n_data_blocks) {
+            for data in frame_set.tr_data.iter() {
                 if data.block_id == match_block_id {
                     return Ok(data.block_name.clone());
                 }
@@ -5939,17 +5912,13 @@ impl Trajectory {
     ///
     /// Get the dependency of a data block of a specific ID.
     pub fn data_block_dependency_get(&mut self, match_block_id: BlockID) -> Result<u8, TngError> {
-        for data in self
-            .non_tr_particle_data
-            .iter()
-            .take(self.n_particle_data_blocks)
-        {
+        for data in self.non_tr_particle_data.iter() {
             if data.block_id == match_block_id {
                 return Ok(PARTICLE_DEPENDENT);
             }
         }
 
-        for data in self.non_tr_data.iter().take(self.n_data_blocks) {
+        for data in self.non_tr_data.iter() {
             if data.block_id == match_block_id {
                 return Ok(0);
             }
@@ -5983,17 +5952,13 @@ impl Trajectory {
         &mut self,
         match_block_id: BlockID,
     ) -> Result<i64, TngError> {
-        for data in self
-            .non_tr_particle_data
-            .iter()
-            .take(self.n_particle_data_blocks)
-        {
+        for data in self.non_tr_particle_data.iter() {
             if data.block_id == match_block_id {
                 return Ok(data.n_values_per_frame);
             }
         }
 
-        for data in self.non_tr_data.iter().take(self.n_data_blocks) {
+        for data in self.non_tr_data.iter() {
             if data.block_id == match_block_id {
                 return Ok(data.n_values_per_frame);
             }
@@ -8111,8 +8076,11 @@ impl Trajectory {
         }
 
         // Check for data blocks only if they have not already been found
-        if self.current_trajectory_frame_set.n_particle_data_blocks == 0
-            && self.current_trajectory_frame_set.n_data_blocks == 0
+        if self
+            .current_trajectory_frame_set
+            .tr_particle_data
+            .is_empty()
+            && self.current_trajectory_frame_set.tr_data.is_empty()
         {
             let mut file_pos = self.get_input_file_position();
             if file_pos < self.input_file_len {
@@ -8134,7 +8102,7 @@ impl Trajectory {
 
         min_diff = -1;
 
-        for i in 0..self.current_trajectory_frame_set.n_particle_data_blocks {
+        for i in 0..self.current_trajectory_frame_set.tr_particle_data.len() {
             let block_id = self.current_trajectory_frame_set.tr_particle_data[i].block_id;
 
             if n_requested_data_block_ids > 0 {
@@ -8210,7 +8178,7 @@ impl Trajectory {
             self.current_trajectory_frame_set.tr_particle_data[i].last_retrieved_frame = data_frame;
         }
 
-        for i in 0..self.current_trajectory_frame_set.n_data_blocks {
+        for i in 0..self.current_trajectory_frame_set.tr_data.len() {
             let block_id = self.current_trajectory_frame_set.tr_data[i].block_id;
 
             if n_requested_data_block_ids > 0 {
@@ -8456,8 +8424,6 @@ impl Trajectory {
 
         // Currently the non trajectory data blocks are not copied since it
         // can lead to problems when freeing memory in a parallel block.
-        dest.n_particle_data_blocks = 0;
-        dest.n_data_blocks = 0;
         dest.non_tr_particle_data = Vec::new();
         dest.non_tr_data = Vec::new();
 
@@ -8469,9 +8435,6 @@ impl Trajectory {
         frame_set.n_mapping_blocks = 0;
         frame_set.mappings = Vec::new();
         frame_set.molecule_cnt_list = Vec::new();
-
-        frame_set.n_particle_data_blocks = 0;
-        frame_set.n_data_blocks = 0;
 
         frame_set.tr_particle_data = Vec::new();
         frame_set.tr_data = Vec::new();
@@ -8699,12 +8662,19 @@ impl Trajectory {
                 )?;
                 data = if block_type_flag == BlockType::Trajectory {
                     Some(
-                        self.current_trajectory_frame_set.tr_particle_data
-                            [self.current_trajectory_frame_set.n_particle_data_blocks - 1]
+                        self.current_trajectory_frame_set
+                            .tr_particle_data
+                            .last()
+                            .expect("block was just created")
                             .clone(),
                     )
                 } else {
-                    Some(self.non_tr_particle_data[self.n_particle_data_blocks - 1].clone())
+                    Some(
+                        self.non_tr_particle_data
+                            .last()
+                            .expect("block was just created")
+                            .clone(),
+                    )
                 };
                 if let Some(data) = data.as_mut() {
                     data.allocate_particle_data_mem(
