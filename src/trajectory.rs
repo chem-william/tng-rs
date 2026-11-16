@@ -3654,8 +3654,7 @@ impl Trajectory {
             total_len += block.calculate_header_len();
             total_len += self.molecules_block_len_calculate();
 
-            for i in 0..self.n_data_blocks {
-                let data = &self.non_tr_data[i];
+            for data in self.non_tr_data.iter().take(self.n_data_blocks) {
                 block.name = Some(data.block_name.clone());
                 total_len += block.calculate_header_len();
                 total_len += Self::data_block_len_calculate(data, false, 1, 1, 1, 0, 1);
@@ -5058,8 +5057,12 @@ impl Trajectory {
             }
 
             let frame_set = &self.current_trajectory_frame_set;
-            for i in 0..frame_set.n_particle_data_blocks {
-                let data = &frame_set.tr_particle_data[i];
+            for (i, data) in frame_set
+                .tr_particle_data
+                .iter()
+                .enumerate()
+                .take(frame_set.n_particle_data_blocks)
+            {
                 if data.block_id == block_id {
                     block_index = i64::try_from(i).expect("index to i64");
                 }
@@ -5872,15 +5875,17 @@ impl Trajectory {
     ///
     /// Get the name of a data block of a specific ID.
     pub fn data_block_name_get(&mut self, match_block_id: BlockID) -> Result<String, TngError> {
-        for i in 0..self.n_particle_data_blocks {
-            let data = &self.non_tr_particle_data[i];
+        for data in self
+            .non_tr_particle_data
+            .iter()
+            .take(self.n_particle_data_blocks)
+        {
             if data.block_id == match_block_id {
                 return Ok(data.block_name.clone());
             }
         }
 
-        for i in 0..self.n_data_blocks {
-            let data = &self.non_tr_data[i];
+        for data in self.non_tr_data.iter().take(self.n_data_blocks) {
             if data.block_id == match_block_id {
                 return Ok(data.block_name.clone());
             }
@@ -5910,15 +5915,17 @@ impl Trajectory {
 
         let frame_set = &self.current_trajectory_frame_set;
         if particle_block_data {
-            for i in 0..frame_set.n_particle_data_blocks {
-                let data = &frame_set.tr_particle_data[i];
+            for data in frame_set
+                .tr_particle_data
+                .iter()
+                .take(frame_set.n_particle_data_blocks)
+            {
                 if data.block_id == match_block_id {
                     return Ok(data.block_name.clone());
                 }
             }
         } else {
-            for i in 0..frame_set.n_data_blocks {
-                let data = &frame_set.tr_data[i];
+            for data in frame_set.tr_data.iter().take(frame_set.n_data_blocks) {
                 if data.block_id == match_block_id {
                     return Ok(data.block_name.clone());
                 }
@@ -5932,15 +5939,17 @@ impl Trajectory {
     ///
     /// Get the dependency of a data block of a specific ID.
     pub fn data_block_dependency_get(&mut self, match_block_id: BlockID) -> Result<u8, TngError> {
-        for i in 0..self.n_particle_data_blocks {
-            let data = &self.non_tr_particle_data[i];
+        for data in self
+            .non_tr_particle_data
+            .iter()
+            .take(self.n_particle_data_blocks)
+        {
             if data.block_id == match_block_id {
                 return Ok(PARTICLE_DEPENDENT);
             }
         }
 
-        for i in 0..self.n_data_blocks {
-            let data = &self.non_tr_data[i];
+        for data in self.non_tr_data.iter().take(self.n_data_blocks) {
             if data.block_id == match_block_id {
                 return Ok(0);
             }
@@ -5974,15 +5983,17 @@ impl Trajectory {
         &mut self,
         match_block_id: BlockID,
     ) -> Result<i64, TngError> {
-        for i in 0..self.n_particle_data_blocks {
-            let data = &self.non_tr_particle_data[i];
+        for data in self
+            .non_tr_particle_data
+            .iter()
+            .take(self.n_particle_data_blocks)
+        {
             if data.block_id == match_block_id {
                 return Ok(data.n_values_per_frame);
             }
         }
 
-        for i in 0..self.n_data_blocks {
-            let data = &self.non_tr_data[i];
+        for data in self.non_tr_data.iter().take(self.n_data_blocks) {
             if data.block_id == match_block_id {
                 return Ok(data.n_values_per_frame);
             }
