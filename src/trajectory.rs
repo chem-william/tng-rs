@@ -987,7 +987,6 @@ impl Trajectory {
                 // TODO: replace with bytemuck
                 let bytes = mapping
                     .real_particle_numbers
-                    .as_slice()
                     .iter()
                     .flat_map(|&x| x.to_ne_bytes())
                     .collect::<Vec<_>>();
