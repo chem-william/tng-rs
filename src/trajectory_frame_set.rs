@@ -39,13 +39,9 @@ pub struct TrajectoryFrameSet {
     /// Time stamp (in seconds) of the first frame in this frame set.
     pub first_frame_time: f64,
 
-    /// The number of trajectory data blocks of particle‐dependent data.
-    pub n_particle_data_blocks: usize,
     /// A list of data blocks containing particle‐dependent trajectory data.
     pub tr_particle_data: Vec<Data>,
 
-    /// The number of trajectory data blocks independent of particles.
-    pub n_data_blocks: usize,
     /// A list of data blocks containing frame‐ and particle‐independent trajectory data.
     pub tr_data: Vec<Data>,
 }
@@ -73,10 +69,8 @@ impl TrajectoryFrameSet {
 
             first_frame_time: -1.0,
 
-            n_particle_data_blocks: 0,
             tr_particle_data: Vec::new(),
 
-            n_data_blocks: 0,
             tr_data: Vec::new(),
         }
     }
