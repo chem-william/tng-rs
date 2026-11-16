@@ -930,8 +930,6 @@ impl Trajectory {
 
         // FIXME (from c): Does not check if the size of the contents matches the
         // expected size of if the contents can be read
-        let frame_set = &mut self.current_trajectory_frame_set;
-        frame_set.n_mapping_blocks += 1;
         let mut mapping = ParticleMapping::new();
 
         let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
@@ -4518,9 +4516,7 @@ impl Trajectory {
         frame_set: &TrajectoryFrameSet,
         local: i64,
     ) -> Option<i64> {
-        let n_blocks = frame_set.n_mapping_blocks;
-
-        if n_blocks <= 0 {
+        if frame_set.mappings.is_empty() {
             return Some(local);
         }
 
@@ -4946,8 +4942,6 @@ impl Trajectory {
                 current_frame_pos = 0;
             }
 
-            let n_mapping_blocks = self.current_trajectory_frame_set.n_mapping_blocks;
-
             if is_particle_data {
                 let raw = self.current_trajectory_frame_set.tr_particle_data[idx]
                     .values
@@ -4956,20 +4950,16 @@ impl Trajectory {
                 for j in 0..n_particles {
                     // Inline particle_mapping_get_real_particle to avoid borrowing self
                     // while raw is also borrowed from self.
-                    let mapping = if n_mapping_blocks > 0 {
-                        self.current_trajectory_frame_set
-                            .mappings
-                            .iter()
-                            .find(|m| {
-                                j >= m.num_first_particle
-                                    && j < m.num_first_particle + m.n_particles
-                            })
-                            .map_or(j, |m| {
-                                m.real_particle_numbers[(j - m.num_first_particle) as usize]
-                            })
-                    } else {
-                        j
-                    };
+                    let mapping = self
+                        .current_trajectory_frame_set
+                        .mappings
+                        .iter()
+                        .find(|m| {
+                            j >= m.num_first_particle && j < m.num_first_particle + m.n_particles
+                        })
+                        .map_or(j, |m| {
+                            m.real_particle_numbers[(j - m.num_first_particle) as usize]
+                        });
                     for k in 0..n_values_per_frame {
                         let src = ((current_frame_pos * i_step + j * n_values_per_frame + k)
                             as usize)
@@ -5083,7 +5073,7 @@ impl Trajectory {
         let mut values = vec![0u8; full_data_len as usize];
         let unwrapped_values = data_unwrapped.values.expect("values to be avail");
 
-        if !is_particle_data || frame_set.n_mapping_blocks <= 0 {
+        if !is_particle_data || frame_set.mappings.is_empty() {
             values[..full_data_len as usize]
                 .copy_from_slice(&unwrapped_values[..full_data_len as usize]);
         } else {
@@ -5265,10 +5255,8 @@ impl Trajectory {
         }
 
         // Write the mapping blocks and particle data blocks
-        if self.current_trajectory_frame_set.n_mapping_blocks > 0 {
-            for i in 0..usize::try_from(self.current_trajectory_frame_set.n_mapping_blocks)
-                .expect("usize from i64")
-            {
+        if !self.current_trajectory_frame_set.mappings.is_empty() {
+            for i in 0..self.current_trajectory_frame_set.mappings.len() {
                 block.id = BlockID::ParticleMapping;
                 if self.current_trajectory_frame_set.mappings[i].n_particles > 0 {
                     // TODO: error handling
@@ -5424,7 +5412,6 @@ impl Trajectory {
         // from c code: The mapping block in the original frame set has been freed when reading
         // other frame sets
         self.current_trajectory_frame_set.mappings = Vec::new();
-        self.current_trajectory_frame_set.n_mapping_blocks = 0;
 
         self.input_file
             .as_ref()
@@ -7375,8 +7362,7 @@ impl Trajectory {
 
         // Sanity check of the particles ranges. Split into multiple if
         // statements for improved readability
-        for i in 0..frame_set.n_mapping_blocks {
-            let mapping = &frame_set.mappings[i as usize];
+        for mapping in &frame_set.mappings {
             if num_first_particle >= mapping.num_first_particle
                 && num_first_particle < mapping.num_first_particle + mapping.n_particles
             {
@@ -7403,33 +7389,22 @@ impl Trajectory {
             }
         }
 
-        frame_set.n_mapping_blocks += 1;
-        frame_set.mappings.push(ParticleMapping::new());
-
-        frame_set.mappings[(frame_set.n_mapping_blocks - 1) as usize].num_first_particle =
-            num_first_particle;
-        frame_set.mappings[(frame_set.n_mapping_blocks - 1) as usize].n_particles = n_particles;
-        for item in mapping_table.iter().take(n_particles as usize) {
-            frame_set.mappings[(frame_set.n_mapping_blocks - 1) as usize]
-                .real_particle_numbers
-                .push(*item);
-        }
+        frame_set.mappings.push(ParticleMapping {
+            num_first_particle,
+            n_particles,
+            real_particle_numbers: mapping_table
+                .iter()
+                .take(n_particles as usize)
+                .copied()
+                .collect(),
+        });
 
         Ok(())
     }
 
     /// C API: `tng_frame_set_particle_mapping_free`.
     pub(crate) fn frame_set_particle_mapping_free(&mut self) {
-        let frame_set = &mut self.current_trajectory_frame_set;
-
-        if frame_set.n_mapping_blocks > 0 && !frame_set.mappings.is_empty() {
-            for i in 0..frame_set.n_mapping_blocks as usize {
-                let mapping = &mut frame_set.mappings[i];
-                mapping.real_particle_numbers = vec![];
-            }
-            frame_set.mappings = vec![];
-            frame_set.n_mapping_blocks = 0;
-        }
+        self.current_trajectory_frame_set.mappings.clear();
     }
 
     fn validate_get_name_len<'a>(
@@ -8431,7 +8406,6 @@ impl Trajectory {
         dest.distance_unit_exponential = -9;
         dest.compression_precision = 1000.0;
 
-        frame_set.n_mapping_blocks = 0;
         frame_set.mappings = Vec::new();
         frame_set.molecule_cnt_list = Vec::new();
 
