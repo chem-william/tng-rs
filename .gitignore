@@ -9,3 +9,4 @@ perf.data.old
 test_files/tng_test_out.tng
 test_files/tng_test.tng
 .helix
+Cargo.lock
