@@ -159,11 +159,9 @@ pub struct Trajectory {
     /// Duration (in seconds) of one frame (can change per frame set).
     pub time_per_frame: f64,
 
-    /// Number of distinct molecule types in this trajectory.
-    pub n_molecules: i64,
     /// Vector of molecule definitions.
     pub(crate) molecules: Vec<Molecule>,
-    /// Count of each molecule type (length = `n_molecules`).
+    /// Count of each molecule type, indexed like `molecules`.
     pub(crate) molecule_cnt_list: Vec<i64>,
     /// Total number of particles (or atoms). If variable, updated per frame set.
     pub n_particles: i64,
@@ -294,7 +292,6 @@ impl Trajectory {
             long_stride_length: 10000,
             time_per_frame: -1.0,
 
-            n_molecules: 0,
             molecules: Vec::new(),
             molecule_cnt_list: Vec::new(),
             n_particles: 0,
@@ -797,11 +794,10 @@ impl Trajectory {
                 .molecule_cnt_list
                 .is_empty()
             {
-                self.current_trajectory_frame_set.molecule_cnt_list =
-                    vec![0; self.n_molecules as usize];
+                self.current_trajectory_frame_set.molecule_cnt_list = vec![0; self.molecules.len()];
             }
 
-            for i in 0..self.n_molecules as usize {
+            for i in 0..self.molecules.len() {
                 let mol_count = utils::read_i64(
                     inp_file,
                     self.endianness64,
@@ -930,8 +926,6 @@ impl Trajectory {
 
         // FIXME (from c): Does not check if the size of the contents matches the
         // expected size of if the contents can be read
-        let frame_set = &mut self.current_trajectory_frame_set;
-        frame_set.n_mapping_blocks += 1;
         let mut mapping = ParticleMapping::new();
 
         let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
@@ -1198,7 +1192,7 @@ impl Trajectory {
 
         let mut hasher = if hash_mode { Some(Md5::new()) } else { None };
 
-        self.n_molecules = utils::read_i64(
+        let n_molecules = utils::read_i64(
             self.input_file.as_mut().expect("init input_file"),
             self.endianness64,
             self.input_swap64,
@@ -1206,14 +1200,14 @@ impl Trajectory {
         );
 
         self.n_particles = 0;
-        self.molecules = Vec::with_capacity(self.n_molecules as usize);
+        self.molecules = Vec::with_capacity(n_molecules as usize);
 
         if !self.var_num_atoms {
-            self.molecule_cnt_list = Vec::with_capacity(self.n_molecules as usize);
+            self.molecule_cnt_list = Vec::with_capacity(n_molecules as usize);
         }
 
         // Read each molecule from file
-        for mol_idx in 0..self.n_molecules {
+        for mol_idx in 0..n_molecules {
             let inp_file = self.input_file.as_mut().expect("init input_file");
             let mut molecule = Molecule::new();
             molecule.id = utils::read_i64(
@@ -2192,7 +2186,7 @@ impl Trajectory {
             }
         }
 
-        length += size_of_val(&self.n_molecules);
+        length += size_of::<i64>(); // n_molecules
         if let Some(proto_mol) = self.molecules.first() {
             let per_molecule_len = size_of_val(&proto_mol.id)
                 + size_of_val(&proto_mol.quaternary_str)
@@ -2200,11 +2194,11 @@ impl Trajectory {
                 + size_of_val(&proto_mol.n_residues)
                 + size_of_val(&proto_mol.n_atoms)
                 + size_of_val(&proto_mol.n_bonds);
-            length += per_molecule_len * self.n_molecules as usize;
+            length += per_molecule_len * self.molecules.len();
         }
 
         if !self.var_num_atoms {
-            length += usize::try_from(self.n_molecules).expect("usize from i64") * size_of::<i64>();
+            length += self.molecules.len() * size_of::<i64>();
         }
         u64::try_from(length).expect("u64 from usize")
     }
@@ -2431,7 +2425,7 @@ impl Trajectory {
         let out_file = self.output_file.as_mut().expect("init output_file");
         utils::write_i64(
             out_file,
-            self.n_molecules,
+            i64::try_from(self.molecules.len()).expect("i64 from usize"),
             self.endianness64,
             self.output_swap64,
             hasher.as_mut(),
@@ -2624,8 +2618,7 @@ impl Trajectory {
         length += std::mem::size_of::<f64>() * 2;
 
         if self.var_num_atoms {
-            length += std::mem::size_of::<i64>()
-                * usize::try_from(self.n_molecules).expect("usize from i64");
+            length += std::mem::size_of::<i64>() * self.molecules.len();
         }
 
         u64::try_from(length).expect("u64 from usize")
@@ -2668,11 +2661,12 @@ impl Trajectory {
         );
 
         if self.var_num_atoms {
-            for i in 0..self.n_molecules {
+            for &mol_count in
+                &self.current_trajectory_frame_set.molecule_cnt_list[..self.molecules.len()]
+            {
                 utils::write_i64(
                     out_file,
-                    self.current_trajectory_frame_set.molecule_cnt_list
-                        [usize::try_from(i).expect("usize from u64")],
+                    mol_count,
                     self.endianness64,
                     self.output_swap64,
                     hasher.as_mut(),
@@ -4436,7 +4430,6 @@ impl Trajectory {
         molecule.id = self.molecules.last().map_or(1, |mol| mol.id + 1);
         self.molecules.push(molecule);
         self.molecule_cnt_list.push(0);
-        self.n_molecules += 1;
     }
 
     /// C API: `tng_molecule_cnt_set`.
@@ -4518,9 +4511,7 @@ impl Trajectory {
         frame_set: &TrajectoryFrameSet,
         local: i64,
     ) -> Option<i64> {
-        let n_blocks = frame_set.n_mapping_blocks;
-
-        if n_blocks <= 0 {
+        if frame_set.mappings.is_empty() {
             return Some(local);
         }
 
@@ -4946,8 +4937,6 @@ impl Trajectory {
                 current_frame_pos = 0;
             }
 
-            let n_mapping_blocks = self.current_trajectory_frame_set.n_mapping_blocks;
-
             if is_particle_data {
                 let raw = self.current_trajectory_frame_set.tr_particle_data[idx]
                     .values
@@ -4956,20 +4945,16 @@ impl Trajectory {
                 for j in 0..n_particles {
                     // Inline particle_mapping_get_real_particle to avoid borrowing self
                     // while raw is also borrowed from self.
-                    let mapping = if n_mapping_blocks > 0 {
-                        self.current_trajectory_frame_set
-                            .mappings
-                            .iter()
-                            .find(|m| {
-                                j >= m.num_first_particle
-                                    && j < m.num_first_particle + m.n_particles
-                            })
-                            .map_or(j, |m| {
-                                m.real_particle_numbers[(j - m.num_first_particle) as usize]
-                            })
-                    } else {
-                        j
-                    };
+                    let mapping = self
+                        .current_trajectory_frame_set
+                        .mappings
+                        .iter()
+                        .find(|m| {
+                            j >= m.num_first_particle && j < m.num_first_particle + m.n_particles
+                        })
+                        .map_or(j, |m| {
+                            m.real_particle_numbers[(j - m.num_first_particle) as usize]
+                        });
                     for k in 0..n_values_per_frame {
                         let src = ((current_frame_pos * i_step + j * n_values_per_frame + k)
                             as usize)
@@ -5083,7 +5068,7 @@ impl Trajectory {
         let mut values = vec![0u8; full_data_len as usize];
         let unwrapped_values = data_unwrapped.values.expect("values to be avail");
 
-        if !is_particle_data || frame_set.n_mapping_blocks <= 0 {
+        if !is_particle_data || frame_set.mappings.is_empty() {
             values[..full_data_len as usize]
                 .copy_from_slice(&unwrapped_values[..full_data_len as usize]);
         } else {
@@ -5265,10 +5250,8 @@ impl Trajectory {
         }
 
         // Write the mapping blocks and particle data blocks
-        if self.current_trajectory_frame_set.n_mapping_blocks > 0 {
-            for i in 0..usize::try_from(self.current_trajectory_frame_set.n_mapping_blocks)
-                .expect("usize from i64")
-            {
+        if !self.current_trajectory_frame_set.mappings.is_empty() {
+            for i in 0..self.current_trajectory_frame_set.mappings.len() {
                 block.id = BlockID::ParticleMapping;
                 if self.current_trajectory_frame_set.mappings[i].n_particles > 0 {
                     // TODO: error handling
@@ -5424,7 +5407,6 @@ impl Trajectory {
         // from c code: The mapping block in the original frame set has been freed when reading
         // other frame sets
         self.current_trajectory_frame_set.mappings = Vec::new();
-        self.current_trajectory_frame_set.n_mapping_blocks = 0;
 
         self.input_file
             .as_ref()
@@ -6664,7 +6646,6 @@ impl Trajectory {
         let idx = self.molecules.len();
         self.molecules.push(molecule);
         self.molecule_cnt_list.push(0);
-        self.n_molecules += 1;
         idx
     }
 
@@ -7168,7 +7149,7 @@ impl Trajectory {
 
         cnt_list
             .iter()
-            .take(usize::try_from(self.n_molecules).expect("usize from i64"))
+            .take(self.molecules.len())
             .map(|&x| x as usize)
             .sum()
     }
@@ -7375,8 +7356,7 @@ impl Trajectory {
 
         // Sanity check of the particles ranges. Split into multiple if
         // statements for improved readability
-        for i in 0..frame_set.n_mapping_blocks {
-            let mapping = &frame_set.mappings[i as usize];
+        for mapping in &frame_set.mappings {
             if num_first_particle >= mapping.num_first_particle
                 && num_first_particle < mapping.num_first_particle + mapping.n_particles
             {
@@ -7403,33 +7383,22 @@ impl Trajectory {
             }
         }
 
-        frame_set.n_mapping_blocks += 1;
-        frame_set.mappings.push(ParticleMapping::new());
-
-        frame_set.mappings[(frame_set.n_mapping_blocks - 1) as usize].num_first_particle =
-            num_first_particle;
-        frame_set.mappings[(frame_set.n_mapping_blocks - 1) as usize].n_particles = n_particles;
-        for item in mapping_table.iter().take(n_particles as usize) {
-            frame_set.mappings[(frame_set.n_mapping_blocks - 1) as usize]
-                .real_particle_numbers
-                .push(*item);
-        }
+        frame_set.mappings.push(ParticleMapping {
+            num_first_particle,
+            n_particles,
+            real_particle_numbers: mapping_table
+                .iter()
+                .take(n_particles as usize)
+                .copied()
+                .collect(),
+        });
 
         Ok(())
     }
 
     /// C API: `tng_frame_set_particle_mapping_free`.
     pub(crate) fn frame_set_particle_mapping_free(&mut self) {
-        let frame_set = &mut self.current_trajectory_frame_set;
-
-        if frame_set.n_mapping_blocks > 0 && !frame_set.mappings.is_empty() {
-            for i in 0..frame_set.n_mapping_blocks as usize {
-                let mapping = &mut frame_set.mappings[i];
-                mapping.real_particle_numbers = vec![];
-            }
-            frame_set.mappings = vec![];
-            frame_set.n_mapping_blocks = 0;
-        }
+        self.current_trajectory_frame_set.mappings.clear();
     }
 
     fn validate_get_name_len<'a>(
@@ -7558,14 +7527,14 @@ impl Trajectory {
 
     /// C API: `tng_num_molecule_types_get`.
     pub fn num_molecule_types_get(&self) -> i64 {
-        self.n_molecules
+        i64::try_from(self.molecules.len()).expect("i64 from usize")
     }
 
     /// C API: `tng_num_molecules_get`.
     pub fn num_molecules_get(&self) -> i64 {
         let cnt_list = self.molecule_cnt_list_get();
 
-        cnt_list.iter().take(self.n_molecules as usize).sum()
+        cnt_list.iter().take(self.molecules.len()).sum()
     }
 
     /// C API: `tng_num_particles_variable_get`.
@@ -7579,12 +7548,12 @@ impl Trajectory {
     ///
     /// Returns [`TngError::NotFound`] if `index` is bigger than the amount of molecules
     pub fn molecule_of_index_get(&self, index: i64) -> Result<&Molecule, TngError> {
-        if index >= self.n_molecules || index < 0 {
-            return Err(TngError::NotFound(format!(
-                "A molecule with index {index} was not found."
-            )));
-        }
-        Ok(&self.molecules[index as usize])
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| self.molecules.get(i))
+            .ok_or_else(|| {
+                TngError::NotFound(format!("A molecule with index {index} was not found."))
+            })
     }
 
     /// C API: `tng_molecule_find`.
@@ -7604,10 +7573,7 @@ impl Trajectory {
         name: Option<&str>,
         nr: Option<i64>,
     ) -> Result<&Molecule, TngError> {
-        let n_molecules = self.n_molecules;
-
-        for i in (0..n_molecules).rev() {
-            let molecule = &self.molecules[i as usize];
+        for molecule in self.molecules.iter().rev() {
             if (name.is_none() || name.unwrap() == molecule.name)
                 && (nr.is_none() || nr.unwrap() == molecule.id)
             {
@@ -8431,7 +8397,6 @@ impl Trajectory {
         dest.distance_unit_exponential = -9;
         dest.compression_precision = 1000.0;
 
-        frame_set.n_mapping_blocks = 0;
         frame_set.mappings = Vec::new();
         frame_set.molecule_cnt_list = Vec::new();
 
@@ -8449,7 +8414,6 @@ impl Trajectory {
         frame_set.long_stride_prev_frame_set_file_pos = -1;
         frame_set.first_frame = -1;
 
-        dest.n_molecules = 0;
         dest.molecules = Vec::new();
         dest.molecule_cnt_list = Vec::new();
         dest.n_particles = self.n_particles;
@@ -8744,16 +8708,13 @@ impl Trajectory {
     ///
     /// Copy all molecules and the molecule counts from one TNG trajectory ([`Self`]) to another [`traj_dest`]
     pub(crate) fn molecule_system_copy(&self, traj_dest: &mut Trajectory) {
-        traj_dest.n_molecules = 0;
         traj_dest.n_particles = 0;
-        traj_dest.molecules = Vec::with_capacity(self.n_molecules as usize);
-        traj_dest.molecule_cnt_list = Vec::with_capacity(self.n_molecules as usize);
+        traj_dest.molecules = Vec::with_capacity(self.molecules.len());
+        traj_dest.molecule_cnt_list = Vec::with_capacity(self.molecules.len());
 
-        for i in 0..self.n_molecules as usize {
-            let molecule = self.molecules[i].clone();
-            traj_dest.molecules.push(molecule);
+        for (i, molecule) in self.molecules.iter().enumerate() {
+            traj_dest.molecules.push(molecule.clone());
             traj_dest.molecule_cnt_list.push(0);
-            traj_dest.n_molecules += 1;
             traj_dest.molecule_cnt_set(i, self.molecule_cnt_list[i]);
         }
     }

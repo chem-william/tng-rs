@@ -3,8 +3,6 @@ use crate::particle_mapping::ParticleMapping;
 
 #[derive(Debug, Clone)]
 pub struct TrajectoryFrameSet {
-    /// The number of different particle mapping blocks present.
-    pub n_mapping_blocks: i64,
     /// The atom mappings of this frame set.
     pub mappings: Vec<ParticleMapping>,
 
@@ -49,7 +47,6 @@ pub struct TrajectoryFrameSet {
 impl TrajectoryFrameSet {
     pub fn new() -> Self {
         Self {
-            n_mapping_blocks: 0,
             mappings: Vec::new(),
 
             first_frame: -1,
