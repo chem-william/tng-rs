@@ -68,8 +68,9 @@ impl Molecule {
     /// C API: `tng_residue_atom_of_index_get`.
     ///
     /// # Panic
-    /// Panics if `index` + `residue.atoms_offset` is out of bounds for `self.atoms`
+    /// Panics if `index` plus the position of the residue's first atom is out of bounds for
+    /// `self.atoms`
     pub fn residue_atom_of_index(&self, index: usize, residue: &Residue) -> &Atom {
-        &self.atoms[residue.atoms_offset + index]
+        &self.atoms[residue.atoms.start + index]
     }
 }

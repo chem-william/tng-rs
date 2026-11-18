@@ -1300,15 +1300,14 @@ impl Trajectory {
                     residue.chain_index = Some(chain_idx as usize);
                     residue.name = String::new();
 
-                    residue.read_data(self, hasher.as_mut());
+                    let n_residue_atoms = residue.read_data(self, hasher.as_mut());
 
-                    // Compute atoms_offset = `atom - molecule->atoms` in C
-                    residue.atoms_offset = atom_idx;
-
-                    let atom_count = residue.n_atoms;
+                    // C stores the start as `atoms_offset` (`atom - molecule->atoms`)
+                    residue.atoms = atom_idx
+                        ..atom_idx + usize::try_from(n_residue_atoms).expect("usize from u64");
 
                     // Read the atoms of the residue
-                    for _ in 0..atom_count {
+                    for _ in 0..n_residue_atoms {
                         let mut atom = Atom::new();
 
                         // Link back to parent residue index
@@ -1336,12 +1335,12 @@ impl Trajectory {
                     residue.chain_index = None;
                     residue.name = String::new();
 
-                    residue.read_data(self, hasher.as_mut());
+                    let n_residue_atoms = residue.read_data(self, hasher.as_mut());
 
-                    residue.atoms_offset = atom_idx;
-                    let atom_count = residue.n_atoms;
+                    residue.atoms = atom_idx
+                        ..atom_idx + usize::try_from(n_residue_atoms).expect("usize from u64");
 
-                    for _ in 0..atom_count {
+                    for _ in 0..n_residue_atoms {
                         let mut atom = Atom::new();
                         atom.parent_molecule_idx = mol_idx as usize;
                         atom.residue_index = Some(residue_index);
@@ -2490,16 +2489,13 @@ impl Trajectory {
                         utils::fwrite_str(out_file, &residue.name, hasher.as_mut())?;
                         utils::write_u64(
                             out_file,
-                            residue.n_atoms,
+                            u64::try_from(residue.atoms.len()).expect("u64 from usize"),
                             self.endianness64,
                             self.output_swap64,
                             hasher.as_mut(),
                         );
 
-                        let atom_start = residue.atoms_offset;
-                        let atom_end = atom_start + residue.n_atoms as usize;
-                        let atom_slice = &molecule.atoms[atom_start..atom_end];
-                        for atom in atom_slice {
+                        for atom in &molecule.atoms[residue.atoms.clone()] {
                             utils::write_i64(
                                 out_file,
                                 atom.id,
@@ -2524,15 +2520,12 @@ impl Trajectory {
                     utils::fwrite_str(out_file, &residue.name, hasher.as_mut())?;
                     utils::write_u64(
                         out_file,
-                        residue.n_atoms,
+                        u64::try_from(residue.atoms.len()).expect("u64 from usize"),
                         self.endianness64,
                         self.output_swap64,
                         hasher.as_mut(),
                     );
-                    let atom_start = residue.atoms_offset;
-                    let atom_end = atom_start + residue.n_atoms as usize;
-                    let atom_slice = &molecule.atoms[atom_start..atom_end];
-                    for atom in atom_slice {
+                    for atom in &molecule.atoms[residue.atoms.clone()] {
                         utils::write_i64(
                             out_file,
                             atom.id,
@@ -6700,8 +6693,7 @@ impl Trajectory {
         residue.name = name[..length].to_string();
         residue.chain_index = Some(chain_idx);
         residue.id = id;
-        residue.n_atoms = 0;
-        residue.atoms_offset = mol.atoms.len();
+        residue.atoms = mol.atoms.len()..mol.atoms.len();
 
         mol.residues.insert(insert_pos, residue);
 
@@ -6754,8 +6746,10 @@ impl Trajectory {
     ) -> usize {
         let mol = &mut self.molecules[molecule_idx];
 
-        if mol.residues[residue_idx].n_atoms == 0 {
-            mol.residues[residue_idx].atoms_offset = mol.atoms.len();
+        // Like C, assume the residue's atoms are added contiguously: only the first atom
+        // positions the range.
+        if mol.residues[residue_idx].atoms.is_empty() {
+            mol.residues[residue_idx].atoms = mol.atoms.len()..mol.atoms.len();
         }
 
         let mut atom = Atom::new();
@@ -6769,7 +6763,7 @@ impl Trajectory {
 
         let idx = mol.atoms.len();
         mol.atoms.push(atom);
-        mol.residues[residue_idx].n_atoms += 1;
+        mol.residues[residue_idx].atoms.end += 1;
         idx
     }
 
@@ -7685,7 +7679,7 @@ impl Trajectory {
 
     /// C API: `tng_residue_num_atoms_get`.
     pub fn residue_num_atoms_get(&self, residue: &Residue) -> u64 {
-        residue.n_atoms
+        u64::try_from(residue.atoms.len()).expect("u64 from usize")
     }
 
     /// C API: `tng_residue_atom_of_index_get`.
@@ -7694,14 +7688,14 @@ impl Trajectory {
         residue: &Residue,
         index: usize,
     ) -> Result<&'a Atom, TngError> {
-        if index >= residue.n_atoms as usize {
-            return Err(TngError::NotFound(format!(
-                "An atom with index {index} was not found in the residue."
-            )));
-        }
-
         let molecule = &self.molecules[residue.parent_molecule_idx];
-        Ok(&molecule.atoms[residue.atoms_offset + index])
+        molecule.atoms[residue.atoms.clone()]
+            .get(index)
+            .ok_or_else(|| {
+                TngError::NotFound(format!(
+                    "An atom with index {index} was not found in the residue."
+                ))
+            })
     }
 
     /// C API: `tng_atom_residue_get`.
