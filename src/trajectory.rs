@@ -3815,7 +3815,16 @@ impl Trajectory {
         let output_file_pos = self.get_output_file_position();
         let out_file = self.output_file.as_mut().expect("init output_file");
         self.input_file = Some(out_file.try_clone().expect("able to clone output file"));
-        let pos = self.current_trajectory_frame_set_output_file_pos;
+        // The pointers are patched into blocks already in the file, so write them in that
+        // file's byte order. Swap once: C swaps `pos` in place at every site, which flips it
+        // back to host order whenever more than one pointer is updated.
+        let mut pos = self
+            .current_trajectory_frame_set_output_file_pos
+            .cast_unsigned();
+        if let Some(swap_fn) = self.input_swap64 {
+            swap_fn(self.endianness64, &mut pos);
+        }
+        let pos_bytes = pos.to_ne_bytes();
 
         // Update next frame set
         if self.current_trajectory_frame_set.next_frame_set_file_pos > 0 {
@@ -3836,13 +3845,7 @@ impl Trajectory {
                 .expect("i64 from u64"),
             ))?;
 
-            if let Some(swap_fn) = self.input_swap64 {
-                swap_fn(
-                    self.endianness64,
-                    &mut u64::try_from(pos).expect("u64 from i64"),
-                );
-            }
-            out_file.write_all(&pos.to_ne_bytes())?;
+            out_file.write_all(&pos_bytes)?;
 
             if hash_mode {
                 self.md5_hash_update(
@@ -3873,13 +3876,7 @@ impl Trajectory {
                 )
                 .expect("i64 from u64"),
             ))?;
-            if let Some(swap_fn) = self.input_swap64 {
-                swap_fn(
-                    self.endianness64,
-                    &mut u64::try_from(pos).expect("u64 from i64"),
-                );
-            }
-            out_file.write_all(&pos.to_ne_bytes())?;
+            out_file.write_all(&pos_bytes)?;
 
             if hash_mode {
                 self.md5_hash_update(
@@ -3916,13 +3913,7 @@ impl Trajectory {
                 )
                 .expect("i64 from u64"),
             ))?;
-            if let Some(swap_fn) = self.input_swap64 {
-                swap_fn(
-                    self.endianness64,
-                    &mut u64::try_from(pos).expect("u64 from i64"),
-                );
-            }
-            out_file.write_all(&pos.to_ne_bytes())?;
+            out_file.write_all(&pos_bytes)?;
 
             if hash_mode {
                 self.md5_hash_update(
@@ -3961,13 +3952,7 @@ impl Trajectory {
                 )
                 .expect("i64 from u64"),
             ))?;
-            if let Some(swap_fn) = self.input_swap64 {
-                swap_fn(
-                    self.endianness64,
-                    &mut u64::try_from(pos).expect("u64 from i64"),
-                );
-            }
-            out_file.write_all(&pos.to_ne_bytes())?;
+            out_file.write_all(&pos_bytes)?;
 
             if hash_mode {
                 self.md5_hash_update(
@@ -4006,15 +3991,7 @@ impl Trajectory {
                 )
                 .expect("i64 from u64"),
             ))?;
-            if let Some(swap_fn) = self.input_swap64 {
-                swap_fn(
-                    self.endianness64,
-                    &mut u64::try_from(pos).expect("u64 from i64"),
-                );
-            }
-            out_file
-                .write_all(&pos.to_ne_bytes())
-                .expect("write to out");
+            out_file.write_all(&pos_bytes).expect("write to out");
 
             if hash_mode {
                 self.md5_hash_update(
@@ -4053,13 +4030,7 @@ impl Trajectory {
                 )
                 .expect("i64 from u64"),
             ))?;
-            if let Some(swap_fn) = self.input_swap64 {
-                swap_fn(
-                    self.endianness64,
-                    &mut u64::try_from(pos).expect("u64 from i64"),
-                );
-            }
-            out_file.write_all(&pos.to_ne_bytes())?;
+            out_file.write_all(&pos_bytes)?;
 
             if hash_mode {
                 self.md5_hash_update(

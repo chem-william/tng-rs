@@ -992,4 +992,64 @@ mod integration {
 
         let _ = std::fs::remove_file(path);
     }
+
+    /// Append one velocity frame to a copy of `fixture` (as in `test_append`), then read the
+    /// file back and return each frame set's
+    /// `[first_frame, n_frames, next, prev, medium next, medium prev, long next, long prev]`.
+    fn append_and_read_frame_set_links(fixture: &str) -> Vec<[i64; 8]> {
+        let src = std::env::current_dir()
+            .unwrap()
+            .join(TEST_FILES_DIR)
+            .join(fixture);
+        let path = std::env::temp_dir().join(format!("tng_rs_append_{fixture}"));
+        std::fs::copy(src, &path).unwrap();
+
+        let mut traj = Trajectory::new();
+        traj.util_trajectory_open(&path, 'a').unwrap();
+        let n_frames = traj.num_frames_get().unwrap();
+        traj.frame_set_of_frame_find(n_frames - 1).unwrap();
+        let time = traj.util_time_of_frame_get(n_frames - 1).unwrap() + TIME_PER_FRAME;
+        let n_particles = usize::try_from(traj.num_particles_get()).unwrap();
+        let mut velocities: Vec<f64> = (0..n_particles * 3).map(|i| i as f64).collect();
+        traj.util_vel_with_time_double_write(n_frames, time, &mut velocities)
+            .unwrap();
+        traj.util_trajectory_close().unwrap();
+
+        let mut traj = Trajectory::new();
+        traj.util_trajectory_open(&path, 'r').unwrap();
+        let mut links = Vec::new();
+        while traj.frame_set_read_next(USE_HASH).is_ok() {
+            let fs = &traj.current_trajectory_frame_set;
+            links.push([
+                fs.first_frame,
+                fs.n_frames,
+                fs.next_frame_set_file_pos,
+                fs.prev_frame_set_file_pos,
+                fs.medium_stride_next_frame_set_file_pos,
+                fs.medium_stride_prev_frame_set_file_pos,
+                fs.long_stride_next_frame_set_file_pos,
+                fs.long_stride_prev_frame_set_file_pos,
+            ]);
+        }
+        traj.util_trajectory_close().unwrap();
+        let _ = std::fs::remove_file(&path);
+        links
+    }
+
+    /// Regression test: `frame_set_pointers_update` byte-swapped a temporary, so pointers
+    /// patched into a file whose byte order differs from the host's were written in host
+    /// order. The fixtures hold the same trajectory (10 frames, 2 frame sets) written by the
+    /// C library in each byte order, so one of them is foreign on any host.
+    #[test]
+    fn append_frame_set_links_independent_of_byte_order() {
+        let little = append_and_read_frame_set_links("c_written_little_endian.tng");
+        let big = append_and_read_frame_set_links("c_written_big_endian.tng");
+
+        assert_eq!(
+            little.last().map(|links| links[0]),
+            Some(10),
+            "appended frame set is not reachable"
+        );
+        assert_eq!(big, little);
+    }
 }
