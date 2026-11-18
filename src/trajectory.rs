@@ -805,8 +805,8 @@ impl Trajectory {
                     hasher.as_mut(),
                 );
                 self.current_trajectory_frame_set.molecule_cnt_list[i] = mol_count;
-                self.current_trajectory_frame_set.n_particles +=
-                    self.molecules[i].n_atoms * mol_count;
+                let n_atoms = i64::try_from(self.molecules[i].atoms.len()).expect("i64 from usize");
+                self.current_trajectory_frame_set.n_particles += n_atoms * mol_count;
             }
 
             // from the c code
@@ -1234,19 +1234,19 @@ impl Trajectory {
                 self.molecule_cnt_list.push(count);
             }
 
-            molecule.n_chains = utils::read_i64(
+            let n_chains = utils::read_i64(
                 inp_file,
                 self.endianness64,
                 self.input_swap64,
                 hasher.as_mut(),
             );
-            molecule.n_residues = utils::read_i64(
+            let n_residues = utils::read_i64(
                 inp_file,
                 self.endianness64,
                 self.input_swap64,
                 hasher.as_mut(),
             );
-            molecule.n_atoms = utils::read_i64(
+            let n_atoms = utils::read_i64(
                 inp_file,
                 self.endianness64,
                 self.input_swap64,
@@ -1254,21 +1254,21 @@ impl Trajectory {
             );
 
             if !self.var_num_atoms {
-                self.n_particles += molecule.n_atoms
+                self.n_particles += n_atoms
                     * self.molecule_cnt_list
                         [usize::try_from(mol_idx).expect("idx to molecule_cnt_list")];
             }
 
-            if molecule.n_chains > 0 {
-                molecule.chains = Vec::with_capacity(molecule.n_chains as usize);
+            if n_chains > 0 {
+                molecule.chains = Vec::with_capacity(n_chains as usize);
             }
 
-            if molecule.n_residues > 0 {
-                molecule.residues = Vec::with_capacity(molecule.n_residues as usize);
+            if n_residues > 0 {
+                molecule.residues = Vec::with_capacity(n_residues as usize);
             }
 
-            if molecule.n_atoms > 0 {
-                molecule.atoms = Vec::with_capacity(molecule.n_atoms as usize);
+            if n_atoms > 0 {
+                molecule.atoms = Vec::with_capacity(n_atoms as usize);
             }
 
             // index counters to track positions in the flat `residues` and `atoms` vectors
@@ -1276,7 +1276,7 @@ impl Trajectory {
             let mut atom_idx = 0;
 
             // Read the chains of the molecule
-            for chain_idx in 0..molecule.n_chains {
+            for chain_idx in 0..n_chains {
                 let mut chain = Chain::new();
 
                 // Link back to parent molecule index
@@ -1329,8 +1329,8 @@ impl Trajectory {
             }
 
             // If no chains but there *are* residues (i.e., n_chains == 0 && n_residues > 0):
-            if molecule.n_chains == 0 && molecule.n_residues > 0 {
-                for _ in 0..molecule.n_residues {
+            if n_chains == 0 && n_residues > 0 {
+                for _ in 0..n_residues {
                     let mut residue = Residue::new();
                     let residue_index = molecule.residues.len();
 
@@ -1359,8 +1359,8 @@ impl Trajectory {
             }
 
             // If no chains and no residues, read atoms directly:
-            if molecule.n_chains == 0 && molecule.n_residues == 0 {
-                for _ in 0..molecule.n_atoms {
+            if n_chains == 0 && n_residues == 0 {
+                for _ in 0..n_atoms {
                     let mut atom = Atom::new();
                     atom.parent_molecule_idx = mol_idx as usize;
                     atom.residue_index = None;
@@ -1370,14 +1370,14 @@ impl Trajectory {
             }
 
             let inp_file = self.input_file.as_mut().expect("init input_file");
-            molecule.n_bonds = utils::read_i64(
+            let n_bonds = utils::read_i64(
                 inp_file,
                 self.endianness64,
                 self.input_swap64,
                 hasher.as_mut(),
             );
 
-            for _ in 0..molecule.n_bonds {
+            for _ in 0..n_bonds {
                 let mut bond = Bond::new();
                 bond.from_atom_id = utils::read_i64(
                     inp_file,
@@ -2187,15 +2187,8 @@ impl Trajectory {
         }
 
         length += size_of::<i64>(); // n_molecules
-        if let Some(proto_mol) = self.molecules.first() {
-            let per_molecule_len = size_of_val(&proto_mol.id)
-                + size_of_val(&proto_mol.quaternary_str)
-                + size_of_val(&proto_mol.n_chains)
-                + size_of_val(&proto_mol.n_residues)
-                + size_of_val(&proto_mol.n_atoms)
-                + size_of_val(&proto_mol.n_bonds);
-            length += per_molecule_len * self.molecules.len();
-        }
+        // id, quaternary_str, n_chains, n_residues, n_atoms and n_bonds of each molecule
+        length += 6 * size_of::<i64>() * self.molecules.len();
 
         if !self.var_num_atoms {
             length += self.molecules.len() * size_of::<i64>();
@@ -2457,29 +2450,21 @@ impl Trajectory {
                     hasher.as_mut(),
                 );
             }
-            utils::write_i64(
-                out_file,
-                molecule.n_chains,
-                self.endianness64,
-                self.output_swap64,
-                hasher.as_mut(),
-            );
-            utils::write_i64(
-                out_file,
-                molecule.n_residues,
-                self.endianness64,
-                self.output_swap64,
-                hasher.as_mut(),
-            );
-            utils::write_i64(
-                out_file,
-                molecule.n_atoms,
-                self.endianness64,
-                self.output_swap64,
-                hasher.as_mut(),
-            );
+            for count in [
+                molecule.chains.len(),
+                molecule.residues.len(),
+                molecule.atoms.len(),
+            ] {
+                utils::write_i64(
+                    out_file,
+                    i64::try_from(count).expect("i64 from usize"),
+                    self.endianness64,
+                    self.output_swap64,
+                    hasher.as_mut(),
+                );
+            }
 
-            if molecule.n_chains > 0 {
+            if !molecule.chains.is_empty() {
                 for chain in &molecule.chains {
                     utils::write_u64(
                         out_file,
@@ -2531,7 +2516,7 @@ impl Trajectory {
                         }
                     }
                 }
-            } else if molecule.n_residues > 0 {
+            } else if !molecule.residues.is_empty() {
                 for residue in &molecule.residues {
                     utils::write_u64(
                         out_file,
@@ -2579,7 +2564,7 @@ impl Trajectory {
 
             utils::write_i64(
                 out_file,
-                molecule.n_bonds,
+                i64::try_from(molecule.bonds.len()).expect("i64 from usize"),
                 self.endianness64,
                 self.output_swap64,
                 hasher.as_mut(),
@@ -4216,8 +4201,9 @@ impl Trajectory {
         let molecule_count_list = self.molecule_cnt_list_get();
 
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
-            if count + mol.n_atoms * mol_count - 1 < nr {
-                count += mol.n_atoms * mol_count;
+            let n_atoms = i64::try_from(mol.atoms.len()).expect("i64 from usize");
+            if count + n_atoms * mol_count - 1 < nr {
+                count += n_atoms * mol_count;
                 continue;
             }
             return Some(mol.id);
@@ -4231,11 +4217,12 @@ impl Trajectory {
         let molecule_count_list = self.molecule_cnt_list_get();
 
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
-            if count + mol.n_atoms * mol_count - 1 < nr {
-                count += mol.n_atoms * mol_count;
+            let n_atoms = i64::try_from(mol.atoms.len()).expect("i64 from usize");
+            if count + n_atoms * mol_count - 1 < nr {
+                count += n_atoms * mol_count;
                 continue;
             }
-            let residue_idx = mol.atoms[(nr % mol.n_atoms) as usize].residue_index?;
+            let residue_idx = mol.atoms[(nr % n_atoms) as usize].residue_index?;
             return Some(i64::try_from(mol.residues[residue_idx].id).expect("u64 to i64"));
         }
         None
@@ -4255,15 +4242,17 @@ impl Trajectory {
         let molecule_count_list = self.molecule_cnt_list_get();
 
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
-            if count + mol.n_atoms * mol_count - 1 < nr {
-                count += mol.n_atoms * mol_count;
-                offset += mol.n_residues * mol_count;
+            let n_atoms = i64::try_from(mol.atoms.len()).expect("i64 from usize");
+            let n_residues = i64::try_from(mol.residues.len()).expect("i64 from usize");
+            if count + n_atoms * mol_count - 1 < nr {
+                count += n_atoms * mol_count;
+                offset += n_residues * mol_count;
                 continue;
             }
-            let residue_idx = mol.atoms[(nr % mol.n_atoms) as usize]
+            let residue_idx = mol.atoms[(nr % n_atoms) as usize]
                 .residue_index
                 .expect("residue index");
-            offset += mol.n_residues * ((nr - count) / mol.n_atoms);
+            offset += n_residues * ((nr - count) / n_atoms);
             return Some(mol.residues[residue_idx].id + offset as u64);
         }
         None
@@ -4281,8 +4270,9 @@ impl Trajectory {
         let molecule_count_list = self.molecule_cnt_list_get();
 
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
-            if count + mol.n_atoms * mol_count - 1 < nr {
-                count += mol.n_atoms * mol_count;
+            let n_atoms = i64::try_from(mol.atoms.len()).expect("i64 from usize");
+            if count + n_atoms * mol_count - 1 < nr {
+                count += n_atoms * mol_count;
                 continue;
             }
             return Self::validate_get_name_len(&mol.name, "molecule name", max_len);
@@ -4305,11 +4295,12 @@ impl Trajectory {
         let molecule_count_list = self.molecule_cnt_list_get();
 
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
-            if count + mol.n_atoms * mol_count - 1 < nr {
-                count += mol.n_atoms * mol_count;
+            let n_atoms = i64::try_from(mol.atoms.len()).expect("i64 from usize");
+            if count + n_atoms * mol_count - 1 < nr {
+                count += n_atoms * mol_count;
                 continue;
             }
-            let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
+            let atom = &mol.atoms[(nr % n_atoms) as usize];
             let residue_index = atom.residue_index.expect("atom in residue");
             let chain_index = &mol.residues[residue_index]
                 .chain_index
@@ -4339,11 +4330,12 @@ impl Trajectory {
         let molecule_count_list = self.molecule_cnt_list_get();
 
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
-            if count + mol.n_atoms * mol_count - 1 < nr {
-                count += mol.n_atoms * mol_count;
+            let n_atoms = i64::try_from(mol.atoms.len()).expect("i64 from usize");
+            if count + n_atoms * mol_count - 1 < nr {
+                count += n_atoms * mol_count;
                 continue;
             }
-            let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
+            let atom = &mol.atoms[(nr % n_atoms) as usize];
             let residue_index = atom.residue_index.expect("atom in residue");
             return Self::validate_get_name_len(
                 &mol.residues[residue_index].name,
@@ -4364,11 +4356,12 @@ impl Trajectory {
         let molecule_count_list = self.molecule_cnt_list_get();
 
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
-            if count + mol.n_atoms * mol_count - 1 < nr {
-                count += mol.n_atoms * mol_count;
+            let n_atoms = i64::try_from(mol.atoms.len()).expect("i64 from usize");
+            if count + n_atoms * mol_count - 1 < nr {
+                count += n_atoms * mol_count;
                 continue;
             }
-            let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
+            let atom = &mol.atoms[(nr % n_atoms) as usize];
             return Self::validate_get_name_len(&atom.name, "atom name", max_len);
         }
         Err(TngError::NotFound(
@@ -4384,11 +4377,12 @@ impl Trajectory {
         let molecule_count_list = self.molecule_cnt_list_get();
 
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
-            if count + mol.n_atoms * mol_count - 1 < nr {
-                count += mol.n_atoms * mol_count;
+            let n_atoms = i64::try_from(mol.atoms.len()).expect("i64 from usize");
+            if count + n_atoms * mol_count - 1 < nr {
+                count += n_atoms * mol_count;
                 continue;
             }
-            let atom = &mol.atoms[(nr % mol.n_atoms) as usize];
+            let atom = &mol.atoms[(nr % n_atoms) as usize];
             return atom.atom_type.clone();
         }
         String::new()
@@ -4407,18 +4401,19 @@ impl Trajectory {
     ///
     /// Set the count of a molecule.
     pub fn molecule_cnt_set(&mut self, molecule_idx: usize, cnt: i64) {
+        let n_atoms =
+            i64::try_from(self.molecules[molecule_idx].atoms.len()).expect("i64 from usize");
         let old_count;
         if self.var_num_atoms {
             old_count = self.current_trajectory_frame_set.molecule_cnt_list[molecule_idx];
             self.current_trajectory_frame_set.molecule_cnt_list[molecule_idx] = cnt;
 
-            self.current_trajectory_frame_set.n_particles +=
-                (cnt - old_count) * self.molecules[molecule_idx].n_atoms;
+            self.current_trajectory_frame_set.n_particles += (cnt - old_count) * n_atoms;
         } else {
             old_count = self.molecule_cnt_list[molecule_idx];
             self.molecule_cnt_list[molecule_idx] = cnt;
 
-            self.n_particles += (cnt - old_count) * self.molecules[molecule_idx].n_atoms;
+            self.n_particles += (cnt - old_count) * n_atoms;
         }
     }
 
@@ -4446,8 +4441,9 @@ impl Trajectory {
 
         let mut n_bonds = 0;
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            let mol_bonds = i64::try_from(mol.bonds.len()).expect("i64 from usize");
             n_bonds +=
-                usize::try_from(mol_count * mol.n_bonds).expect("amount of bonds to be positive");
+                usize::try_from(mol_count * mol_bonds).expect("amount of bonds to be positive");
         }
 
         if n_bonds == 0 {
@@ -4459,17 +4455,16 @@ impl Trajectory {
 
         let mut atom_count = 0;
         for (mol, mol_count) in self.molecules.iter().zip(molecule_count_list) {
+            let n_atoms = i64::try_from(mol.atoms.len()).expect("i64 from usize");
             for _ in 0..*mol_count {
-                for k in 0..mol.n_bonds {
-                    let bond = &mol.bonds[k as usize];
-
+                for bond in &mol.bonds {
                     let from_atom = atom_count + bond.from_atom_id;
                     from_atoms.push(from_atom);
 
                     let to_atom = atom_count + bond.to_atom_id;
                     to_atoms.push(to_atom);
                 }
-                atom_count += mol.n_atoms;
+                atom_count += n_atoms;
             }
         }
         Some((n_bonds, from_atoms.clone(), to_atoms.clone()))
@@ -6652,7 +6647,6 @@ impl Trajectory {
         new_chain.set_name(name);
         new_chain.parent_molecule_idx = molecule.id as usize;
         new_chain.n_residues = 0;
-        molecule.n_chains += 1;
 
         new_chain.id = id;
 
@@ -6671,7 +6665,6 @@ impl Trajectory {
         chain.residues_indices = (mol.residues.len(), mol.residues.len());
         let idx = mol.chains.len();
         mol.chains.push(chain);
-        mol.n_chains += 1;
         idx
     }
 
@@ -6737,7 +6730,6 @@ impl Trajectory {
             }
         }
 
-        mol.n_residues += 1;
         insert_pos
     }
 
@@ -6788,7 +6780,6 @@ impl Trajectory {
         let idx = mol.atoms.len();
         mol.atoms.push(atom);
         mol.residues[residue_idx].n_atoms += 1;
-        mol.n_atoms += 1;
         idx
     }
 
@@ -6808,7 +6799,6 @@ impl Trajectory {
         bond.to_atom_id = to_atom_id;
         let idx = mol.bonds.len();
         mol.bonds.push(bond);
-        mol.n_bonds += 1;
         idx
     }
 
@@ -7574,7 +7564,7 @@ impl Trajectory {
 
     /// C API: `tng_molecule_num_chains_get`.
     pub(crate) fn molecule_num_chains_get(&self, molecule: &Molecule) -> i64 {
-        molecule.n_chains
+        i64::try_from(molecule.chains.len()).expect("i64 from usize")
     }
 
     /// C API: `tng_molecule_chain_of_index_get`.
@@ -7589,20 +7579,18 @@ impl Trajectory {
         molecule: &'a Molecule,
         index: usize,
     ) -> Result<&'a Chain, TngError> {
-        if index >= molecule.n_chains as usize {
-            return Err(TngError::NotFound(format!(
+        molecule.chains.get(index).ok_or_else(|| {
+            TngError::NotFound(format!(
                 "chain index was bigger than the amount of chains. index: {index}"
-            )));
-        }
-
-        Ok(&molecule.chains[index])
+            ))
+        })
     }
 
     /// Get the number of [`crate::residue::Residue`] in the molecule.
     ///
     /// C API: `tng_molecule_num_residues_get`.
     pub fn molecule_num_residues_get(&self, molecule: &Molecule) -> i64 {
-        molecule.n_residues
+        i64::try_from(molecule.residues.len()).expect("i64 from usize")
     }
 
     /// Retrieve the [`crate::residue::Residue`] of a molecule with specified index in the list of residues.
@@ -7617,18 +7605,16 @@ impl Trajectory {
         molecule: &'a Molecule,
         index: usize,
     ) -> Result<&'a Residue, TngError> {
-        if index >= molecule.n_residues as usize {
-            return Err(TngError::NotFound(format!(
+        molecule.residues.get(index).ok_or_else(|| {
+            TngError::NotFound(format!(
                 "residue index was bigger than the amount of residues. Index: {index}"
-            )));
-        }
-
-        Ok(&molecule.residues[index])
+            ))
+        })
     }
 
     /// C API: `tng_molecule_num_atoms_get`.
     pub(crate) fn molecule_num_atoms_get(&self, molecule: &Molecule) -> i64 {
-        molecule.n_atoms
+        i64::try_from(molecule.atoms.len()).expect("i64 from usize")
     }
 
     /// C API: `tng_molecule_atom_of_index_get`.
@@ -7637,13 +7623,11 @@ impl Trajectory {
         molecule: &'a Molecule,
         index: usize,
     ) -> Result<&'a Atom, TngError> {
-        if index >= molecule.n_atoms as usize {
-            return Err(TngError::NotFound(format!(
+        molecule.atoms.get(index).ok_or_else(|| {
+            TngError::NotFound(format!(
                 "atom index was bigger than the amount of atoms. Index: {index}"
-            )));
-        }
-
-        Ok(&molecule.atoms[index])
+            ))
+        })
     }
 
     /// C API: `tng_chain_name_get`.
