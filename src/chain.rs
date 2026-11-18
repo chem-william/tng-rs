@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use md5::Md5;
 
 use crate::trajectory::Trajectory;
@@ -14,11 +16,8 @@ pub struct Chain {
     pub(crate) id: u64,
     /// The name of the chain
     pub(crate) name: String,
-    /// The number of residues in the chain
-    pub(crate) n_residues: u64,
-    /// A list of residues in the chain
-    // pub residues: Vec<Residue>,
-    pub(crate) residues_indices: (usize, usize),
+    /// The residues in the chain, as indices into the parent molecule's `residues`
+    pub(crate) residues: Range<usize>,
 }
 
 impl Chain {
@@ -27,19 +26,19 @@ impl Chain {
             parent_molecule_idx: 0,
             id: 0,
             name: String::new(),
-            n_residues: 0,
-            residues_indices: (0, 0),
+            residues: 0..0,
         }
     }
 
     /// C API: `tng_chain_data_read`
     ///
-    /// Read the chain data of a molecules block
+    /// Read the chain data of a molecules block. Returns the number of residues in the chain,
+    /// which the caller uses to set [`Self::residues`].
     pub(crate) fn read_data(
         &mut self,
         trajectory_data: &mut Trajectory,
         mut hasher: Option<&mut Md5>,
-    ) {
+    ) -> u64 {
         let inp_file = trajectory_data
             .input_file
             .as_mut()
@@ -51,12 +50,12 @@ impl Chain {
             hasher.as_deref_mut(),
         );
         self.name = utils::fread_str(inp_file, hasher.as_deref_mut());
-        self.n_residues = utils::read_u64(
+        utils::read_u64(
             inp_file,
             trajectory_data.endianness64,
             trajectory_data.input_swap64,
             hasher,
-        );
+        )
     }
 
     /// C API: `tng_chain_name_set`

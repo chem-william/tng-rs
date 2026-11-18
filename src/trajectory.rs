@@ -1283,16 +1283,15 @@ impl Trajectory {
                 chain.parent_molecule_idx = mol_idx as usize;
                 chain.name = String::new();
 
-                chain.read_data(self, hasher.as_mut());
+                let n_chain_residues = chain.read_data(self, hasher.as_mut());
 
-                // Determine this chain’s slice of `self.residues`:
-                let start = residue_idx;
-                let end = start + chain.n_residues;
-                chain.residues_indices = (start as usize, end as usize);
-                residue_idx = end; // next free residue slot
+                // Determine this chain’s slice of `molecule.residues`:
+                chain.residues = residue_idx
+                    ..residue_idx + usize::try_from(n_chain_residues).expect("usize from u64");
+                residue_idx = chain.residues.end; // next free residue slot
 
                 // Read the residues of the chain
-                for local_idx in start..end {
+                for local_idx in chain.residues.clone() {
                     // let residue = &mut molecule.residues[local_idx as usize];
                     let mut residue = Residue::new();
 
@@ -1315,8 +1314,7 @@ impl Trajectory {
                         // Link back to parent residue index
                         residue.chain_index = Some(chain_idx as usize);
                         atom.parent_molecule_idx = mol_idx as usize;
-                        atom.residue_index =
-                            Some(usize::try_from(local_idx).expect("local_idx to usize"));
+                        atom.residue_index = Some(local_idx);
 
                         atom.read_data(self, hasher.as_mut());
 
@@ -2476,14 +2474,12 @@ impl Trajectory {
                     utils::fwrite_str(out_file, &chain.name, hasher.as_mut())?;
                     utils::write_u64(
                         out_file,
-                        chain.n_residues,
+                        u64::try_from(chain.residues.len()).expect("u64 from usize"),
                         self.endianness64,
                         self.output_swap64,
                         hasher.as_mut(),
                     );
-                    let (start, end) = chain.residues_indices;
-                    for res_index in start..end {
-                        let residue = &molecule.residues[res_index];
+                    for residue in &molecule.residues[chain.residues.clone()] {
                         utils::write_u64(
                             out_file,
                             residue.id,
@@ -6646,7 +6642,6 @@ impl Trajectory {
 
         new_chain.set_name(name);
         new_chain.parent_molecule_idx = molecule.id as usize;
-        new_chain.n_residues = 0;
 
         new_chain.id = id;
 
@@ -6659,10 +6654,9 @@ impl Trajectory {
         chain.set_name(name);
         chain.parent_molecule_idx = molecule_idx;
         chain.id = id;
-        chain.n_residues = 0;
 
         let mol = &mut self.molecules[molecule_idx];
-        chain.residues_indices = (mol.residues.len(), mol.residues.len());
+        chain.residues = mol.residues.len()..mol.residues.len();
         let idx = mol.chains.len();
         mol.chains.push(chain);
         idx
@@ -6680,12 +6674,9 @@ impl Trajectory {
     ) -> usize {
         let mol = &self.molecules[molecule_idx];
         let chain = &mol.chains[chain_idx];
-        let id = if chain.n_residues > 0 {
-            let last_res_idx = chain.residues_indices.1 - 1;
-            mol.residues[last_res_idx].id + 1
-        } else {
-            0
-        };
+        let id = mol.residues[chain.residues.clone()]
+            .last()
+            .map_or(0, |residue| residue.id + 1);
         self.chain_residue_w_id_add(molecule_idx, chain_idx, name, id)
     }
 
@@ -6701,7 +6692,7 @@ impl Trajectory {
     ) -> usize {
         let mol = &mut self.molecules[molecule_idx];
 
-        let insert_pos = mol.chains[chain_idx].residues_indices.1;
+        let insert_pos = mol.chains[chain_idx].residues.end;
 
         let mut residue = Residue::new();
         residue.parent_molecule_idx = molecule_idx;
@@ -6714,12 +6705,11 @@ impl Trajectory {
 
         mol.residues.insert(insert_pos, residue);
 
-        mol.chains[chain_idx].residues_indices.1 += 1;
-        mol.chains[chain_idx].n_residues += 1;
+        mol.chains[chain_idx].residues.end += 1;
 
         for c in &mut mol.chains[(chain_idx + 1)..] {
-            c.residues_indices.0 += 1;
-            c.residues_indices.1 += 1;
+            c.residues.start += 1;
+            c.residues.end += 1;
         }
 
         for atom in &mut mol.atoms {
@@ -7643,7 +7633,7 @@ impl Trajectory {
     ///
     /// Get the number of residues in a molecule chain.
     pub(crate) fn chain_num_residues_get(&self, chain: &Chain) -> u64 {
-        chain.n_residues
+        u64::try_from(chain.residues.len()).expect("u64 from usize")
     }
 
     /// C API: `tng_chain_residue_of_index_get`.
@@ -7654,15 +7644,14 @@ impl Trajectory {
         chain: &Chain,
         index: usize,
     ) -> Result<&'a Residue, TngError> {
-        if index >= chain.n_residues as usize {
-            return Err(TngError::NotFound(format!(
-                "A residue with index {index} was not found in the chain."
-            )));
-        }
-
         let molecule = &self.molecules[chain.parent_molecule_idx];
-        let residue_index = chain.residues_indices.0 + index;
-        Ok(&molecule.residues[residue_index])
+        molecule.residues[chain.residues.clone()]
+            .get(index)
+            .ok_or_else(|| {
+                TngError::NotFound(format!(
+                    "A residue with index {index} was not found in the chain."
+                ))
+            })
     }
 
     /// C API: `tng_chain_residue_find`.
@@ -7673,11 +7662,8 @@ impl Trajectory {
         id: Option<usize>,
     ) -> Result<&Residue, TngError> {
         let molecule = &self.molecules[chain.parent_molecule_idx];
-        let n_residue = chain.n_residues;
 
-        for i in (0..n_residue as usize).rev() {
-            let residue = &molecule.residues[chain.residues_indices.0 + i];
-
+        for residue in molecule.residues[chain.residues.clone()].iter().rev() {
             if (name.is_none() || name.unwrap() == residue.name)
                 && (id.is_none() || id.unwrap() as u64 == residue.id)
             {
