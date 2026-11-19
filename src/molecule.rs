@@ -7,15 +7,6 @@ pub struct Molecule {
     /// Quaternary structure of the molecule
     /// 1 => monomeric, 2 => dimeric, etc.
     pub(crate) quaternary_str: i64,
-    /// The number of chains in the molecule
-    pub(crate) n_chains: i64,
-    /// The number of residues in the molecule
-    pub(crate) n_residues: i64,
-    /// The number of atoms in the molecule
-    pub(crate) n_atoms: i64,
-    /// The number of bonds in the molecule
-    /// If the bonds are not specified this value can be 0
-    pub(crate) n_bonds: i64,
     /// The name of the molecule
     pub(crate) name: String,
     /// A list of chains in the molecule
@@ -24,7 +15,7 @@ pub struct Molecule {
     pub(crate) residues: Vec<Residue>,
     /// A list of the atoms in the molecule
     pub(crate) atoms: Vec<Atom>,
-    /// A list of the bonds in the molecule
+    /// A list of the bonds in the molecule. Can be empty if the bonds are not specified.
     pub(crate) bonds: Vec<Bond>,
 }
 
@@ -34,13 +25,9 @@ impl Molecule {
             quaternary_str: 1,
             name: String::new(),
             id: 0,
-            n_chains: 0,
             chains: Vec::new(),
-            n_residues: 0,
             residues: Vec::new(),
-            n_atoms: 0,
             atoms: Vec::new(),
-            n_bonds: 0,
             bonds: Vec::new(),
         }
     }
@@ -81,8 +68,9 @@ impl Molecule {
     /// C API: `tng_residue_atom_of_index_get`.
     ///
     /// # Panic
-    /// Panics if `index` + `residue.atoms_offset` is out of bounds for `self.atoms`
+    /// Panics if `index` plus the position of the residue's first atom is out of bounds for
+    /// `self.atoms`
     pub fn residue_atom_of_index(&self, index: usize, residue: &Residue) -> &Atom {
-        &self.atoms[residue.atoms_offset + index]
+        &self.atoms[residue.atoms.start + index]
     }
 }

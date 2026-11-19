@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use md5::Md5;
 
 use crate::{trajectory::Trajectory, utils};
@@ -13,10 +15,8 @@ pub struct Residue {
     pub(crate) id: u64,
     /// The name of the residue
     pub(crate) name: String,
-    /// The number of atoms in the residue
-    pub(crate) n_atoms: u64,
-    /// A list of atoms in the residue
-    pub(crate) atoms_offset: usize,
+    /// The atoms in the residue, as indices into the parent molecule's `atoms`
+    pub(crate) atoms: Range<usize>,
 }
 
 impl Residue {
@@ -26,16 +26,16 @@ impl Residue {
             chain_index: None,
             id: 0,
             name: String::new(),
-            n_atoms: 0,
-            atoms_offset: 0,
+            atoms: 0..0,
         }
     }
-    /// Read the residue data of a molecules block.
+    /// Read the residue data of a molecules block. Returns the number of atoms in the residue,
+    /// which the caller uses to set [`Self::atoms`].
     pub(crate) fn read_data(
         &mut self,
         trajectory_data: &mut Trajectory,
         mut hasher: Option<&mut Md5>,
-    ) {
+    ) -> u64 {
         let inp_file = trajectory_data
             .input_file
             .as_mut()
@@ -47,11 +47,11 @@ impl Residue {
             hasher.as_deref_mut(),
         );
         self.name = utils::fread_str(inp_file, hasher.as_deref_mut());
-        self.n_atoms = utils::read_u64(
+        utils::read_u64(
             inp_file,
             trajectory_data.endianness64,
             trajectory_data.input_swap64,
             hasher,
-        );
+        )
     }
 }
