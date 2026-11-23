@@ -181,13 +181,19 @@ pub(crate) fn fwrite_str<W: Write>(
     str_data: &str,
     hasher: Option<&mut Md5>,
 ) -> Result<(), TngError> {
-    let mut bytes = str_data.as_bytes().to_vec();
-    bytes.push(0); // null-terminate
+    let bytes = str_data.as_bytes();
     let len = bytes.len().min(MAX_STR_LEN);
+    let append_nul = bytes.len() < MAX_STR_LEN;
     output_file.write_all(&bytes[..len])?;
+    if append_nul {
+        output_file.write_all(&[0])?;
+    }
 
     if let Some(hasher) = hasher {
         hasher.update(&bytes[..len]);
+        if append_nul {
+            hasher.update([0]);
+        }
     }
     Ok(())
 }
