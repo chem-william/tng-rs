@@ -1,5 +1,5 @@
 /// Describes a block of particle indexes and their “real” particle IDs.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ParticleMapping {
     /// The index number of the first particle in this mapping block
     pub num_first_particle: i64,
@@ -16,10 +16,6 @@ pub struct ParticleMapping {
 
 impl ParticleMapping {
     pub fn new() -> Self {
-        Self {
-            num_first_particle: 0,
-            n_particles: 0,
-            real_particle_numbers: Vec::new(),
-        }
+        Self::default()
     }
 }

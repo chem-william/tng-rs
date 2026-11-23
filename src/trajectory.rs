@@ -1277,7 +1277,7 @@ impl Trajectory {
 
             // Read the chains of the molecule
             for chain_idx in 0..n_chains {
-                let mut chain = Chain::new();
+                let mut chain = Chain::default();
 
                 // Link back to parent molecule index
                 chain.parent_molecule_idx = mol_idx as usize;
@@ -1293,7 +1293,7 @@ impl Trajectory {
                 // Read the residues of the chain
                 for local_idx in chain.residues.clone() {
                     // let residue = &mut molecule.residues[local_idx as usize];
-                    let mut residue = Residue::new();
+                    let mut residue = Residue::default();
 
                     residue.parent_molecule_idx = mol_idx as usize;
                     // Link back to parent chain index
@@ -1308,7 +1308,7 @@ impl Trajectory {
 
                     // Read the atoms of the residue
                     for _ in 0..n_residue_atoms {
-                        let mut atom = Atom::new();
+                        let mut atom = Atom::default();
 
                         // Link back to parent residue index
                         residue.chain_index = Some(chain_idx as usize);
@@ -1328,7 +1328,7 @@ impl Trajectory {
             // If no chains but there *are* residues (i.e., n_chains == 0 && n_residues > 0):
             if n_chains == 0 && n_residues > 0 {
                 for _ in 0..n_residues {
-                    let mut residue = Residue::new();
+                    let mut residue = Residue::default();
                     let residue_index = molecule.residues.len();
 
                     residue.parent_molecule_idx = mol_idx as usize;
@@ -1341,7 +1341,7 @@ impl Trajectory {
                         ..atom_idx + usize::try_from(n_residue_atoms).expect("usize from u64");
 
                     for _ in 0..n_residue_atoms {
-                        let mut atom = Atom::new();
+                        let mut atom = Atom::default();
                         atom.parent_molecule_idx = mol_idx as usize;
                         atom.residue_index = Some(residue_index);
 
@@ -1358,7 +1358,7 @@ impl Trajectory {
             // If no chains and no residues, read atoms directly:
             if n_chains == 0 && n_residues == 0 {
                 for _ in 0..n_atoms {
-                    let mut atom = Atom::new();
+                    let mut atom = Atom::default();
                     atom.parent_molecule_idx = mol_idx as usize;
                     atom.residue_index = None;
                     atom.read_data(self, hasher.as_mut());
@@ -1375,7 +1375,7 @@ impl Trajectory {
             );
 
             for _ in 0..n_bonds {
-                let mut bond = Bond::new();
+                let mut bond = Bond::default();
                 bond.from_atom_id = utils::read_i64(
                     inp_file,
                     self.endianness64,
@@ -6643,7 +6643,7 @@ impl Trajectory {
 
     /// C API: `tng_chain_w_id_add`
     fn chain_w_id_add(&mut self, molecule_idx: usize, name: &str, id: u64) -> usize {
-        let mut chain = Chain::new();
+        let mut chain = Chain::default();
         chain.set_name(name);
         chain.parent_molecule_idx = molecule_idx;
         chain.id = id;
@@ -6687,7 +6687,7 @@ impl Trajectory {
 
         let insert_pos = mol.chains[chain_idx].residues.end;
 
-        let mut residue = Residue::new();
+        let mut residue = Residue::default();
         residue.parent_molecule_idx = molecule_idx;
         let length = name.floor_char_boundary(MAX_STR_LEN - 1);
         residue.name = name[..length].to_string();
@@ -6752,7 +6752,7 @@ impl Trajectory {
             mol.residues[residue_idx].atoms = mol.atoms.len()..mol.atoms.len();
         }
 
-        let mut atom = Atom::new();
+        let mut atom = Atom::default();
         atom.parent_molecule_idx = molecule_idx;
         let len = name.floor_char_boundary(MAX_STR_LEN - 1);
         atom.name = name[..len].to_string();
@@ -6778,7 +6778,7 @@ impl Trajectory {
         to_atom_id: i64,
     ) -> usize {
         let mol = &mut self.molecules[molecule_idx];
-        let mut bond = Bond::new();
+        let mut bond = Bond::default();
         bond.from_atom_id = from_atom_id;
         bond.to_atom_id = to_atom_id;
         let idx = mol.bonds.len();

@@ -21,15 +21,6 @@ pub struct Chain {
 }
 
 impl Chain {
-    pub(crate) fn new() -> Self {
-        Self {
-            parent_molecule_idx: 0,
-            id: 0,
-            name: String::new(),
-            residues: 0..0,
-        }
-    }
-
     /// C API: `tng_chain_data_read`
     ///
     /// Read the chain data of a molecules block. Returns the number of residues in the chain,

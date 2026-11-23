@@ -2,7 +2,7 @@ use md5::Md5;
 
 use crate::{trajectory::Trajectory, utils};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Atom {
     /// The molecule containing this atom.
     pub(crate) parent_molecule_idx: usize,
@@ -19,16 +19,6 @@ pub struct Atom {
 }
 
 impl Atom {
-    pub(crate) fn new() -> Self {
-        Self {
-            parent_molecule_idx: 0,
-            residue_index: None,
-            id: 0,
-            name: String::new(),
-            atom_type: String::new(),
-        }
-    }
-
     // C API: `tng_atom_data_read`
     /// Read the atom data of a molecules block
     pub(crate) fn read_data(

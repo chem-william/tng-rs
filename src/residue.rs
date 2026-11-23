@@ -20,15 +20,6 @@ pub struct Residue {
 }
 
 impl Residue {
-    pub(crate) fn new() -> Self {
-        Self {
-            parent_molecule_idx: 0,
-            chain_index: None,
-            id: 0,
-            name: String::new(),
-            atoms: 0..0,
-        }
-    }
     /// Read the residue data of a molecules block. Returns the number of atoms in the residue,
     /// which the caller uses to set [`Self::atoms`].
     pub(crate) fn read_data(
