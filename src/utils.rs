@@ -317,11 +317,7 @@ pub fn write_f64(
     output_swap64: Option<SwapFn64>,
     hasher: Option<&mut Md5>,
 ) {
-    // Convert f64 → [u8; 8] in *native* endianness:
-    let src_bytes: [u8; 8] = src.to_ne_bytes();
-
-    // Reinterpret those 8 bytes as a u64 (bitwise identical):
-    let mut bits: u64 = u64::from_ne_bytes(src_bytes);
+    let mut bits = src.to_bits();
 
     if let Some(swap_fn_64) = output_swap64 {
         swap_fn_64(endianness, &mut bits);
