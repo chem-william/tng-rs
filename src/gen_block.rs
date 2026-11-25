@@ -299,10 +299,10 @@ impl GenBlock {
         let name = self.name.as_deref().unwrap_or("");
         let name_len = std::cmp::min(name.len() + 1, MAX_STR_LEN); // +1 for null-terminator
 
-        let length = std::mem::size_of::<u64>()  // header_contents_size
-        + std::mem::size_of::<u64>()  // block_contents_size
-        + std::mem::size_of::<BlockID>() // id
-        + std::mem::size_of::<u64>()   // block_version
+        let length = size_of::<u64>()  // header_contents_size
+        + size_of::<u64>()  // block_contents_size
+        + size_of::<BlockID>() // id
+        + size_of::<u64>()   // block_version
         + MD5_HASH_LEN             // checksum
         + name_len; // name (null-terminated and bounded)
         u64::try_from(length).expect("u64 from usize")
