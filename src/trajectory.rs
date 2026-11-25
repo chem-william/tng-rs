@@ -1961,12 +1961,13 @@ impl Trajectory {
                                 .values
                                 .as_mut()
                                 .expect("data to be some")
-                                .chunks_exact_mut(size)
+                                .as_chunks_mut::<4>()
+                                .0
                             {
-                                let mut val = u32::from_ne_bytes(chunk.try_into().unwrap());
+                                let mut val = u32::from_ne_bytes(*chunk);
                                 input_swap32(self.endianness32, &mut val);
 
-                                chunk.copy_from_slice(&val.to_ne_bytes());
+                                *chunk = val.to_ne_bytes();
                             }
                         }
                     }
@@ -1976,12 +1977,13 @@ impl Trajectory {
                                 .values
                                 .as_mut()
                                 .expect("data to be some")
-                                .chunks_exact_mut(size)
+                                .as_chunks_mut::<8>()
+                                .0
                             {
-                                let mut val = u64::from_ne_bytes(chunk.try_into().unwrap());
+                                let mut val = u64::from_ne_bytes(*chunk);
                                 input_swap64(self.endianness64, &mut val);
 
-                                chunk.copy_from_slice(&val.to_ne_bytes());
+                                *chunk = val.to_ne_bytes();
                             }
                         }
                     }
@@ -3355,13 +3357,13 @@ impl Trajectory {
                         DataType::Float => match cloned_data.codec_id {
                             Compression::Uncompressed | Compression::GZip => {
                                 if let Some(output_swap32) = self.output_swap32 {
-                                    debug_assert!(full_data_len % 4 == 0);
+                                    debug_assert!(full_data_len.is_multiple_of(4));
 
-                                    for chunk in contents.chunks_exact_mut(size) {
-                                        let mut val = u32::from_ne_bytes(chunk.try_into().unwrap());
+                                    for chunk in contents.as_chunks_mut::<4>().0 {
+                                        let mut val = u32::from_ne_bytes(*chunk);
                                         output_swap32(self.endianness32, &mut val);
 
-                                        chunk.copy_from_slice(&val.to_ne_bytes());
+                                        *chunk = val.to_ne_bytes();
                                     }
                                 }
                             }
@@ -3370,9 +3372,8 @@ impl Trajectory {
                                 if (multiplier - 1.0).abs() > 0.00001
                                     || self.output_swap32.is_some()
                                 {
-                                    for chunk in contents.chunks_exact_mut(size) {
-                                        let orig_bits =
-                                            u32::from_ne_bytes(chunk.try_into().unwrap());
+                                    for chunk in contents.as_chunks_mut::<4>().0 {
+                                        let orig_bits = u32::from_ne_bytes(*chunk);
                                         let mut val = f32::from_bits(orig_bits);
                                         val *= multiplier as f32;
 
@@ -3380,7 +3381,7 @@ impl Trajectory {
                                         if let Some(output_swap32) = self.output_swap32 {
                                             output_swap32(self.endianness32, &mut new_bits);
                                         }
-                                        chunk.copy_from_slice(&new_bits.to_ne_bytes());
+                                        *chunk = new_bits.to_ne_bytes();
                                     }
                                 }
                             }
@@ -3388,26 +3389,26 @@ impl Trajectory {
                         },
                         DataType::Int => {
                             if let Some(output_swap64) = self.output_swap64 {
-                                debug_assert!(full_data_len % 8 == 0);
+                                debug_assert!(full_data_len.is_multiple_of(8));
 
-                                for chunk in contents.chunks_exact_mut(size) {
-                                    let mut val = u64::from_ne_bytes(chunk.try_into().unwrap());
+                                for chunk in contents.as_chunks_mut::<8>().0 {
+                                    let mut val = u64::from_ne_bytes(*chunk);
                                     output_swap64(self.endianness64, &mut val);
 
-                                    chunk.copy_from_slice(&val.to_ne_bytes());
+                                    *chunk = val.to_ne_bytes();
                                 }
                             }
                         }
                         DataType::Double => match cloned_data.codec_id {
                             Compression::Uncompressed | Compression::GZip => {
                                 if let Some(output_swap64) = self.output_swap64 {
-                                    debug_assert!(full_data_len % 8 == 0);
+                                    debug_assert!(full_data_len.is_multiple_of(8));
 
-                                    for chunk in contents.chunks_exact_mut(size) {
-                                        let mut val = u64::from_ne_bytes(chunk.try_into().unwrap());
+                                    for chunk in contents.as_chunks_mut::<8>().0 {
+                                        let mut val = u64::from_ne_bytes(*chunk);
                                         output_swap64(self.endianness64, &mut val);
 
-                                        chunk.copy_from_slice(&val.to_ne_bytes());
+                                        *chunk = val.to_ne_bytes();
                                     }
                                 }
                             }
@@ -3416,9 +3417,8 @@ impl Trajectory {
                                 if (multiplier - 1.0).abs() > 0.00001
                                     || self.output_swap64.is_some()
                                 {
-                                    for chunk in contents.chunks_exact_mut(size) {
-                                        let orig_bits =
-                                            u64::from_ne_bytes(chunk.try_into().unwrap());
+                                    for chunk in contents.as_chunks_mut::<8>().0 {
+                                        let orig_bits = u64::from_ne_bytes(*chunk);
                                         let mut val = f64::from_bits(orig_bits);
                                         val *= multiplier;
 
@@ -3426,7 +3426,7 @@ impl Trajectory {
                                         if let Some(output_swap64) = self.output_swap64 {
                                             output_swap64(self.endianness64, &mut new_bits);
                                         }
-                                        chunk.copy_from_slice(&new_bits.to_ne_bytes());
+                                        *chunk = new_bits.to_ne_bytes();
                                     }
                                 }
                             }
