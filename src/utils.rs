@@ -27,6 +27,20 @@ pub enum Endianness64 {
 pub(crate) type SwapFn32 = fn(Endianness32, &mut u32);
 pub(crate) type SwapFn64 = fn(Endianness64, &mut u64);
 
+/// Splits the first `N` bytes off `buf` and advances it past them.
+///
+/// Typically used as `i32::from_le_bytes(take_bytes(&mut buf))`, where `N` is inferred.
+///
+/// # Panics
+/// Panics if `buf` holds fewer than `N` bytes.
+pub(crate) fn take_bytes<const N: usize>(buf: &mut &[u8]) -> [u8; N] {
+    let (head, rest) = buf
+        .split_first_chunk::<N>()
+        .expect("input ended before the expected number of bytes");
+    *buf = rest;
+    *head
+}
+
 /// Swaps the byte order of a 32-bit numerical variable to big endian
 pub fn swap_byte_order_big_endian_32(endianness: Endianness32, raw: &mut u32) {
     match endianness {
