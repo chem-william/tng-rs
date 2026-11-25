@@ -38,7 +38,6 @@ impl DataType {
 
 /// Compression mode is specified in each data block
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[allow(clippy::upper_case_acronyms)]
 pub enum Compression {
     #[default]
     Uncompressed = 0,

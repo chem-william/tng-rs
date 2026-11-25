@@ -1,10 +1,11 @@
 use crate::{
     bwlzh::{bwlzh_compress, bwlzh_compress_no_lz77, bwlzh_decompress, bwlzh_get_buflen},
+    utils::take_bytes,
     widemuldiv::{ptngc_largeint_add, ptngc_largeint_div, ptngc_largeint_mul},
     xtc2::{ptngc_find_magic_index, ptngc_magic},
 };
 
-#[allow(clippy::excessive_precision)]
+#[expect(clippy::excessive_precision)]
 pub(crate) const IFLIPGAINCHECK: f64 = 0.890_898_718_140_339_27; /*  1./(2**(1./6)) */
 
 // Maximum number of large atoms for large RLE
@@ -1224,25 +1225,23 @@ pub(crate) fn ptngc_pack_array_xtc3(
 }
 
 fn decompress_bwlzh_block(ptr: &mut &[u8], nvals: usize, vals: &mut Vec<u32>) {
-    let bwlzh_buf_len = u32::from_le_bytes(ptr[..4].try_into().expect("error handling")) as usize;
-    *ptr = &ptr[4..];
+    let bwlzh_buf_len = u32::from_le_bytes(take_bytes(ptr)) as usize;
     vals.resize(nvals, 0);
     bwlzh_decompress(ptr, nvals as i32, vals);
     *ptr = &ptr[bwlzh_buf_len..];
 }
 
 fn decompress_base_block(ptr: &mut &[u8], nvals: usize, vals: &mut Vec<u32>) {
-    let base_buf_len = u32::from_le_bytes(ptr[..4].try_into().expect("error handling")) as usize;
-    *ptr = &ptr[4..];
+    let base_buf_len = u32::from_le_bytes(take_bytes(ptr)) as usize;
     vals.resize(nvals, 0);
     base_decompress(&ptr[..base_buf_len], nvals, vals);
     *ptr = &ptr[base_buf_len..];
 }
 
 fn base_decompress(input: &[u8], len: usize, output: &mut [u32]) {
-    let maxbasevals = (u16::from(input[0]) | (u16::from(input[1]) << 8)) as usize;
-    let baseinterval = input[2] as usize;
-    let mut input = &input[3..];
+    let mut input = input;
+    let maxbasevals = usize::from(u16::from_le_bytes(take_bytes(&mut input)));
+    let baseinterval = usize::from(u8::from_le_bytes(take_bytes(&mut input)));
 
     let mut largeint = vec![0u32; maxbasevals + 1];
     let mut largeint_tmp = vec![0u32; maxbasevals + 1];
@@ -1256,8 +1255,7 @@ fn base_decompress(input: &[u8], len: usize, output: &mut [u32]) {
 
         while nvals_left > 0 {
             if basegiven == 0 {
-                base = u32::from_le_bytes(input[..4].try_into().expect("error handling"));
-                input = &input[4..];
+                base = u32::from_le_bytes(take_bytes(&mut input));
                 basegiven = baseinterval;
                 numbytes = base_bytes(base, maxbasevals);
             }
@@ -1290,7 +1288,7 @@ fn base_decompress(input: &[u8], len: usize, output: &mut [u32]) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn unpack_one_large(
     ctx: &Xtc3Context,
     ilargedir: &mut usize,
@@ -1345,14 +1343,10 @@ pub(crate) fn ptngc_unpack_array_xtc3(
     let mut minint = [0i32; 3];
 
     for item in &mut minint {
-        *item = unpositive_int(i32::from_le_bytes(
-            ptr[..4].try_into().expect("error handling"),
-        ));
-        ptr = &ptr[4..];
+        *item = unpositive_int(i32::from_le_bytes(take_bytes(&mut ptr)));
     }
 
-    xtc3_context.ninstr = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
-    ptr = &ptr[4..];
+    xtc3_context.ninstr = i32::from_le_bytes(take_bytes(&mut ptr));
     if xtc3_context.ninstr != 0 {
         decompress_bwlzh_block(
             &mut ptr,
@@ -1361,17 +1355,14 @@ pub(crate) fn ptngc_unpack_array_xtc3(
         );
     }
 
-    let nrle = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
-    ptr = &ptr[4..];
+    let nrle = i32::from_le_bytes(take_bytes(&mut ptr));
     if nrle != 0 {
         decompress_bwlzh_block(&mut ptr, nrle as usize, &mut xtc3_context.rle);
     }
 
-    let nlargedir = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
-    ptr = &ptr[4..];
+    let nlargedir = i32::from_le_bytes(take_bytes(&mut ptr));
     if nlargedir != 0 {
-        let use_bwlzh = ptr[0] == 1;
-        ptr = &ptr[1..];
+        let use_bwlzh = u8::from_le_bytes(take_bytes(&mut ptr)) == 1;
         if use_bwlzh {
             decompress_bwlzh_block(&mut ptr, nlargedir as usize, &mut xtc3_context.large_direct);
         } else {
@@ -1379,11 +1370,9 @@ pub(crate) fn ptngc_unpack_array_xtc3(
         }
     }
 
-    let nlargeintra = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
-    ptr = &ptr[4..];
+    let nlargeintra = i32::from_le_bytes(take_bytes(&mut ptr));
     if nlargeintra != 0 {
-        let use_bwlzh = ptr[0] == 1;
-        ptr = &ptr[1..];
+        let use_bwlzh = u8::from_le_bytes(take_bytes(&mut ptr)) == 1;
         if use_bwlzh {
             decompress_bwlzh_block(
                 &mut ptr,
@@ -1399,11 +1388,9 @@ pub(crate) fn ptngc_unpack_array_xtc3(
         }
     }
 
-    let nlargeinter = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
-    ptr = &ptr[4..];
+    let nlargeinter = i32::from_le_bytes(take_bytes(&mut ptr));
     if nlargeinter != 0 {
-        let use_bwlzh = ptr[0] == 1;
-        ptr = &ptr[1..];
+        let use_bwlzh = u8::from_le_bytes(take_bytes(&mut ptr)) == 1;
         if use_bwlzh {
             decompress_bwlzh_block(
                 &mut ptr,
@@ -1419,11 +1406,9 @@ pub(crate) fn ptngc_unpack_array_xtc3(
         }
     }
 
-    let nsmallintra = i32::from_le_bytes(ptr[..4].try_into().expect("error handling"));
-    ptr = &ptr[4..];
+    let nsmallintra = i32::from_le_bytes(take_bytes(&mut ptr));
     if nsmallintra != 0 {
-        let use_bwlzh = ptr[0] == 1;
-        ptr = &ptr[1..];
+        let use_bwlzh = u8::from_le_bytes(take_bytes(&mut ptr)) == 1;
         if use_bwlzh {
             decompress_bwlzh_block(&mut ptr, nsmallintra as usize, &mut xtc3_context.smallintra);
         } else {

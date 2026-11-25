@@ -960,8 +960,8 @@ impl Trajectory {
                 );
             }
         } else {
-            let bytes_to_read = usize::try_from(mapping.n_particles).expect("i64 to usize")
-                * std::mem::size_of::<i64>();
+            let bytes_to_read =
+                usize::try_from(mapping.n_particles).expect("i64 to usize") * size_of::<i64>();
             let mut buffer = vec![0u8; bytes_to_read];
 
             let inp_file = self.input_file.as_mut().expect("init input_file");
@@ -1961,12 +1961,13 @@ impl Trajectory {
                                 .values
                                 .as_mut()
                                 .expect("data to be some")
-                                .chunks_exact_mut(size)
+                                .as_chunks_mut::<4>()
+                                .0
                             {
-                                let mut val = u32::from_ne_bytes(chunk.try_into().unwrap());
+                                let mut val = u32::from_ne_bytes(*chunk);
                                 input_swap32(self.endianness32, &mut val);
 
-                                chunk.copy_from_slice(&val.to_ne_bytes());
+                                *chunk = val.to_ne_bytes();
                             }
                         }
                     }
@@ -1976,12 +1977,13 @@ impl Trajectory {
                                 .values
                                 .as_mut()
                                 .expect("data to be some")
-                                .chunks_exact_mut(size)
+                                .as_chunks_mut::<8>()
+                                .0
                             {
-                                let mut val = u64::from_ne_bytes(chunk.try_into().unwrap());
+                                let mut val = u64::from_ne_bytes(*chunk);
                                 input_swap64(self.endianness64, &mut val);
 
-                                chunk.copy_from_slice(&val.to_ne_bytes());
+                                *chunk = val.to_ne_bytes();
                             }
                         }
                     }
@@ -2588,11 +2590,10 @@ impl Trajectory {
     }
 
     fn frame_set_block_len_calculate(&self) -> u64 {
-        let mut length = std::mem::size_of::<i64>() * 8;
-        length += std::mem::size_of::<f64>() * 2;
+        let mut length = size_of::<[i64; 8]>() + size_of::<[f64; 2]>();
 
         if self.var_num_atoms {
-            length += std::mem::size_of::<i64>() * self.molecules.len();
+            length += size_of::<i64>() * self.molecules.len();
         }
 
         u64::try_from(length).expect("u64 from usize")
@@ -2726,7 +2727,7 @@ impl Trajectory {
     }
 
     fn trajectory_mapping_block_len_calculate(&self, n_particles: i64) -> usize {
-        std::mem::size_of::<i64>() * (2 + usize::try_from(n_particles).expect("usize from i64"))
+        size_of::<i64>() * (2 + usize::try_from(n_particles).expect("usize from i64"))
     }
 
     /// .
@@ -2738,7 +2739,7 @@ impl Trajectory {
     /// # Errors
     ///
     /// This function will return an error if .
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn tng_compress(
         &self,
         compress_algo_pos: &mut Vec<i32>,
@@ -3355,13 +3356,13 @@ impl Trajectory {
                         DataType::Float => match cloned_data.codec_id {
                             Compression::Uncompressed | Compression::GZip => {
                                 if let Some(output_swap32) = self.output_swap32 {
-                                    debug_assert!(full_data_len % 4 == 0);
+                                    debug_assert!(full_data_len.is_multiple_of(4));
 
-                                    for chunk in contents.chunks_exact_mut(size) {
-                                        let mut val = u32::from_ne_bytes(chunk.try_into().unwrap());
+                                    for chunk in contents.as_chunks_mut::<4>().0 {
+                                        let mut val = u32::from_ne_bytes(*chunk);
                                         output_swap32(self.endianness32, &mut val);
 
-                                        chunk.copy_from_slice(&val.to_ne_bytes());
+                                        *chunk = val.to_ne_bytes();
                                     }
                                 }
                             }
@@ -3370,9 +3371,8 @@ impl Trajectory {
                                 if (multiplier - 1.0).abs() > 0.00001
                                     || self.output_swap32.is_some()
                                 {
-                                    for chunk in contents.chunks_exact_mut(size) {
-                                        let orig_bits =
-                                            u32::from_ne_bytes(chunk.try_into().unwrap());
+                                    for chunk in contents.as_chunks_mut::<4>().0 {
+                                        let orig_bits = u32::from_ne_bytes(*chunk);
                                         let mut val = f32::from_bits(orig_bits);
                                         val *= multiplier as f32;
 
@@ -3380,7 +3380,7 @@ impl Trajectory {
                                         if let Some(output_swap32) = self.output_swap32 {
                                             output_swap32(self.endianness32, &mut new_bits);
                                         }
-                                        chunk.copy_from_slice(&new_bits.to_ne_bytes());
+                                        *chunk = new_bits.to_ne_bytes();
                                     }
                                 }
                             }
@@ -3388,26 +3388,26 @@ impl Trajectory {
                         },
                         DataType::Int => {
                             if let Some(output_swap64) = self.output_swap64 {
-                                debug_assert!(full_data_len % 8 == 0);
+                                debug_assert!(full_data_len.is_multiple_of(8));
 
-                                for chunk in contents.chunks_exact_mut(size) {
-                                    let mut val = u64::from_ne_bytes(chunk.try_into().unwrap());
+                                for chunk in contents.as_chunks_mut::<8>().0 {
+                                    let mut val = u64::from_ne_bytes(*chunk);
                                     output_swap64(self.endianness64, &mut val);
 
-                                    chunk.copy_from_slice(&val.to_ne_bytes());
+                                    *chunk = val.to_ne_bytes();
                                 }
                             }
                         }
                         DataType::Double => match cloned_data.codec_id {
                             Compression::Uncompressed | Compression::GZip => {
                                 if let Some(output_swap64) = self.output_swap64 {
-                                    debug_assert!(full_data_len % 8 == 0);
+                                    debug_assert!(full_data_len.is_multiple_of(8));
 
-                                    for chunk in contents.chunks_exact_mut(size) {
-                                        let mut val = u64::from_ne_bytes(chunk.try_into().unwrap());
+                                    for chunk in contents.as_chunks_mut::<8>().0 {
+                                        let mut val = u64::from_ne_bytes(*chunk);
                                         output_swap64(self.endianness64, &mut val);
 
-                                        chunk.copy_from_slice(&val.to_ne_bytes());
+                                        *chunk = val.to_ne_bytes();
                                     }
                                 }
                             }
@@ -3416,9 +3416,8 @@ impl Trajectory {
                                 if (multiplier - 1.0).abs() > 0.00001
                                     || self.output_swap64.is_some()
                                 {
-                                    for chunk in contents.chunks_exact_mut(size) {
-                                        let orig_bits =
-                                            u64::from_ne_bytes(chunk.try_into().unwrap());
+                                    for chunk in contents.as_chunks_mut::<8>().0 {
+                                        let orig_bits = u64::from_ne_bytes(*chunk);
                                         let mut val = f64::from_bits(orig_bits);
                                         val *= multiplier;
 
@@ -3426,7 +3425,7 @@ impl Trajectory {
                                         if let Some(output_swap64) = self.output_swap64 {
                                             output_swap64(self.endianness64, &mut new_bits);
                                         }
-                                        chunk.copy_from_slice(&new_bits.to_ne_bytes());
+                                        *chunk = new_bits.to_ne_bytes();
                                     }
                                 }
                             }
@@ -3531,8 +3530,7 @@ impl Trajectory {
                 let curr_file_pos = file.stream_position()?;
 
                 // c version is fseeko
-                let offset =
-                    header_file_pos + std::mem::size_of_val(&block.header_contents_size) as u64;
+                let offset = header_file_pos + size_of_val(&block.header_contents_size) as u64;
                 file.seek(SeekFrom::Start(offset))?;
 
                 utils::write_u64(
@@ -6355,7 +6353,7 @@ impl Trajectory {
         output_file.seek(SeekFrom::Current(
             i64::try_from(
                 block.block_contents_size
-                    - u64::try_from(5 * std::mem::size_of::<i64>()).expect("u64 from usize"),
+                    - u64::try_from(5 * size_of::<i64>()).expect("u64 from usize"),
             )
             .expect("i64 from u64"),
         ))?;
@@ -6789,7 +6787,7 @@ impl Trajectory {
     /// C API: `tng_data_block_add`.
     ///
     /// Add a non-particle dependent data block.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn data_block_add(
         &mut self,
         id: BlockID,
@@ -6825,7 +6823,7 @@ impl Trajectory {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn gen_data_block_add(
         &mut self,
         id: BlockID,
@@ -7047,7 +7045,7 @@ impl Trajectory {
     /// C API: `tng_particle_data_block_add`.
     ///
     /// Add a particle dependent data block.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn particle_data_block_add(
         &mut self,
         id: BlockID,
@@ -7185,8 +7183,7 @@ impl Trajectory {
                 // medium stride step back.
                 // Skip to medium_stride_next field: block_contents_size - 6*i64 - 2*f64
                 let skip = block.block_contents_size as i64
-                    - (6 * std::mem::size_of::<i64>() as i64
-                        + 2 * std::mem::size_of::<f64>() as i64);
+                    - (6 * size_of::<i64>() as i64 + 2 * size_of::<f64>() as i64);
                 self.input_file
                     .as_mut()
                     .expect("init input_file")
@@ -7226,8 +7223,7 @@ impl Trajectory {
 
                         // Skip to long_stride_next field
                         let skip = block.block_contents_size as i64
-                            - (6 * std::mem::size_of::<i64>() as i64
-                                + 2 * std::mem::size_of::<f64>() as i64);
+                            - (6 * size_of::<i64>() as i64 + 2 * size_of::<f64>() as i64);
                         self.input_file
                             .as_mut()
                             .expect("init input_file")
@@ -8470,7 +8466,7 @@ impl Trajectory {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn util_generic_with_time_double_write(
         &mut self,
         frame_nr: i64,
@@ -8493,7 +8489,7 @@ impl Trajectory {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn util_generic_double_write(
         &mut self,
         frame_nr: i64,

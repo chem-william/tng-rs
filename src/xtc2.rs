@@ -219,7 +219,7 @@ pub(crate) fn ptngc_find_magic_index(maxval: u32) -> u32 {
     i.min(MAX_MAGIC - 1) as u32
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn buffer_large(
     coder: &mut Coder,
     has_large: &mut usize,
@@ -249,7 +249,7 @@ fn buffer_large(
     *has_large += 1;
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn flush_large(
     coder: &mut Coder,
     has_large: &mut usize,
@@ -338,8 +338,11 @@ fn trajcoder_base_compress(input: &[i32], n: usize, index: &[u32], result: &mut 
     assert!(largeint[18] == 0, "BUG! Overflow in compression detected!");
 
     // Convert the largeint to a sequence of bytes
-    for i in 0..18 {
-        result[i * 4..i * 4 + 4].copy_from_slice(&largeint[i].to_le_bytes());
+    for (bytes, word) in result.as_chunks_mut::<4>().0[..18]
+        .iter_mut()
+        .zip(&largeint)
+    {
+        *bytes = word.to_le_bytes();
     }
 }
 
@@ -348,15 +351,9 @@ pub(crate) fn trajcoder_base_decompress(input: &[u8], n: i32, index: &[u32], out
     // Convert the sequence of bytes to a largeint
     let mut largeint = [0; 19];
     let mut largeint_tmp = [0; 19];
-    for i in 0..18 {
-        largeint[i] = u32::from_le_bytes([
-            input[i * 4],
-            input[i * 4 + 1],
-            input[i * 4 + 2],
-            input[i * 4 + 3],
-        ]);
+    for (word, bytes) in largeint.iter_mut().zip(&input.as_chunks::<4>().0[..18]) {
+        *word = u32::from_le_bytes(*bytes);
     }
-    largeint[18] = 0;
     debug!("Largeint");
     debug!("{largeint:?}");
 

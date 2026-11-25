@@ -122,10 +122,7 @@ pub fn bench_write(path: &Path, positions: &[f64], velocities: &[f64]) -> Result
 
 fn raw_f64_bytes(values: &[f64]) -> Vec<u8> {
     // Match the C benchmark's malloc + memcpy chunk conversion instead of rebuilding bytes value by value.
-    unsafe {
-        std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), std::mem::size_of_val(values))
-            .to_vec()
-    }
+    values.as_bytes().to_vec()
 }
 
 // --- data generation helpers ---
