@@ -1960,7 +1960,7 @@ mod compress_quantized_pos {
     use super::*;
 
     fn u32le(b: &[u8]) -> u32 {
-        u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        u32::from_le_bytes(*b.first_chunk().expect("at least 4 bytes"))
     }
 
     #[test]
