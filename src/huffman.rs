@@ -87,7 +87,7 @@ pub struct CodeLength {
 /// The `huffman_dict_unpacked` array should be at least `DICT_SIZE + 3`
 /// (131079 with current `DICT_SIZE`), to hold three header bytes plus one
 /// entry per symbol in the full dictionary range.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub(crate) fn ptngc_comp_conv_to_huffman(
     vals: &[u32],
     dict: &[u32],

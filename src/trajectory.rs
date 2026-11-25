@@ -2740,7 +2740,7 @@ impl Trajectory {
     /// # Errors
     ///
     /// This function will return an error if .
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn tng_compress(
         &self,
         compress_algo_pos: &mut Vec<i32>,
@@ -6789,7 +6789,7 @@ impl Trajectory {
     /// C API: `tng_data_block_add`.
     ///
     /// Add a non-particle dependent data block.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn data_block_add(
         &mut self,
         id: BlockID,
@@ -6825,7 +6825,7 @@ impl Trajectory {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn gen_data_block_add(
         &mut self,
         id: BlockID,
@@ -7047,7 +7047,7 @@ impl Trajectory {
     /// C API: `tng_particle_data_block_add`.
     ///
     /// Add a particle dependent data block.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn particle_data_block_add(
         &mut self,
         id: BlockID,
@@ -8470,7 +8470,7 @@ impl Trajectory {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn util_generic_with_time_double_write(
         &mut self,
         frame_nr: i64,
@@ -8493,7 +8493,7 @@ impl Trajectory {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn util_generic_double_write(
         &mut self,
         frame_nr: i64,

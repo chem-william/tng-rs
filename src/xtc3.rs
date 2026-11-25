@@ -5,7 +5,7 @@ use crate::{
     xtc2::{ptngc_find_magic_index, ptngc_magic},
 };
 
-#[allow(clippy::excessive_precision)]
+#[expect(clippy::excessive_precision)]
 pub(crate) const IFLIPGAINCHECK: f64 = 0.890_898_718_140_339_27; /*  1./(2**(1./6)) */
 
 // Maximum number of large atoms for large RLE
@@ -1288,7 +1288,7 @@ fn base_decompress(input: &[u8], len: usize, output: &mut [u32]) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn unpack_one_large(
     ctx: &Xtc3Context,
     ilargedir: &mut usize,

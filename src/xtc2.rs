@@ -219,7 +219,7 @@ pub(crate) fn ptngc_find_magic_index(maxval: u32) -> u32 {
     i.min(MAX_MAGIC - 1) as u32
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn buffer_large(
     coder: &mut Coder,
     has_large: &mut usize,
@@ -249,7 +249,7 @@ fn buffer_large(
     *has_large += 1;
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn flush_large(
     coder: &mut Coder,
     has_large: &mut usize,
